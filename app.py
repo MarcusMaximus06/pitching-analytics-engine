@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from pybaseball import pitching_stats_bref, pitching_stats_range, statcast_pitcher_expected_stats, statcast_pitcher, standings, team_pitching
+from pybaseball import pitching_stats_bref, batting_stats_bref, pitching_stats_range, statcast_pitcher_expected_stats, statcast_pitcher
 import plotly.express as px
 from datetime import datetime, timedelta
 import traceback
@@ -77,24 +77,33 @@ def load_pitching_data():
 @st.cache_data
 def get_team_data():
     try:
-        tables = standings(2026)
-        stand_df = pd.concat(tables)
+        # BULLETPROOF FIX: Pull every batter and pitcher individually and aggregate the team totals manually.
+        bat_df = batting_stats_bref(2026)
+        pitch_df = pitching_stats_bref(2026)
         
-        # BULLETPROOF DATA PARSING
-        runs_scored = 'RS' if 'RS' in stand_df.columns else 'R'
-        runs_allowed = 'RA'
-        games = 'G'
+        # Aggregate Runs Scored
+        team_bat = bat_df.groupby('Tm').agg(
+            RS=('R', 'sum'),
+            Max_G=('G', 'max') # The player with the most games serves as the team's games played
+        ).reset_index()
+        team_bat['Max_G'] = team_bat['Max_G'].replace(0, 1) # Prevent division errors
+        team_bat['RS_per_G'] = team_bat['RS'] / team_bat['Max_G']
         
-        # Calculate games played manually if the database drops the column
-        if games not in stand_df.columns:
-            stand_df[games] = stand_df['W'] + stand_df['L']
-            
-        stand_df['RS_per_G'] = stand_df[runs_scored] / stand_df[games]
-        stand_df['RA_per_G'] = stand_df[runs_allowed] / stand_df[games]
+        # Aggregate Runs Allowed
+        team_pitch = pitch_df.groupby('Tm').agg(
+            RA=('R', 'sum'),
+            Max_G=('G', 'max')
+        ).reset_index()
+        team_pitch['Max_G'] = team_pitch['Max_G'].replace(0, 1)
+        team_pitch['RA_per_G'] = team_pitch['RA'] / team_pitch['Max_G']
         
-        return stand_df[['Tm', 'RS_per_G', 'RA_per_G']].sort_values('Tm')
+        # Merge and clean
+        team_df = pd.merge(team_bat[['Tm', 'RS_per_G']], team_pitch[['Tm', 'RA_per_G']], on='Tm')
+        team_df = team_df[team_df['Tm'] != 'TOT'] # Remove totals for traded players
+        
+        return team_df.sort_values('Tm')
     except Exception as e: 
-        st.error(f"Error fetching team standings: '{e}'")
+        st.error(f"Error compiling manual team baselines: {e}")
         return pd.DataFrame()
 
 # ==========================================
