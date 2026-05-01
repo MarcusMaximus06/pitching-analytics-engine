@@ -60,15 +60,31 @@ def load_data():
         # Check for all possible Savant column naming conventions
         if 'first_name' in savant_df.columns and 'last_name' in savant_df.columns:
             savant_df['Name'] = savant_df['first_name'].astype(str).str.strip() + ' ' + savant_df['last_name'].astype(str).str.strip()
+        elif 'last_name, first_name' in savant_df.columns:
+            savant_df['Name'] = savant_df['last_name, first_name'].apply(format_savant_name)
         elif 'player' in savant_df.columns:
             savant_df['Name'] = savant_df['player'].apply(format_savant_name)
         elif 'player_name' in savant_df.columns:
             savant_df['Name'] = savant_df['player_name'].apply(format_savant_name)
         else:
-            raise KeyError("Could not locate a recognizable player name column in the Savant database.")
+            # DUMP THE COLUMNS into the error so we can see exactly what Savant is doing
+            cols = ", ".join(savant_df.columns.tolist())
+            raise KeyError(f"Could not locate name column. Available columns: {cols}")
 
-        savant_df = savant_df[['Name', 'est_woba', 'xera']].rename(columns={'est_woba': 'xwOBA', 'xera': 'xERA'})
+        # Safely extract and rename the stats columns if they exist
+        target_cols = ['Name']
+        if 'est_woba' in savant_df.columns: target_cols.append('est_woba')
+        if 'xera' in savant_df.columns: target_cols.append('xera')
+        
+        savant_df = savant_df[target_cols]
+        if 'est_woba' in savant_df.columns: savant_df = savant_df.rename(columns={'est_woba': 'xwOBA'})
+        if 'xera' in savant_df.columns: savant_df = savant_df.rename(columns={'xera': 'xERA'})
+        
         merged_df = pd.merge(merged_df, savant_df, on='Name', how='left')
+        
+        # Ensure columns exist in merged_df even if Savant failed to provide them
+        if 'xwOBA' not in merged_df.columns: merged_df['xwOBA'] = None
+        if 'xERA' not in merged_df.columns: merged_df['xERA'] = None
         
         # Clear any previous errors if successful
         if 'savant_error' in st.session_state:
