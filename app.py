@@ -27,20 +27,32 @@ def load_data():
         
     df = df.dropna(subset=['ERA', 'FIP', 'SO9', 'BB9'])
     df['ERA_minus_FIP'] = df['ERA'] - df['FIP']
+    
+    # ---------------------------------------------------------
+    # CUSTOM PREDICTION METRIC: Future Performance Index (FPI)
+    # Weighs strikeouts heavily, penalizes walks, anchors to FIP.
+    # Formula: (SO/9 * 1.5) - (BB/9 * 1.2) - FIP
+    # ---------------------------------------------------------
+    df['FPI'] = (df['SO9'] * 1.5) - (df['BB9'] * 1.2) - df['FIP']
+    
+    # Round metrics for a cleaner UI
+    df['FPI'] = df['FPI'].round(2)
+    df['ERA_minus_FIP'] = df['ERA_minus_FIP'].round(2)
+    df['FIP'] = df['FIP'].round(2)
+    df['SO9'] = df['SO9'].round(2)
+    df['BB9'] = df['BB9'].round(2)
+    
     return df
 
 with st.spinner('Compiling matrix and generating models...'):
     try:
         raw_df = load_data()
         
-        # --- DATA FILTERING (Removing Noise) ---
+        # --- DATA FILTERING ---
         st.sidebar.header("Matrix Parameters")
-        
-        # Add a slider to filter out position players and 0.1 IP anomalies
         max_ip = int(raw_df['IP'].max()) if not raw_df.empty else 100
-        min_ip = st.sidebar.slider("Minimum Innings Pitched (Filter Noise):", min_value=1, max_value=max_ip, value=10)
+        min_ip = st.sidebar.slider("Minimum Innings Pitched (Filter Noise):", min_value=1, max_value=max_ip, value=15)
         
-        # Create a new dataframe that only includes pitchers who meet the IP parameter
         filtered_df = raw_df[raw_df['IP'] >= min_ip]
         
         # --- TARGET PROFILE SEARCH ---
@@ -49,26 +61,32 @@ with st.spinner('Compiling matrix and generating models...'):
         player_list = sorted(filtered_df['Name'].unique().tolist())
         selected_player = st.sidebar.selectbox("Search for a Pitcher:", ["All Pitchers"] + player_list)
         
-        display_cols = ['Name', 'Tm', 'IP', 'ERA', 'FIP', 'ERA_minus_FIP', 'SO9', 'BB9']
+        # Added FPI to the display columns
+        display_cols = ['Name', 'Tm', 'IP', 'ERA', 'FIP', 'FPI', 'ERA_minus_FIP', 'SO9', 'BB9']
         
         if selected_player != "All Pitchers":
             st.subheader(f"Isolated Profile: {selected_player}")
             player_data = filtered_df[filtered_df['Name'] == selected_player]
-            st.dataframe(player_data[display_cols])
+            st.dataframe(player_data[display_cols], hide_index=True)
             
-            era_diff = player_data['ERA_minus_FIP'].values[0]
-            if era_diff > 0.5:
-                st.warning(f"📈 **Positive Progression Candidate:** {selected_player}'s ERA is significantly higher than his FIP. The underlying metrics suggest his future performance should improve.")
-            elif era_diff < -0.5:
-                st.error(f"📉 **Overperforming:** {selected_player}'s ERA is much lower than his FIP. His current run prevention outpaces his actual raw metrics. Expect future regression.")
+            # Expanded Predictive Analysis
+            fpi_score = player_data['FPI'].values[0]
+            st.markdown("### Model Projection")
+            if fpi_score >= 8.0:
+                st.success(f"🔥 **Elite Future Projection:** {selected_player} has a massive FPI of {fpi_score}. His historical strikeout dominance points to sustained, elite success.")
+            elif fpi_score >= 5.0:
+                st.info(f"📈 **Strong Future Projection:** {selected_player} has an FPI of {fpi_score}. He possesses highly favorable underlying metrics for future starts.")
+            elif fpi_score >= 2.0:
+                st.warning(f"⚖️ **Average Future Projection:** {selected_player} has an FPI of {fpi_score}. His strikeout-to-walk ratios limit his ceiling.")
             else:
-                st.success(f"⚖️ **Stable:** {selected_player}'s ERA and FIP are closely aligned. Historical performance is currently a true indicator of future output.")
+                st.error(f"📉 **Poor Future Projection:** {selected_player} has an FPI of {fpi_score}. His historical lack of strikeouts and high walk rates point to severe future regression.")
                 
         else:
-            st.subheader("League Overview: Expected Performance Differential")
-            st.markdown("Sorting by **ERA minus FIP**. Pitchers at the top of this list are generating the best underlying metrics despite poor surface-level ERAs, making them prime targets for future breakouts.")
-            sorted_df = filtered_df.sort_values(by='ERA_minus_FIP', ascending=False)
-            st.dataframe(sorted_df[display_cols].head(20))
+            st.subheader("League Overview: Future Performance Index (FPI)")
+            st.markdown("Sorting by the custom **FPI Metric**. Pitchers at the top of this leaderboard are projected to be the most dominant arms moving forward based strictly on their underlying historical traits, regardless of their current surface ERA.")
+            # Sort the main table by our new FPI metric
+            sorted_df = filtered_df.sort_values(by='FPI', ascending=False)
+            st.dataframe(sorted_df[display_cols].head(25), hide_index=True)
         
         # --- PREDICTIVE SCATTER PLOT ---
         st.markdown("---")
@@ -80,9 +98,10 @@ with st.spinner('Compiling matrix and generating models...'):
             x='BB9', 
             y='SO9', 
             hover_name='Name',
-            hover_data=['Tm', 'ERA', 'FIP', 'IP'],
-            color='Tm',
-            labels={'BB9': 'Walks per 9 Innings (BB/9)', 'SO9': 'Strikeouts per 9 Innings (SO/9)'}
+            hover_data=['Tm', 'ERA', 'FIP', 'FPI', 'IP'],
+            color='FPI', # Color the dots based on their new FPI score
+            color_continuous_scale="Viridis",
+            labels={'BB9': 'Walks per 9 Innings (BB/9)', 'SO9': 'Strikeouts per 9 Innings (SO/9)', 'FPI': 'Future Perf. Index'}
         )
         
         fig.update_xaxes(autorange="reversed")
