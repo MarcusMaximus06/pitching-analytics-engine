@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from pybaseball import pitching_stats_bref, batting_stats_bref, pitching_stats_range, statcast_pitcher_expected_stats, statcast_pitcher
+from pybaseball import pitching_stats_bref, pitching_stats_range, statcast_pitcher_expected_stats, statcast_pitcher, standings
 import plotly.express as px
 from datetime import datetime, timedelta
 import traceback
@@ -15,12 +15,28 @@ st.sidebar.markdown("---")
 
 # 100 is Neutral. >100 favors hitters, <100 favors pitchers.
 PARK_FACTORS = {
-    'Arizona': 102, 'Atlanta': 100, 'Baltimore': 98, 'Boston': 107, 'Chicago': 102, 
-    'Cincinnati': 111, 'Cleveland': 101, 'Colorado': 114, 'Detroit': 98, 'Houston': 96,
-    'Kansas City': 101, 'Los Angeles': 97, 'Miami': 95, 'Milwaukee': 101, 'Minnesota': 99,
-    'New York': 99, 'Oakland': 94, 'Philadelphia': 102, 'Pittsburgh': 98, 'San Diego': 94,
-    'San Francisco': 95, 'Seattle': 92, 'St. Louis': 97, 'Tampa Bay': 93, 'Texas': 103,
-    'Toronto': 101, 'Washington': 101
+    'Arizona Diamondbacks': 102, 'Atlanta Braves': 100, 'Baltimore Orioles': 98, 'Boston Red Sox': 107, 
+    'Chicago Cubs': 102, 'Chicago White Sox': 102, 'Cincinnati Reds': 111, 'Cleveland Guardians': 101, 
+    'Colorado Rockies': 114, 'Detroit Tigers': 98, 'Houston Astros': 96, 'Kansas City Royals': 101, 
+    'Los Angeles Angels': 97, 'Los Angeles Dodgers': 97, 'Miami Marlins': 95, 'Milwaukee Brewers': 101, 
+    'Minnesota Twins': 99, 'New York Mets': 99, 'New York Yankees': 99, 'Oakland Athletics': 94, 
+    'Philadelphia Phillies': 102, 'Pittsburgh Pirates': 98, 'San Diego Padres': 94, 'San Francisco Giants': 95, 
+    'Seattle Mariners': 92, 'St. Louis Cardinals': 97, 'Tampa Bay Rays': 93, 'Texas Rangers': 103, 
+    'Toronto Blue Jays': 101, 'Washington Nationals': 101
+}
+
+# Translates the full standings name to the truncated B-Ref pitching name
+TEAM_NAME_MAP = {
+    'Arizona Diamondbacks': 'Arizona', 'Atlanta Braves': 'Atlanta', 'Baltimore Orioles': 'Baltimore',
+    'Boston Red Sox': 'Boston', 'Chicago Cubs': 'Chicago', 'Chicago White Sox': 'Chicago',
+    'Cincinnati Reds': 'Cincinnati', 'Cleveland Guardians': 'Cleveland', 'Colorado Rockies': 'Colorado',
+    'Detroit Tigers': 'Detroit', 'Houston Astros': 'Houston', 'Kansas City Royals': 'Kansas City',
+    'Los Angeles Angels': 'Los Angeles', 'Los Angeles Dodgers': 'Los Angeles', 'Miami Marlins': 'Miami',
+    'Milwaukee Brewers': 'Milwaukee', 'Minnesota Twins': 'Minnesota', 'New York Mets': 'New York',
+    'New York Yankees': 'New York', 'Oakland Athletics': 'Athletics', 'Philadelphia Phillies': 'Philadelphia',
+    'Pittsburgh Pirates': 'Pittsburgh', 'San Diego Padres': 'San Diego', 'San Francisco Giants': 'San Francisco',
+    'Seattle Mariners': 'Seattle', 'St. Louis Cardinals': 'St. Louis', 'Tampa Bay Rays': 'Tampa Bay',
+    'Texas Rangers': 'Texas', 'Toronto Blue Jays': 'Toronto', 'Washington Nationals': 'Washington'
 }
 
 def calc_advanced_metrics(df):
@@ -77,30 +93,30 @@ def load_pitching_data():
 @st.cache_data
 def get_team_data():
     try:
-        bat_df = batting_stats_bref(2026)
-        pitch_df = pitching_stats_bref(2026)
+        tables = standings(2026)
+        stand_df = pd.concat(tables)
         
-        # AGGREGATE RUNS SCORED
-        team_bat = bat_df.groupby('Tm').agg(RS=('R', 'sum')).reset_index()
+        # Safely locate the Runs Scored column
+        rs_col = 'RS' if 'RS' in stand_df.columns else 'R'
         
-        # AGGREGATE RUNS ALLOWED & TRUE GAMES PLAYED
-        # The sum of Games Started (GS) perfectly equals the number of Team Games Played
-        team_pitch = pitch_df.groupby('Tm').agg(
-            RA=('R', 'sum'),
-            Team_G=('GS', 'sum') 
-        ).reset_index()
+        # Safely locate the Games Played column
+        if 'G' in stand_df.columns:
+            stand_df['Team_G'] = stand_df['G']
+        else:
+            stand_df['Team_G'] = stand_df['W'] + stand_df['L']
+            
+        stand_df['Team_G'] = stand_df['Team_G'].replace(0, 1)
+        stand_df['RS_per_G'] = stand_df[rs_col] / stand_df['Team_G']
+        stand_df['RA_per_G'] = stand_df['RA'] / stand_df['Team_G']
         
-        # MERGE AND CALCULATE FLAWLESS BASLINES
-        team_df = pd.merge(team_bat, team_pitch, on='Tm')
-        team_df = team_df[team_df['Tm'] != 'TOT'] # Remove traded player totals
+        # Clean team names to ensure perfect mapping
+        stand_df['Tm'] = stand_df['Tm'].str.replace(r'^x\s*-\s*', '', regex=True)
+        stand_df['Tm'] = stand_df['Tm'].str.replace(r'^y\s*-\s*', '', regex=True)
+        stand_df['Tm'] = stand_df['Tm'].str.strip()
         
-        team_df['Team_G'] = team_df['Team_G'].replace(0, 1) # Prevent division by zero
-        team_df['RS_per_G'] = team_df['RS'] / team_df['Team_G']
-        team_df['RA_per_G'] = team_df['RA'] / team_df['Team_G']
-        
-        return team_df.sort_values('Tm')
+        return stand_df[['Tm', 'RS_per_G', 'RA_per_G']].sort_values('Tm')
     except Exception as e: 
-        st.error(f"Error compiling manual team baselines: {e}")
+        st.error(f"Error fetching true team standings: '{e}'")
         return pd.DataFrame()
 
 # ==========================================
@@ -147,7 +163,7 @@ if page == "⚾ Pitching Analytics Matrix":
                             st.dataframe(plat[['stand', 'Total_Pitches', 'Avg_Velo', 'Whiff_%']], hide_index=True)
             else:
                 st.subheader("League Overview: The Momentum Tracker")
-                st.markdown("This leaderboard filters out standard noise and sorts the league by **Momentum Shift**.")
+                st.markdown("This leaderboard filters out standard noise and sorts the league by **Momentum Shift** (how much better a pitcher's FPI is over their last 14 days compared to their season average).")
                 st.dataframe(filtered_df[display_cols].sort_values('Momentum_Shift', ascending=False).head(25), hide_index=True)
         except Exception as e:
             st.error("Engine failure:")
@@ -172,7 +188,7 @@ elif page == "🎲 Monte Carlo Simulation Engine":
     st.caption("*The dashboard logs overall calculated numbers permanently to calculate actual percentages without listing every individual game.*")
     st.markdown("---")
     
-    with st.spinner('Syncing team and pitcher baselines...'):
+    with st.spinner('Syncing true team and pitcher baselines...'):
         team_df = get_team_data()
         pitcher_df = load_pitching_data()
         
@@ -181,9 +197,12 @@ elif page == "🎲 Monte Carlo Simulation Engine":
             away_t = st.sidebar.selectbox("Away Team:", t_list, index=0)
             home_t = st.sidebar.selectbox("Home Team:", t_list, index=1)
             
-            # THE UPGRADE: Dynamic Roster Dropdowns
-            away_pitchers = sorted(pitcher_df[pitcher_df['Tm'] == away_t]['Name'].unique().tolist())
-            home_pitchers = sorted(pitcher_df[pitcher_df['Tm'] == home_t]['Name'].unique().tolist())
+            # Use the Dictionary to map Full Name to Truncated Pitcher Data Name
+            away_p_target = TEAM_NAME_MAP.get(away_t, away_t)
+            home_p_target = TEAM_NAME_MAP.get(home_t, home_t)
+            
+            away_pitchers = sorted(pitcher_df[pitcher_df['Tm'] == away_p_target]['Name'].unique().tolist())
+            home_pitchers = sorted(pitcher_df[pitcher_df['Tm'] == home_p_target]['Name'].unique().tolist())
             
             away_sp = st.sidebar.selectbox(f"{away_t} SP:", ["League Average SP"] + away_pitchers)
             home_sp = st.sidebar.selectbox(f"{home_t} SP:", ["League Average SP"] + home_pitchers)
@@ -226,7 +245,6 @@ elif page == "🎲 Monte Carlo Simulation Engine":
                 v_h_prob = 100/(vegas_home+100) if vegas_home > 0 else abs(vegas_home)/(abs(vegas_home)+100)
                 
                 with c1:
-                    # THE FIX: Used proper model formatting variables
                     st.metric(f"{away_t} Win Prob", f"{model_away_prob:.1%}")
                     if model_away_prob > v_a_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
                 with c2:
