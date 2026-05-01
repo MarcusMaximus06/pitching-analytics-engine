@@ -77,29 +77,26 @@ def load_pitching_data():
 @st.cache_data
 def get_team_data():
     try:
-        # BULLETPROOF FIX: Pull every batter and pitcher individually and aggregate the team totals manually.
         bat_df = batting_stats_bref(2026)
         pitch_df = pitching_stats_bref(2026)
         
-        # Aggregate Runs Scored
-        team_bat = bat_df.groupby('Tm').agg(
-            RS=('R', 'sum'),
-            Max_G=('G', 'max') # The player with the most games serves as the team's games played
-        ).reset_index()
-        team_bat['Max_G'] = team_bat['Max_G'].replace(0, 1) # Prevent division errors
-        team_bat['RS_per_G'] = team_bat['RS'] / team_bat['Max_G']
+        # AGGREGATE RUNS SCORED
+        team_bat = bat_df.groupby('Tm').agg(RS=('R', 'sum')).reset_index()
         
-        # Aggregate Runs Allowed
+        # AGGREGATE RUNS ALLOWED & TRUE GAMES PLAYED
+        # The sum of Games Started (GS) perfectly equals the number of Team Games Played
         team_pitch = pitch_df.groupby('Tm').agg(
             RA=('R', 'sum'),
-            Max_G=('G', 'max')
+            Team_G=('GS', 'sum') 
         ).reset_index()
-        team_pitch['Max_G'] = team_pitch['Max_G'].replace(0, 1)
-        team_pitch['RA_per_G'] = team_pitch['RA'] / team_pitch['Max_G']
         
-        # Merge and clean
-        team_df = pd.merge(team_bat[['Tm', 'RS_per_G']], team_pitch[['Tm', 'RA_per_G']], on='Tm')
-        team_df = team_df[team_df['Tm'] != 'TOT'] # Remove totals for traded players
+        # MERGE AND CALCULATE FLAWLESS BASLINES
+        team_df = pd.merge(team_bat, team_pitch, on='Tm')
+        team_df = team_df[team_df['Tm'] != 'TOT'] # Remove traded player totals
+        
+        team_df['Team_G'] = team_df['Team_G'].replace(0, 1) # Prevent division by zero
+        team_df['RS_per_G'] = team_df['RS'] / team_df['Team_G']
+        team_df['RA_per_G'] = team_df['RA'] / team_df['Team_G']
         
         return team_df.sort_values('Tm')
     except Exception as e: 
@@ -150,7 +147,7 @@ if page == "⚾ Pitching Analytics Matrix":
                             st.dataframe(plat[['stand', 'Total_Pitches', 'Avg_Velo', 'Whiff_%']], hide_index=True)
             else:
                 st.subheader("League Overview: The Momentum Tracker")
-                st.markdown("This leaderboard filters out standard noise and sorts the league by **Momentum Shift** (how much better a pitcher's FPI is over their last 14 days compared to their season average).")
+                st.markdown("This leaderboard filters out standard noise and sorts the league by **Momentum Shift**.")
                 st.dataframe(filtered_df[display_cols].sort_values('Momentum_Shift', ascending=False).head(25), hide_index=True)
         except Exception as e:
             st.error("Engine failure:")
@@ -184,16 +181,17 @@ elif page == "🎲 Monte Carlo Simulation Engine":
             away_t = st.sidebar.selectbox("Away Team:", t_list, index=0)
             home_t = st.sidebar.selectbox("Home Team:", t_list, index=1)
             
-            p_list = ["League Average SP"] + sorted(pitcher_df['Name'].unique().tolist())
-            away_sp = st.sidebar.selectbox(f"{away_t} SP:", p_list)
-            home_sp = st.sidebar.selectbox(f"{home_t} SP:", p_list)
+            # THE UPGRADE: Dynamic Roster Dropdowns
+            away_pitchers = sorted(pitcher_df[pitcher_df['Tm'] == away_t]['Name'].unique().tolist())
+            home_pitchers = sorted(pitcher_df[pitcher_df['Tm'] == home_t]['Name'].unique().tolist())
             
-            # PARK FACTOR SELECTOR
+            away_sp = st.sidebar.selectbox(f"{away_t} SP:", ["League Average SP"] + away_pitchers)
+            home_sp = st.sidebar.selectbox(f"{home_t} SP:", ["League Average SP"] + home_pitchers)
+            
             st.sidebar.markdown("---")
             location = st.sidebar.selectbox("Game Location (Park Factor):", list(PARK_FACTORS.keys()), index=list(PARK_FACTORS.keys()).index(home_t) if home_t in PARK_FACTORS else 0)
             p_factor = PARK_FACTORS.get(location, 100) / 100
             
-            # DOUBLE HEADER TRACKING 
             st.sidebar.markdown("---")
             st.sidebar.text_input("Log ID (Pitcher ID tracking for Double-Headers):", placeholder="e.g. 0501-Cole-G1")
             st.sidebar.markdown("---")
@@ -206,12 +204,9 @@ elif page == "🎲 Monte Carlo Simulation Engine":
             a_stats = team_df[team_df['Tm'] == away_t].iloc[0]
             h_stats = team_df[team_df['Tm'] == home_t].iloc[0]
             
-            # GET SP METRICS
             a_sp_fip = pitcher_df[pitcher_df['Name'] == away_sp]['FIP'].values[0] if away_sp != "League Average SP" else a_stats['RA_per_G']
             h_sp_fip = pitcher_df[pitcher_df['Name'] == home_sp]['FIP'].values[0] if home_sp != "League Average SP" else h_stats['RA_per_G']
             
-            # ADVANCED MATH: 60% Starter FIP / 40% Team Bullpen/Def Baseline
-            # Then multiply by stadium park factor
             away_lam = ((a_stats['RS_per_G'] * 0.4) + (h_sp_fip * 0.6)) * p_factor
             home_lam = ((h_stats['RS_per_G'] * 0.4) + (a_sp_fip * 0.6)) * p_factor
             
@@ -221,6 +216,9 @@ elif page == "🎲 Monte Carlo Simulation Engine":
                 a_wins = np.sum(sim_a > sim_h) + (np.sum(sim_a == sim_h) / 2)
                 h_wins = 10000 - a_wins
                 
+                model_away_prob = a_wins / 10000
+                model_home_prob = h_wins / 10000
+                
                 st.write(f"Park Adjusted Expected Runs: {away_t} **{away_lam:.2f}** | {home_t} **{home_lam:.2f}**")
                 
                 c1, c2 = st.columns(2)
@@ -228,10 +226,11 @@ elif page == "🎲 Monte Carlo Simulation Engine":
                 v_h_prob = 100/(vegas_home+100) if vegas_home > 0 else abs(vegas_home)/(abs(vegas_home)+100)
                 
                 with c1:
-                    st.metric(f"{away_t} Win Prob", f"{(a_wins/100):.1%}")
-                    if (a_wins/10000) > v_a_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
+                    # THE FIX: Used proper model formatting variables
+                    st.metric(f"{away_t} Win Prob", f"{model_away_prob:.1%}")
+                    if model_away_prob > v_a_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
                 with c2:
-                    st.metric(f"{home_t} Win Prob", f"{(h_wins/100):.1%}")
-                    if (h_wins/10000) > v_h_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
+                    st.metric(f"{home_t} Win Prob", f"{model_home_prob:.1%}")
+                    if model_home_prob > v_h_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
         else:
             st.warning("Data pipeline is empty or still loading. Check your connection to Baseball-Reference.")
