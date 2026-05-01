@@ -141,14 +141,17 @@ if page == "⚾ Pitching Analytics Matrix":
                                 st.plotly_chart(fig_pie, use_container_width=True)
                                 
                             with col2:
-                                # PLATOON SPLITS MATH
+                                # 1. VELOCITY & SPIN TABLE (Restored)
+                                st.markdown("##### Average Velocity & Spin Profiles")
+                                velo_df = pitch_data.groupby('pitch_name')[['release_speed', 'release_spin_rate']].mean().round(1).reset_index()
+                                velo_df.columns = ['Pitch Type', 'Avg Velo (MPH)', 'Avg Spin (RPM)']
+                                st.dataframe(velo_df, hide_index=True)
+
+                                # 2. PLATOON SPLITS MATH
                                 st.markdown("##### Performance by Batter Handedness")
-                                
-                                # Identify Whiffs (Swinging Strikes)
                                 whiff_events = ['swinging_strike', 'swinging_strike_blocked']
                                 pitch_data['is_whiff'] = pitch_data['description'].isin(whiff_events)
                                 
-                                # Group by Stand (LHB vs RHB)
                                 platoon_df = pitch_data.groupby('stand').agg(
                                     Total_Pitches=('pitch_name', 'count'),
                                     Avg_Velo=('release_speed', 'mean'),
@@ -185,7 +188,6 @@ elif page == "🎲 Monte Carlo Simulation Engine":
     st.markdown("### 📊 Master Prediction Log")
     col1, col2, col3 = st.columns(3)
     with col1:
-        # Initialize session state for tracking overall numbers
         if 'total_games' not in st.session_state: st.session_state.total_games = 0
         st.metric(label="Total Games Logged", value=st.session_state.total_games)
     with col2:
@@ -220,7 +222,6 @@ elif page == "🎲 Monte Carlo Simulation Engine":
                 home_team = st.sidebar.selectbox("Home Team:", team_list, index=1)
                 
                 st.sidebar.markdown("---")
-                # Pitcher-based identification to avoid duplicate entries during double-headers
                 st.sidebar.text_input("Starting Pitcher ID (Required for logging double-headers):", placeholder="e.g. Cole, G")
                 st.sidebar.markdown("---")
                 
