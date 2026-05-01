@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from pybaseball import pitching_stats_bref, pitching_stats_range, statcast_pitcher_expected_stats, statcast_pitcher, standings
+from pybaseball import pitching_stats_bref, pitching_stats_range, statcast_pitcher_expected_stats, statcast_pitcher, standings, team_pitching
 import plotly.express as px
 from datetime import datetime, timedelta
 import traceback
@@ -77,12 +77,24 @@ def load_pitching_data():
 @st.cache_data
 def get_team_data():
     try:
-        stand_df = pd.concat(standings(2026))
-        stand_df['RS_per_G'] = stand_df['R'] / stand_df['G']
-        stand_df['RA_per_G'] = stand_df['RA'] / stand_df['G']
+        tables = standings(2026)
+        stand_df = pd.concat(tables)
+        
+        # BULLETPROOF DATA PARSING
+        runs_scored = 'RS' if 'RS' in stand_df.columns else 'R'
+        runs_allowed = 'RA'
+        games = 'G'
+        
+        # Calculate games played manually if the database drops the column
+        if games not in stand_df.columns:
+            stand_df[games] = stand_df['W'] + stand_df['L']
+            
+        stand_df['RS_per_G'] = stand_df[runs_scored] / stand_df[games]
+        stand_df['RA_per_G'] = stand_df[runs_allowed] / stand_df[games]
+        
         return stand_df[['Tm', 'RS_per_G', 'RA_per_G']].sort_values('Tm')
     except Exception as e: 
-        st.error(f"Error fetching team standings: {e}")
+        st.error(f"Error fetching team standings: '{e}'")
         return pd.DataFrame()
 
 # ==========================================
@@ -98,7 +110,6 @@ if page == "⚾ Pitching Analytics Matrix":
             filtered_df = raw_df[raw_df['IP'] >= min_ip]
             selected_player = st.sidebar.selectbox("Target Profile Search:", ["All Pitchers"] + sorted(raw_df['Name'].unique().tolist()))
             
-            # THE FIX: Restoring the exact columns we want to see
             display_cols = ['Name', 'Tm', 'IP', 'FPI', 'Momentum_Shift', 'ERA', 'xERA', 'xwOBA', 'SO9', 'BB9']
             
             if selected_player != "All Pitchers":
