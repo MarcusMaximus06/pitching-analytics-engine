@@ -45,14 +45,36 @@ def load_data():
         merged_df['Recent_FPI'] = None
         merged_df['Momentum_Shift'] = None
 
-    # Statcast Expected Stats with Error Catching
+    # Robust Statcast Expected Stats Processing
     try:
         savant_df = statcast_pitcher_expected_stats(2026, 10)
-        savant_df['Name'] = savant_df['first_name'].astype(str).str.strip() + ' ' + savant_df['last_name'].astype(str).str.strip()
+        
+        # Helper function to flip "Last, First" to "First Last"
+        def format_savant_name(name_string):
+            if pd.isna(name_string): return name_string
+            parts = str(name_string).split(', ')
+            if len(parts) == 2:
+                return f"{parts[1].strip()} {parts[0].strip()}"
+            return str(name_string).strip()
+
+        # Check for all possible Savant column naming conventions
+        if 'first_name' in savant_df.columns and 'last_name' in savant_df.columns:
+            savant_df['Name'] = savant_df['first_name'].astype(str).str.strip() + ' ' + savant_df['last_name'].astype(str).str.strip()
+        elif 'player' in savant_df.columns:
+            savant_df['Name'] = savant_df['player'].apply(format_savant_name)
+        elif 'player_name' in savant_df.columns:
+            savant_df['Name'] = savant_df['player_name'].apply(format_savant_name)
+        else:
+            raise KeyError("Could not locate a recognizable player name column in the Savant database.")
+
         savant_df = savant_df[['Name', 'est_woba', 'xera']].rename(columns={'est_woba': 'xwOBA', 'xera': 'xERA'})
         merged_df = pd.merge(merged_df, savant_df, on='Name', how='left')
+        
+        # Clear any previous errors if successful
+        if 'savant_error' in st.session_state:
+            del st.session_state['savant_error']
+            
     except Exception as e:
-        # Instead of failing silently, we save the error to show in the UI
         st.session_state['savant_error'] = str(e)
         merged_df['xwOBA'] = None
         merged_df['xERA'] = None
@@ -67,7 +89,6 @@ with st.spinner('Compiling matrix, pulling Statcast tracking, and generating mod
         max_ip = int(raw_df['IP'].max()) if not raw_df.empty else 100
         min_ip = st.sidebar.slider("Minimum Innings Pitched (Season):", min_value=1, max_value=max_ip, value=15)
         
-        # Display Savant Error if it failed
         if 'savant_error' in st.session_state:
             st.sidebar.warning(f"Savant Expected Stats Error: {st.session_state['savant_error']}")
             
@@ -85,13 +106,12 @@ with st.spinner('Compiling matrix, pulling Statcast tracking, and generating mod
             player_data = filtered_df[filtered_df['Name'] == selected_player]
             st.dataframe(player_data[display_cols], hide_index=True)
             
-            # --- FEATURE 3: ARSENAL BREAKDOWN & STATCAST TARGETING ---
+            # --- ARSENAL BREAKDOWN & STATCAST TARGETING ---
             st.markdown("---")
             st.subheader("Arsenal Breakdown (Statcast Optical Tracking)")
             
             with st.spinner('Accessing MLBAM Database for Pitch Tracking...'):
                 try:
-                    # Convert name format for ID Lookup
                     name_parts = selected_player.split(' ')
                     first_name = name_parts[0].lower()
                     last_name = ' '.join(name_parts[1:]).lower()
@@ -99,10 +119,8 @@ with st.spinner('Compiling matrix, pulling Statcast tracking, and generating mod
                     id_df = playerid_lookup(last_name, first_name)
                     
                     if not id_df.empty:
-                        # Grab the first match's MLB ID
                         mlbam_id = id_df['key_mlbam'].values[0]
                         
-                        # Pull Pitch-by-Pitch data for 2026
                         start_date = '2026-03-20' 
                         end_date = datetime.now().strftime('%Y-%m-%d')
                         pitch_data = statcast_pitcher(start_date, end_date, mlbam_id)
@@ -111,7 +129,6 @@ with st.spinner('Compiling matrix, pulling Statcast tracking, and generating mod
                             col1, col2 = st.columns(2)
                             
                             with col1:
-                                # Create Arsenal Donut Chart
                                 pitch_counts = pitch_data['pitch_name'].value_counts().reset_index()
                                 pitch_counts.columns = ['Pitch Type', 'Count']
                                 fig_pie = px.pie(pitch_counts, values='Count', names='Pitch Type', 
@@ -120,7 +137,6 @@ with st.spinner('Compiling matrix, pulling Statcast tracking, and generating mod
                                 st.plotly_chart(fig_pie, use_container_width=True)
                                 
                             with col2:
-                                # Create Velocity & Spin Table
                                 st.markdown("##### Average Velocity & Spin Profiles")
                                 velo_df = pitch_data.groupby('pitch_name')[['release_speed', 'release_spin_rate']].mean().round(1).reset_index()
                                 velo_df.columns = ['Pitch Type', 'Avg Velo (MPH)', 'Avg Spin (RPM)']
