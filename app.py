@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from pybaseball import pitching_stats_bref, pitching_stats_range
+from pybaseball import pitching_stats_bref, pitching_stats_range, statcast_pitcher_expected_stats
 import plotly.express as px
 from datetime import datetime, timedelta
 import traceback
@@ -13,7 +13,6 @@ st.markdown("""
 Welcome to the engine. This dashboard filters raw data through custom parameters, focusing heavily on **historical performance and future predictions**.
 """)
 
-# Centralized math function so we can run it on both Season and Recent data
 def calc_advanced_metrics(df):
     if 'BB9' not in df.columns:
         df['BB9'] = (df['BB'] / df['IP']) * 9
@@ -29,38 +28,45 @@ def calc_advanced_metrics(df):
 
 @st.cache_data
 def load_data():
-    # 1. Pull Season Data
+    # 1. Season Data (Baseball-Reference)
     season_df = pitching_stats_bref(2026)
     season_df = calc_advanced_metrics(season_df)
-    season_df['ERA_minus_FIP'] = (season_df['ERA'] - season_df['FIP']).round(2)
     
-    # 2. Pull Momentum Data (Last 14 Days)
+    # 2. Momentum Data (Last 14 Days)
     today = datetime.now()
     two_weeks_ago = today - timedelta(days=14)
-    
-    # Scrape the specific 14-day split
     recent_df = pitching_stats_range(two_weeks_ago.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'))
     
     if not recent_df.empty:
         recent_df = calc_advanced_metrics(recent_df)
-        # Isolate just the columns we need to merge
-        recent_df = recent_df[['Name', 'FPI', 'IP']].rename(columns={'FPI': 'Recent_FPI', 'IP': 'Recent_IP'})
-        
-        # Merge the Season data with the 14-Day data
+        recent_df = recent_df[['Name', 'FPI']].rename(columns={'FPI': 'Recent_FPI'})
         merged_df = pd.merge(season_df, recent_df, on='Name', how='left')
-        
-        # Calculate Momentum (Positive number = Pitcher is getting hotter than their season average)
         merged_df['Momentum_Shift'] = (merged_df['Recent_FPI'] - merged_df['FPI']).round(2)
     else:
-        # Fallback if the 14-day database is temporarily unavailable
-        season_df['Recent_FPI'] = None
-        season_df['Recent_IP'] = None
-        season_df['Momentum_Shift'] = None
         merged_df = season_df
+        merged_df['Recent_FPI'] = None
+        merged_df['Momentum_Shift'] = None
+
+    # 3. STATCAST DATA (Baseball Savant Expected Stats)
+    try:
+        # Pulls aggregated optical tracking data (takes very little memory)
+        savant_df = statcast_pitcher_expected_stats(2026, 10) # minimum 10 batted ball events
+        # Format the Savant names to match B-Ref names
+        savant_df['Name'] = savant_df['first_name'].astype(str).str.strip() + ' ' + savant_df['last_name'].astype(str).str.strip()
+        
+        # Grab Expected wOBA and Expected ERA
+        savant_df = savant_df[['Name', 'est_woba', 'xera']].rename(columns={'est_woba': 'xwOBA', 'xera': 'xERA'})
+        
+        # Merge the Statcast data into our main engine
+        merged_df = pd.merge(merged_df, savant_df, on='Name', how='left')
+    except Exception as e:
+        # Fallback if Savant is updating
+        merged_df['xwOBA'] = None
+        merged_df['xERA'] = None
 
     return merged_df
 
-with st.spinner('Compiling matrix and generating momentum models...'):
+with st.spinner('Compiling matrix, pulling Statcast tracking, and generating models...'):
     try:
         raw_df = load_data()
         
@@ -75,41 +81,50 @@ with st.spinner('Compiling matrix and generating momentum models...'):
         player_list = sorted(filtered_df['Name'].unique().tolist())
         selected_player = st.sidebar.selectbox("Search for a Pitcher:", ["All Pitchers"] + player_list)
         
-        # Added the Momentum columns to the display
-        display_cols = ['Name', 'Tm', 'IP', 'FPI', 'Recent_FPI', 'Momentum_Shift', 'ERA', 'SO9', 'BB9']
+        # Added xERA and xwOBA to the dashboard columns
+        display_cols = ['Name', 'Tm', 'IP', 'FPI', 'Momentum_Shift', 'ERA', 'xERA', 'xwOBA', 'SO9', 'BB9']
         
         if selected_player != "All Pitchers":
             st.subheader(f"Isolated Profile: {selected_player}")
             player_data = filtered_df[filtered_df['Name'] == selected_player]
             st.dataframe(player_data[display_cols], hide_index=True)
             
-            fpi_score = player_data['FPI'].values[0]
             momentum = player_data['Momentum_Shift'].values[0]
+            actual_era = player_data['ERA'].values[0]
+            expected_era = player_data['xERA'].values[0]
             
             st.markdown("### Model Projection")
+            
+            # Momentum Analysis
             if momentum > 2.0:
                 st.success(f"📈 **Surging:** {selected_player} has a massive Momentum Shift of +{momentum}. He is currently pitching significantly better than his season averages indicate.")
             elif momentum < -2.0:
                 st.error(f"📉 **Collapsing:** {selected_player}'s recent FPI is much lower than his season average. He is in a severe slump or experiencing underlying mechanical issues.")
-            else:
-                st.info(f"⚖️ **Consistent Form:** {selected_player} is maintaining his baseline dominance. His recent metrics align with his season-long performance.")
                 
+            # Statcast Luck Analysis
+            if pd.notna(expected_era) and pd.notna(actual_era):
+                era_diff = actual_era - expected_era
+                if era_diff > 0.75:
+                    st.warning(f"🛸 **Statcast Insight - Horrible Luck:** {selected_player}'s actual ERA ({actual_era}) is much worse than his Statcast Expected ERA ({expected_era}). Based on the exit velocity of hits against him, his defense has let him down. Expect massive positive regression.")
+                elif era_diff < -0.75:
+                    st.error(f"🛸 **Statcast Insight - Smoke & Mirrors:** {selected_player}'s actual ERA ({actual_era}) is much better than his Statcast Expected ERA ({expected_era}). Hitters are crushing the ball, but they happen to be flying right into fielders' gloves. Expect hard negative regression.")
+
         else:
-            st.subheader("League Overview: The Momentum Tracker")
-            st.markdown("Sorting by **Momentum Shift**. Pitchers at the top of this leaderboard are on massive recent hot streaks, generating higher dominance scores over the last 14 days compared to their season baselines.")
+            st.subheader("League Overview: Statcast & Momentum Tracker")
+            st.markdown("Sorting by **Momentum Shift**. You can now compare a pitcher's actual ERA against their Statcast **xERA** (Expected ERA) to identify hidden gems.")
             sorted_df = filtered_df.sort_values(by='Momentum_Shift', ascending=False)
             st.dataframe(sorted_df[display_cols].head(25), hide_index=True)
         
         st.markdown("---")
         st.subheader("Predictive Matrix: Strikeout Rate vs. Walk Rate")
-        st.markdown("Elite command profiles live in the **top-right quadrant** (High Strikeouts, Low Walks).")
+        st.markdown("Elite command profiles live in the **top-right quadrant**.")
         
         fig = px.scatter(
             filtered_df, 
             x='BB9', 
             y='SO9', 
             hover_name='Name',
-            hover_data=['Tm', 'FPI', 'Recent_FPI', 'Momentum_Shift'],
+            hover_data=['Tm', 'FPI', 'Momentum_Shift', 'ERA', 'xERA'],
             color='FPI', 
             color_continuous_scale="Viridis",
             labels={'BB9': 'Walks per 9 Innings (BB/9)', 'SO9': 'Strikeouts per 9 Innings (SO/9)', 'FPI': 'Season FPI'}
