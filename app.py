@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from pybaseball import pitching_stats_bref, pitching_stats_range, statcast_pitcher_expected_stats, playerid_lookup, statcast_pitcher
+from pybaseball import pitching_stats_bref, pitching_stats_range, statcast_pitcher_expected_stats, statcast_pitcher
 import plotly.express as px
 from datetime import datetime, timedelta
 import traceback
@@ -45,11 +45,9 @@ def load_data():
         merged_df['Recent_FPI'] = None
         merged_df['Momentum_Shift'] = None
 
-    # Robust Statcast Expected Stats Processing
     try:
         savant_df = statcast_pitcher_expected_stats(2026, 10)
         
-        # Helper function to flip "Last, First" to "First Last"
         def format_savant_name(name_string):
             if pd.isna(name_string): return name_string
             parts = str(name_string).split(', ')
@@ -57,7 +55,6 @@ def load_data():
                 return f"{parts[1].strip()} {parts[0].strip()}"
             return str(name_string).strip()
 
-        # Check for all possible Savant column naming conventions
         if 'first_name' in savant_df.columns and 'last_name' in savant_df.columns:
             savant_df['Name'] = savant_df['first_name'].astype(str).str.strip() + ' ' + savant_df['last_name'].astype(str).str.strip()
         elif 'last_name, first_name' in savant_df.columns:
@@ -67,26 +64,26 @@ def load_data():
         elif 'player_name' in savant_df.columns:
             savant_df['Name'] = savant_df['player_name'].apply(format_savant_name)
         else:
-            # DUMP THE COLUMNS into the error so we can see exactly what Savant is doing
             cols = ", ".join(savant_df.columns.tolist())
             raise KeyError(f"Could not locate name column. Available columns: {cols}")
 
-        # Safely extract and rename the stats columns if they exist
+        # WE GRAB THE PLAYER_ID HERE TO BYPASS THE OOM CRASH
         target_cols = ['Name']
         if 'est_woba' in savant_df.columns: target_cols.append('est_woba')
         if 'xera' in savant_df.columns: target_cols.append('xera')
+        if 'player_id' in savant_df.columns: target_cols.append('player_id')
         
         savant_df = savant_df[target_cols]
         if 'est_woba' in savant_df.columns: savant_df = savant_df.rename(columns={'est_woba': 'xwOBA'})
         if 'xera' in savant_df.columns: savant_df = savant_df.rename(columns={'xera': 'xERA'})
+        if 'player_id' in savant_df.columns: savant_df = savant_df.rename(columns={'player_id': 'mlbam_id'})
         
         merged_df = pd.merge(merged_df, savant_df, on='Name', how='left')
         
-        # Ensure columns exist in merged_df even if Savant failed to provide them
         if 'xwOBA' not in merged_df.columns: merged_df['xwOBA'] = None
         if 'xERA' not in merged_df.columns: merged_df['xERA'] = None
+        if 'mlbam_id' not in merged_df.columns: merged_df['mlbam_id'] = None
         
-        # Clear any previous errors if successful
         if 'savant_error' in st.session_state:
             del st.session_state['savant_error']
             
@@ -94,6 +91,7 @@ def load_data():
         st.session_state['savant_error'] = str(e)
         merged_df['xwOBA'] = None
         merged_df['xERA'] = None
+        merged_df['mlbam_id'] = None
 
     return merged_df
 
@@ -122,24 +120,19 @@ with st.spinner('Compiling matrix, pulling Statcast tracking, and generating mod
             player_data = filtered_df[filtered_df['Name'] == selected_player]
             st.dataframe(player_data[display_cols], hide_index=True)
             
-            # --- ARSENAL BREAKDOWN & STATCAST TARGETING ---
+            # --- FEATURE 3: ARSENAL BREAKDOWN & STATCAST TARGETING ---
             st.markdown("---")
             st.subheader("Arsenal Breakdown (Statcast Optical Tracking)")
             
             with st.spinner('Accessing MLBAM Database for Pitch Tracking...'):
                 try:
-                    name_parts = selected_player.split(' ')
-                    first_name = name_parts[0].lower()
-                    last_name = ' '.join(name_parts[1:]).lower()
+                    # Retrieve the ID we safely grabbed during the initial load
+                    mlbam_id = player_data['mlbam_id'].values[0] if 'mlbam_id' in player_data.columns else None
                     
-                    id_df = playerid_lookup(last_name, first_name)
-                    
-                    if not id_df.empty:
-                        mlbam_id = id_df['key_mlbam'].values[0]
-                        
+                    if pd.notna(mlbam_id):
                         start_date = '2026-03-20' 
                         end_date = datetime.now().strftime('%Y-%m-%d')
-                        pitch_data = statcast_pitcher(start_date, end_date, mlbam_id)
+                        pitch_data = statcast_pitcher(start_date, end_date, int(mlbam_id))
                         
                         if not pitch_data.empty:
                             col1, col2 = st.columns(2)
