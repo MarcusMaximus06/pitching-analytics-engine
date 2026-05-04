@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from pybaseball import pitching_stats_bref, batting_stats_bref, pitching_stats_range, statcast_pitcher_expected_stats, statcast_pitcher
+from pybaseball import pitching_stats_bref, batting_stats_bref, pitching_stats_range, batting_stats_range, statcast_pitcher_expected_stats, statcast_pitcher
 import plotly.express as px
 from datetime import datetime, timedelta
 import traceback
@@ -13,7 +13,6 @@ st.sidebar.title("Navigation")
 page = st.sidebar.radio("Select Engine:", ["⚾ Pitching Analytics Matrix", "🎲 Monte Carlo Simulation Engine"])
 st.sidebar.markdown("---")
 
-# 100 is Neutral. >100 favors hitters, <100 favors pitchers.
 PARK_FACTORS = {
     'Arizona Diamondbacks': 102, 'Atlanta Braves': 100, 'Baltimore Orioles': 98, 'Boston Red Sox': 107, 
     'Chicago Cubs': 102, 'Chicago White Sox': 102, 'Cincinnati Reds': 111, 'Cleveland Guardians': 101, 
@@ -25,7 +24,6 @@ PARK_FACTORS = {
     'Toronto Blue Jays': 101, 'Washington Nationals': 101
 }
 
-# Translates the full UI name to the truncated B-Ref database name
 TEAM_NAME_MAP = {
     'Arizona Diamondbacks': 'Arizona', 'Atlanta Braves': 'Atlanta', 'Baltimore Orioles': 'Baltimore',
     'Boston Red Sox': 'Boston', 'Chicago Cubs': 'Chicago', 'Chicago White Sox': 'Chicago',
@@ -37,6 +35,18 @@ TEAM_NAME_MAP = {
     'Pittsburgh Pirates': 'Pittsburgh', 'San Diego Padres': 'San Diego', 'San Francisco Giants': 'San Francisco',
     'Seattle Mariners': 'Seattle', 'St. Louis Cardinals': 'St. Louis', 'Tampa Bay Rays': 'Tampa Bay',
     'Texas Rangers': 'Texas', 'Toronto Blue Jays': 'Toronto', 'Washington Nationals': 'Washington'
+}
+
+# The 3-letter abbreviation map is required to join the 14-day momentum data correctly
+FULL_TO_ABBR = {
+    'Arizona Diamondbacks': 'ARI', 'Atlanta Braves': 'ATL', 'Baltimore Orioles': 'BAL', 'Boston Red Sox': 'BOS', 
+    'Chicago Cubs': 'CHC', 'Chicago White Sox': 'CHW', 'Cincinnati Reds': 'CIN', 'Cleveland Guardians': 'CLE', 
+    'Colorado Rockies': 'COL', 'Detroit Tigers': 'DET', 'Houston Astros': 'HOU', 'Kansas City Royals': 'KCR', 
+    'Los Angeles Angels': 'LAA', 'Los Angeles Dodgers': 'LAD', 'Miami Marlins': 'MIA', 'Milwaukee Brewers': 'MIL', 
+    'Minnesota Twins': 'MIN', 'New York Mets': 'NYM', 'New York Yankees': 'NYY', 'Oakland Athletics': 'OAK', 
+    'Philadelphia Phillies': 'PHI', 'Pittsburgh Pirates': 'PIT', 'San Diego Padres': 'SDP', 'San Francisco Giants': 'SFG', 
+    'Seattle Mariners': 'SEA', 'St. Louis Cardinals': 'STL', 'Tampa Bay Rays': 'TBR', 'Texas Rangers': 'TEX', 
+    'Toronto Blue Jays': 'TOR', 'Washington Nationals': 'WSN'
 }
 
 def calc_advanced_metrics(df):
@@ -93,7 +103,7 @@ def load_pitching_data():
 @st.cache_data
 def get_team_data():
     try:
-        # BULLETPROOF FIX: Manually aggregate all players to build true team baselines
+        # Full Season Aggregation
         bat_df = batting_stats_bref(2026)
         pitch_df = pitching_stats_bref(2026)
         
@@ -105,15 +115,23 @@ def get_team_data():
         
         team_df = pd.merge(team_bat, team_pitch, on='Tm')
         team_df = team_df[team_df['Tm'] != 'TOT']
-        
         team_df['Team_G'] = team_df['Team_G'].replace(0, 1)
         team_df['RS_per_G'] = team_df['RS'] / team_df['Team_G']
         team_df['RA_per_G'] = team_df['RA'] / team_df['Team_G']
         
-        return team_df.sort_values('Tm')
+        # 14-Day Offensive Momentum Aggregation
+        today = datetime.now()
+        two_weeks_ago = today - timedelta(days=14)
+        
+        recent_bat = batting_stats_range(two_weeks_ago.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'))
+        recent_bat_agg = recent_bat.groupby('Tm').agg(Recent_RS=('R', 'sum'), Recent_G=('G', 'max')).reset_index()
+        recent_bat_agg['Recent_G'] = recent_bat_agg['Recent_G'].replace(0, 1)
+        recent_bat_agg['Recent_RS_per_G'] = recent_bat_agg['Recent_RS'] / recent_bat_agg['Recent_G']
+        
+        return team_df.sort_values('Tm'), recent_bat_agg
     except Exception as e: 
         st.error(f"Error compiling manual team baselines: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame()
 
 # ==========================================
 # PAGE 1: PITCHING ANALYTICS MATRIX
@@ -184,8 +202,8 @@ elif page == "🎲 Monte Carlo Simulation Engine":
     st.caption("*The dashboard logs overall calculated numbers permanently to calculate actual percentages without listing every individual game.*")
     st.markdown("---")
     
-    with st.spinner('Syncing true team and pitcher baselines...'):
-        team_df = get_team_data()
+    with st.spinner('Syncing true team baselines & 14-Day offensive momentum...'):
+        team_df, recent_bat_agg = get_team_data()
         pitcher_df = load_pitching_data()
         
         if not team_df.empty and not pitcher_df.empty:
@@ -193,10 +211,8 @@ elif page == "🎲 Monte Carlo Simulation Engine":
             away_t = st.sidebar.selectbox("Away Team:", MLB_TEAMS, index=0)
             home_t = st.sidebar.selectbox("Home Team:", MLB_TEAMS, index=1)
             
-            # Map Full Name to Truncated Pitcher Data Name
             away_p_target = TEAM_NAME_MAP.get(away_t, away_t)
             home_p_target = TEAM_NAME_MAP.get(home_t, home_t)
-            
             away_pitchers = sorted(pitcher_df[pitcher_df['Tm'] == away_p_target]['Name'].unique().tolist())
             home_pitchers = sorted(pitcher_df[pitcher_df['Tm'] == home_p_target]['Name'].unique().tolist())
             
@@ -220,11 +236,30 @@ elif page == "🎲 Monte Carlo Simulation Engine":
                 a_stats = team_df[team_df['Tm'] == away_p_target].iloc[0]
                 h_stats = team_df[team_df['Tm'] == home_p_target].iloc[0]
                 
+                # Fetch 14-Day Momentum 
+                a_abbr = FULL_TO_ABBR.get(away_t, '')
+                h_abbr = FULL_TO_ABBR.get(home_t, '')
+                
+                a_recent_offense = a_stats['RS_per_G'] # Default to season if error
+                if not recent_bat_agg.empty and a_abbr in recent_bat_agg['Tm'].values:
+                    a_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == a_abbr]['Recent_RS_per_G'].values[0]
+                    
+                h_recent_offense = h_stats['RS_per_G'] # Default to season if error
+                if not recent_bat_agg.empty and h_abbr in recent_bat_agg['Tm'].values:
+                    h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
+
+                # BLEND: 70% Season Baseline, 30% Recent 14-Day Momentum
+                a_blended_rs = (a_stats['RS_per_G'] * 0.70) + (a_recent_offense * 0.30)
+                h_blended_rs = (h_stats['RS_per_G'] * 0.70) + (h_recent_offense * 0.30)
+                
                 a_sp_fip = pitcher_df[pitcher_df['Name'] == away_sp]['FIP'].values[0] if away_sp != "League Average SP" else a_stats['RA_per_G']
                 h_sp_fip = pitcher_df[pitcher_df['Name'] == home_sp]['FIP'].values[0] if home_sp != "League Average SP" else h_stats['RA_per_G']
                 
-                away_lam = ((a_stats['RS_per_G'] * 0.4) + (h_sp_fip * 0.6)) * p_factor
-                home_lam = ((h_stats['RS_per_G'] * 0.4) + (a_sp_fip * 0.6)) * p_factor
+                # Final Advanced Math calculation using the Momentum-Blended Runs
+                away_lam = ((a_blended_rs * 0.4) + (h_sp_fip * 0.6)) * p_factor
+                home_lam = ((h_blended_rs * 0.4) + (a_sp_fip * 0.6)) * p_factor
+                
+                st.caption(f"*Momentum Adjusted Offensive Baselines: {away_t} ({a_blended_rs:.2f} runs) vs {home_t} ({h_blended_rs:.2f} runs)*")
                 
                 if st.button("▶ Run 10,000 Probabilistic Iterations"):
                     sim_a = np.random.poisson(away_lam, 10000)
@@ -235,7 +270,7 @@ elif page == "🎲 Monte Carlo Simulation Engine":
                     model_away_prob = a_wins / 10000
                     model_home_prob = h_wins / 10000
                     
-                    st.write(f"Park Adjusted Expected Runs: {away_t} **{away_lam:.2f}** | {home_t} **{home_lam:.2f}**")
+                    st.write(f"Park & SP Adjusted Expected Runs: {away_t} **{away_lam:.2f}** | {home_t} **{home_lam:.2f}**")
                     
                     c1, c2 = st.columns(2)
                     v_a_prob = 100/(vegas_away+100) if vegas_away > 0 else abs(vegas_away)/(abs(vegas_away)+100)
