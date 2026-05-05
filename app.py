@@ -5,10 +5,12 @@ from pybaseball import pitching_stats_bref, batting_stats_bref, pitching_stats_r
 import plotly.express as px
 from datetime import datetime, timedelta
 import traceback
+import requests
+import gspread
+import os
 
 st.set_page_config(page_title="Apex Baseball Analytics", layout="wide")
 
-# --- NAVIGATION ROUTER ---
 st.sidebar.title("Navigation")
 page = st.sidebar.radio("Select Engine:", ["⚾ Pitching Analytics Matrix", "🎲 Monte Carlo Simulation Engine"])
 st.sidebar.markdown("---")
@@ -37,7 +39,6 @@ TEAM_NAME_MAP = {
     'Texas Rangers': 'Texas', 'Toronto Blue Jays': 'Toronto', 'Washington Nationals': 'Washington'
 }
 
-# The 3-letter abbreviation map is required to join the 14-day momentum data correctly
 FULL_TO_ABBR = {
     'Arizona Diamondbacks': 'ARI', 'Atlanta Braves': 'ATL', 'Baltimore Orioles': 'BAL', 'Boston Red Sox': 'BOS', 
     'Chicago Cubs': 'CHC', 'Chicago White Sox': 'CHW', 'Cincinnati Reds': 'CIN', 'Cleveland Guardians': 'CLE', 
@@ -48,6 +49,41 @@ FULL_TO_ABBR = {
     'Seattle Mariners': 'SEA', 'St. Louis Cardinals': 'STL', 'Tampa Bay Rays': 'TBR', 'Texas Rangers': 'TEX', 
     'Toronto Blue Jays': 'TOR', 'Washington Nationals': 'WSN'
 }
+
+# --- NEW API & LOGGING FUNCTIONS ---
+@st.cache_data(ttl=3600) # Caches odds for 1 hour so we don't blow through your 500 limit
+def get_live_odds():
+    api_key = os.environ.get('ODDS_API_KEY')
+    if not api_key: return {}
+    
+    url = f'https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/?apiKey={api_key}&regions=us&markets=h2h&oddsFormat=american&bookmakers=draftkings,fanduel'
+    try:
+        response = requests.get(url)
+        data = response.json()
+        odds_dict = {}
+        for game in data:
+            if 'bookmakers' in game and len(game['bookmakers']) > 0:
+                outcomes = game['bookmakers'][0]['markets'][0]['outcomes']
+                # Create a simple lookup dictionary: "AwayTeam @ HomeTeam" -> [Away ML, Home ML]
+                away = game['away_team']
+                home = game['home_team']
+                away_ml = next((o['price'] for o in outcomes if o['name'] == away), 100)
+                home_ml = next((o['price'] for o in outcomes if o['name'] == home), -110)
+                odds_dict[f"{away} @ {home}"] = [away_ml, home_ml]
+        return odds_dict
+    except Exception as e:
+        return {}
+
+def log_to_google_sheets(row_data):
+    try:
+        gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
+        sh = gc.open("MLB Daily Prediction Model")
+        worksheet = sh.worksheet("Master Log")
+        worksheet.append_row(row_data)
+        return True
+    except Exception as e:
+        st.error(f"Google Sheets Error: {e}")
+        return False
 
 def calc_advanced_metrics(df):
     if 'BB9' not in df.columns: df['BB9'] = (df['BB'] / df['IP']) * 9
@@ -63,11 +99,9 @@ def calc_advanced_metrics(df):
 def load_pitching_data():
     season_df = pitching_stats_bref(2026)
     season_df = calc_advanced_metrics(season_df)
-    
     today = datetime.now()
     two_weeks_ago = today - timedelta(days=14)
     recent_df = pitching_stats_range(two_weeks_ago.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'))
-    
     if not recent_df.empty:
         recent_df = calc_advanced_metrics(recent_df)
         recent_df = recent_df[['Name', 'FPI']].rename(columns={'FPI': 'Recent_FPI'})
@@ -83,15 +117,12 @@ def load_pitching_data():
         def format_savant_name(name_string):
             parts = str(name_string).split(', ')
             return f"{parts[1].strip()} {parts[0].strip()}" if len(parts) == 2 else str(name_string).strip()
-
         if 'last_name, first_name' in savant_df.columns: savant_df['Name'] = savant_df['last_name, first_name'].apply(format_savant_name)
         elif 'player' in savant_df.columns: savant_df['Name'] = savant_df['player'].apply(format_savant_name)
-        
         target_cols = ['Name']
         if 'est_woba' in savant_df.columns: target_cols.append('est_woba')
         if 'xera' in savant_df.columns: target_cols.append('xera')
         if 'player_id' in savant_df.columns: target_cols.append('player_id')
-        
         savant_df = savant_df[target_cols]
         if 'est_woba' in savant_df.columns: savant_df = savant_df.rename(columns={'est_woba': 'xwOBA'})
         if 'xera' in savant_df.columns: savant_df = savant_df.rename(columns={'xera': 'xERA'})
@@ -103,26 +134,18 @@ def load_pitching_data():
 @st.cache_data
 def get_team_data():
     try:
-        # Full Season Aggregation
         bat_df = batting_stats_bref(2026)
         pitch_df = pitching_stats_bref(2026)
-        
         team_bat = bat_df.groupby('Tm').agg(RS=('R', 'sum')).reset_index()
-        team_pitch = pitch_df.groupby('Tm').agg(
-            RA=('R', 'sum'),
-            Team_G=('GS', 'sum') 
-        ).reset_index()
-        
+        team_pitch = pitch_df.groupby('Tm').agg(RA=('R', 'sum'), Team_G=('GS', 'sum')).reset_index()
         team_df = pd.merge(team_bat, team_pitch, on='Tm')
         team_df = team_df[team_df['Tm'] != 'TOT']
         team_df['Team_G'] = team_df['Team_G'].replace(0, 1)
         team_df['RS_per_G'] = team_df['RS'] / team_df['Team_G']
         team_df['RA_per_G'] = team_df['RA'] / team_df['Team_G']
         
-        # 14-Day Offensive Momentum Aggregation
         today = datetime.now()
         two_weeks_ago = today - timedelta(days=14)
-        
         recent_bat = batting_stats_range(two_weeks_ago.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'))
         recent_bat_agg = recent_bat.groupby('Tm').agg(Recent_RS=('R', 'sum'), Recent_G=('G', 'max')).reset_index()
         recent_bat_agg['Recent_G'] = recent_bat_agg['Recent_G'].replace(0, 1)
@@ -130,7 +153,6 @@ def get_team_data():
         
         return team_df.sort_values('Tm'), recent_bat_agg
     except Exception as e: 
-        st.error(f"Error compiling manual team baselines: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 # ==========================================
@@ -145,14 +167,12 @@ if page == "⚾ Pitching Analytics Matrix":
             min_ip = st.sidebar.slider("Min IP (Leaderboard):", 1, int(raw_df['IP'].max()), 15)
             filtered_df = raw_df[raw_df['IP'] >= min_ip]
             selected_player = st.sidebar.selectbox("Target Profile Search:", ["All Pitchers"] + sorted(raw_df['Name'].unique().tolist()))
-            
             display_cols = ['Name', 'Tm', 'IP', 'FPI', 'Momentum_Shift', 'ERA', 'xERA', 'xwOBA', 'SO9', 'BB9']
             
             if selected_player != "All Pitchers":
                 st.subheader(f"Isolated Profile: {selected_player}")
                 p_data = raw_df[raw_df['Name'] == selected_player]
                 st.dataframe(p_data[display_cols], hide_index=True)
-                
                 mlbam_id = p_data['mlbam_id'].values[0] if 'mlbam_id' in p_data.columns else None
                 if pd.notna(mlbam_id):
                     pitch_data = statcast_pitcher('2026-03-20', datetime.now().strftime('%Y-%m-%d'), int(mlbam_id))
@@ -166,7 +186,6 @@ if page == "⚾ Pitching Analytics Matrix":
                             v_df = pitch_data.groupby('pitch_name')[['release_speed', 'release_spin_rate']].mean().round(1).reset_index()
                             v_df.columns = ['Pitch Type', 'Avg Velo (MPH)', 'Avg Spin (RPM)']
                             st.dataframe(v_df, hide_index=True)
-                            
                             st.markdown("##### Performance by Batter Handedness")
                             whiff_events = ['swinging_strike', 'swinging_strike_blocked']
                             pitch_data['is_whiff'] = pitch_data['description'].isin(whiff_events)
@@ -189,27 +208,24 @@ if page == "⚾ Pitching Analytics Matrix":
 elif page == "🎲 Monte Carlo Simulation Engine":
     st.title("🎲 Monte Carlo Simulation Engine")
     
-    st.markdown("### 📊 Master Prediction Log")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if 'total_games' not in st.session_state: st.session_state.total_games = 0
-        st.metric(label="Total Games Logged", value=st.session_state.total_games)
-    with col2:
-        if 'model_acc' not in st.session_state: st.session_state.model_acc = 0.0
-        st.metric(label="Model Accuracy", value=f"{st.session_state.model_acc}%")
-    with col3:
-        st.metric(label="Vegas Odds Accuracy", value="23.0%")
-    st.caption("*The dashboard logs overall calculated numbers permanently to calculate actual percentages without listing every individual game.*")
+    st.markdown("### 📊 Live Model Log & Automation")
+    st.caption("*Integrates with The-Odds-API to pull live DraftKings lines and securely writes to your connected Google Sheet.*")
     st.markdown("---")
     
-    with st.spinner('Syncing true team baselines & 14-Day offensive momentum...'):
+    with st.spinner('Syncing data, live odds, and Google authentications...'):
         team_df, recent_bat_agg = get_team_data()
         pitcher_df = load_pitching_data()
+        live_odds = get_live_odds()
         
         if not team_df.empty and not pitcher_df.empty:
             MLB_TEAMS = sorted(list(TEAM_NAME_MAP.keys()))
             away_t = st.sidebar.selectbox("Away Team:", MLB_TEAMS, index=0)
             home_t = st.sidebar.selectbox("Home Team:", MLB_TEAMS, index=1)
+            
+            # Match live odds to selection
+            matchup_key = f"{away_t} @ {home_t}"
+            default_away_ml = int(live_odds.get(matchup_key, [100, -110])[0])
+            default_home_ml = int(live_odds.get(matchup_key, [100, -110])[1])
             
             away_p_target = TEAM_NAME_MAP.get(away_t, away_t)
             home_p_target = TEAM_NAME_MAP.get(home_t, home_t)
@@ -224,11 +240,9 @@ elif page == "🎲 Monte Carlo Simulation Engine":
             p_factor = PARK_FACTORS.get(location, 100) / 100
             
             st.sidebar.markdown("---")
-            st.sidebar.text_input("Log ID (Pitcher ID tracking for Double-Headers):", placeholder="e.g. 0501-Cole-G1")
-            st.sidebar.markdown("---")
-            
-            vegas_away = st.sidebar.number_input("Away ML:", value=100)
-            vegas_home = st.sidebar.number_input("Home ML:", value=-110)
+            st.sidebar.caption("Live DraftKings Odds via The-Odds-API")
+            vegas_away = st.sidebar.number_input("Away ML:", value=default_away_ml)
+            vegas_home = st.sidebar.number_input("Home ML:", value=default_home_ml)
             
             st.subheader(f"{away_t} @ {home_t} ({location})")
             
@@ -236,26 +250,23 @@ elif page == "🎲 Monte Carlo Simulation Engine":
                 a_stats = team_df[team_df['Tm'] == away_p_target].iloc[0]
                 h_stats = team_df[team_df['Tm'] == home_p_target].iloc[0]
                 
-                # Fetch 14-Day Momentum 
                 a_abbr = FULL_TO_ABBR.get(away_t, '')
                 h_abbr = FULL_TO_ABBR.get(home_t, '')
                 
-                a_recent_offense = a_stats['RS_per_G'] # Default to season if error
+                a_recent_offense = a_stats['RS_per_G']
                 if not recent_bat_agg.empty and a_abbr in recent_bat_agg['Tm'].values:
                     a_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == a_abbr]['Recent_RS_per_G'].values[0]
                     
-                h_recent_offense = h_stats['RS_per_G'] # Default to season if error
+                h_recent_offense = h_stats['RS_per_G']
                 if not recent_bat_agg.empty and h_abbr in recent_bat_agg['Tm'].values:
                     h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
 
-                # BLEND: 70% Season Baseline, 30% Recent 14-Day Momentum
                 a_blended_rs = (a_stats['RS_per_G'] * 0.70) + (a_recent_offense * 0.30)
                 h_blended_rs = (h_stats['RS_per_G'] * 0.70) + (h_recent_offense * 0.30)
                 
                 a_sp_fip = pitcher_df[pitcher_df['Name'] == away_sp]['FIP'].values[0] if away_sp != "League Average SP" else a_stats['RA_per_G']
                 h_sp_fip = pitcher_df[pitcher_df['Name'] == home_sp]['FIP'].values[0] if home_sp != "League Average SP" else h_stats['RA_per_G']
                 
-                # Final Advanced Math calculation using the Momentum-Blended Runs
                 away_lam = ((a_blended_rs * 0.4) + (h_sp_fip * 0.6)) * p_factor
                 home_lam = ((h_blended_rs * 0.4) + (a_sp_fip * 0.6)) * p_factor
                 
@@ -270,18 +281,51 @@ elif page == "🎲 Monte Carlo Simulation Engine":
                     model_away_prob = a_wins / 10000
                     model_home_prob = h_wins / 10000
                     
-                    st.write(f"Park & SP Adjusted Expected Runs: {away_t} **{away_lam:.2f}** | {home_t} **{home_lam:.2f}**")
+                    # Save results in session state for logging
+                    st.session_state['last_sim'] = {
+                        'away_t': away_t, 'home_t': home_t,
+                        'away_ml': vegas_away, 'home_ml': vegas_home,
+                        'a_prob': model_away_prob, 'h_prob': model_home_prob,
+                        'lam_a': away_lam, 'lam_h': home_lam
+                    }
+                    
+                # Always show the results if they exist in session state
+                if 'last_sim' in st.session_state and st.session_state['last_sim']['away_t'] == away_t and st.session_state['last_sim']['home_t'] == home_t:
+                    sim_data = st.session_state['last_sim']
+                    
+                    st.write(f"Park & SP Adjusted Expected Runs: {sim_data['away_t']} **{sim_data['lam_a']:.2f}** | {sim_data['home_t']} **{sim_data['lam_h']:.2f}**")
                     
                     c1, c2 = st.columns(2)
-                    v_a_prob = 100/(vegas_away+100) if vegas_away > 0 else abs(vegas_away)/(abs(vegas_away)+100)
-                    v_h_prob = 100/(vegas_home+100) if vegas_home > 0 else abs(vegas_home)/(abs(vegas_home)+100)
+                    v_a_prob = 100/(sim_data['away_ml']+100) if sim_data['away_ml'] > 0 else abs(sim_data['away_ml'])/(abs(sim_data['away_ml'])+100)
+                    v_h_prob = 100/(sim_data['home_ml']+100) if sim_data['home_ml'] > 0 else abs(sim_data['home_ml'])/(abs(sim_data['home_ml'])+100)
+                    
+                    action_taken = "No Edge"
                     
                     with c1:
-                        st.metric(f"{away_t} Win Prob", f"{model_away_prob:.1%}")
-                        if model_away_prob > v_a_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
+                        st.metric(f"{sim_data['away_t']} Win Prob", f"{sim_data['a_prob']:.1%}")
+                        if sim_data['a_prob'] > v_a_prob + 0.03: 
+                            st.success("🔥 ACTIONABLE EDGE")
+                            action_taken = sim_data['away_t']
                     with c2:
-                        st.metric(f"{home_t} Win Prob", f"{model_home_prob:.1%}")
-                        if model_home_prob > v_h_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
+                        st.metric(f"{sim_data['home_t']} Win Prob", f"{sim_data['h_prob']:.1%}")
+                        if sim_data['h_prob'] > v_h_prob + 0.03: 
+                            st.success("🔥 ACTIONABLE EDGE")
+                            action_taken = sim_data['home_t']
+                            
+                    st.markdown("---")
+                    if st.button("💾 Log Prediction to Google Sheets"):
+                        date_str = datetime.now().strftime("%Y-%m-%d")
+                        row_data = [
+                            date_str, sim_data['away_t'], sim_data['home_t'], 
+                            sim_data['away_ml'], sim_data['home_ml'], 
+                            f"{sim_data['a_prob']:.1%}", f"{sim_data['h_prob']:.1%}", 
+                            action_taken, ""
+                        ]
+                        with st.spinner("Writing to Google Cloud..."):
+                            success = log_to_google_sheets(row_data)
+                            if success:
+                                st.success("✅ Prediction logged successfully to your Master Log tab!")
+
             except IndexError:
                 st.error("Engine failed to map team baseline data. Please check connection.")
                 
