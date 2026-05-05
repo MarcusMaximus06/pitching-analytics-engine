@@ -51,13 +51,16 @@ FULL_TO_ABBR = {
 }
 
 # --- UNICODE CLEANER ---
-def clean_unicode(text):
-    if isinstance(text, str):
-        try:
-            return text.encode('latin1').decode('utf-8')
-        except:
-            return text
-    return text
+def clean_name(name):
+    if not isinstance(name, str): return name
+    replacements = {
+        r'\xc3\xad': 'í', r'\xc3\xa1': 'á', r'\xc3\xa9': 'é',
+        r'\xc3\xb1': 'ñ', r'\xc3\xb3': 'ó', r'\xc3\xba': 'ú',
+        r'\xc3\x8d': 'Í', r'\xc3\x81': 'Á', r'\xc3\x89': 'É'
+    }
+    for bad, good in replacements.items():
+        name = name.replace(bad, good)
+    return name
 
 @st.cache_data(ttl=3600)
 def get_live_odds():
@@ -89,6 +92,9 @@ def log_to_google_sheets(row_data):
         worksheet.append_row(row_data)
         return True
     except Exception as e:
+        # THE FIX: If the error contains '200', the data successfully wrote to the sheet. 
+        if "200" in str(e):
+            return True
         st.error(f"Google Sheets Error: {e}")
         return False
 
@@ -105,7 +111,7 @@ def calc_advanced_metrics(df):
 @st.cache_data
 def load_pitching_data():
     season_df = pitching_stats_bref(2026)
-    season_df['Name'] = season_df['Name'].apply(clean_unicode) # The Bug Fix
+    season_df['Name'] = season_df['Name'].apply(clean_name)
     season_df = calc_advanced_metrics(season_df)
     
     today = datetime.now()
@@ -113,7 +119,7 @@ def load_pitching_data():
     recent_df = pitching_stats_range(two_weeks_ago.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'))
     
     if not recent_df.empty:
-        recent_df['Name'] = recent_df['Name'].apply(clean_unicode)
+        recent_df['Name'] = recent_df['Name'].apply(clean_name)
         recent_df = calc_advanced_metrics(recent_df)
         recent_df = recent_df[['Name', 'FPI']].rename(columns={'FPI': 'Recent_FPI'})
         merged_df = pd.merge(season_df, recent_df, on='Name', how='left')
@@ -153,12 +159,10 @@ def get_team_data():
         team_bat = bat_df.groupby('Tm').agg(RS=('R', 'sum')).reset_index()
         team_pitch = pitch_df.groupby('Tm').agg(RA=('R', 'sum'), Team_G=('GS', 'sum')).reset_index()
         
-        # --- BULLPEN ISOLATION UPGRADE ---
-        # If a pitcher starts less than 25% of their games, classify them as a Reliever
         pitch_df['is_reliever'] = pitch_df['GS'] <= (pitch_df['G'] * 0.25)
         bp_df = pitch_df[pitch_df['is_reliever']]
         team_bp = bp_df.groupby('Tm').agg(BP_R=('R', 'sum'), BP_IP=('IP', 'sum')).reset_index()
-        team_bp['BP_IP'] = team_bp['BP_IP'].replace(0, 1) # Prevent division errors
+        team_bp['BP_IP'] = team_bp['BP_IP'].replace(0, 1)
         team_bp['BP_RA9'] = (team_bp['BP_R'] / team_bp['BP_IP']) * 9
         
         team_df = pd.merge(team_bat, team_pitch, on='Tm')
@@ -168,7 +172,7 @@ def get_team_data():
         team_df['RA_per_G'] = team_df['RA'] / team_df['Team_G']
         
         team_df = pd.merge(team_df, team_bp[['Tm', 'BP_RA9']], on='Tm', how='left')
-        team_df['BP_RA9'] = team_df['BP_RA9'].fillna(team_df['RA_per_G']) # Fallback
+        team_df['BP_RA9'] = team_df['BP_RA9'].fillna(team_df['RA_per_G'])
         
         today = datetime.now()
         two_weeks_ago = today - timedelta(days=14)
@@ -286,18 +290,15 @@ elif page == "🎲 Monte Carlo Simulation Engine":
                 if not recent_bat_agg.empty and h_abbr in recent_bat_agg['Tm'].values:
                     h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
 
-                # 14-Day Momentum Blended Offense
                 a_blended_rs = (a_stats['RS_per_G'] * 0.70) + (a_recent_offense * 0.30)
                 h_blended_rs = (h_stats['RS_per_G'] * 0.70) + (h_recent_offense * 0.30)
                 
                 a_sp_fip = pitcher_df[pitcher_df['Name'] == away_sp]['FIP'].values[0] if away_sp != "League Average SP" else a_stats['RA_per_G']
                 h_sp_fip = pitcher_df[pitcher_df['Name'] == home_sp]['FIP'].values[0] if home_sp != "League Average SP" else h_stats['RA_per_G']
                 
-                # --- NEW MATH: 61% SP FIP + 39% Bullpen RA9 ---
                 a_run_prevention = (a_sp_fip * 0.61) + (a_stats['BP_RA9'] * 0.39)
                 h_run_prevention = (h_sp_fip * 0.61) + (h_stats['BP_RA9'] * 0.39)
                 
-                # Standard Expected Runs formula: (Team Runs Scored + Opponent Runs Allowed) / 2
                 away_lam = ((a_blended_rs + h_run_prevention) / 2) * p_factor
                 home_lam = ((h_blended_rs + a_run_prevention) / 2) * p_factor
                 
