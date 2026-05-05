@@ -50,8 +50,16 @@ FULL_TO_ABBR = {
     'Toronto Blue Jays': 'TOR', 'Washington Nationals': 'WSN'
 }
 
-# --- NEW API & LOGGING FUNCTIONS ---
-@st.cache_data(ttl=3600) # Caches odds for 1 hour so we don't blow through your 500 limit
+# --- UNICODE CLEANER ---
+def clean_unicode(text):
+    if isinstance(text, str):
+        try:
+            return text.encode('latin1').decode('utf-8')
+        except:
+            return text
+    return text
+
+@st.cache_data(ttl=3600)
 def get_live_odds():
     api_key = os.environ.get('ODDS_API_KEY')
     if not api_key: return {}
@@ -64,14 +72,13 @@ def get_live_odds():
         for game in data:
             if 'bookmakers' in game and len(game['bookmakers']) > 0:
                 outcomes = game['bookmakers'][0]['markets'][0]['outcomes']
-                # Create a simple lookup dictionary: "AwayTeam @ HomeTeam" -> [Away ML, Home ML]
                 away = game['away_team']
                 home = game['home_team']
                 away_ml = next((o['price'] for o in outcomes if o['name'] == away), 100)
                 home_ml = next((o['price'] for o in outcomes if o['name'] == home), -110)
                 odds_dict[f"{away} @ {home}"] = [away_ml, home_ml]
         return odds_dict
-    except Exception as e:
+    except Exception:
         return {}
 
 def log_to_google_sheets(row_data):
@@ -98,11 +105,15 @@ def calc_advanced_metrics(df):
 @st.cache_data
 def load_pitching_data():
     season_df = pitching_stats_bref(2026)
+    season_df['Name'] = season_df['Name'].apply(clean_unicode) # The Bug Fix
     season_df = calc_advanced_metrics(season_df)
+    
     today = datetime.now()
     two_weeks_ago = today - timedelta(days=14)
     recent_df = pitching_stats_range(two_weeks_ago.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'))
+    
     if not recent_df.empty:
+        recent_df['Name'] = recent_df['Name'].apply(clean_unicode)
         recent_df = calc_advanced_metrics(recent_df)
         recent_df = recent_df[['Name', 'FPI']].rename(columns={'FPI': 'Recent_FPI'})
         merged_df = pd.merge(season_df, recent_df, on='Name', how='left')
@@ -119,10 +130,12 @@ def load_pitching_data():
             return f"{parts[1].strip()} {parts[0].strip()}" if len(parts) == 2 else str(name_string).strip()
         if 'last_name, first_name' in savant_df.columns: savant_df['Name'] = savant_df['last_name, first_name'].apply(format_savant_name)
         elif 'player' in savant_df.columns: savant_df['Name'] = savant_df['player'].apply(format_savant_name)
+        
         target_cols = ['Name']
         if 'est_woba' in savant_df.columns: target_cols.append('est_woba')
         if 'xera' in savant_df.columns: target_cols.append('xera')
         if 'player_id' in savant_df.columns: target_cols.append('player_id')
+        
         savant_df = savant_df[target_cols]
         if 'est_woba' in savant_df.columns: savant_df = savant_df.rename(columns={'est_woba': 'xwOBA'})
         if 'xera' in savant_df.columns: savant_df = savant_df.rename(columns={'xera': 'xERA'})
@@ -136,13 +149,26 @@ def get_team_data():
     try:
         bat_df = batting_stats_bref(2026)
         pitch_df = pitching_stats_bref(2026)
+        
         team_bat = bat_df.groupby('Tm').agg(RS=('R', 'sum')).reset_index()
         team_pitch = pitch_df.groupby('Tm').agg(RA=('R', 'sum'), Team_G=('GS', 'sum')).reset_index()
+        
+        # --- BULLPEN ISOLATION UPGRADE ---
+        # If a pitcher starts less than 25% of their games, classify them as a Reliever
+        pitch_df['is_reliever'] = pitch_df['GS'] <= (pitch_df['G'] * 0.25)
+        bp_df = pitch_df[pitch_df['is_reliever']]
+        team_bp = bp_df.groupby('Tm').agg(BP_R=('R', 'sum'), BP_IP=('IP', 'sum')).reset_index()
+        team_bp['BP_IP'] = team_bp['BP_IP'].replace(0, 1) # Prevent division errors
+        team_bp['BP_RA9'] = (team_bp['BP_R'] / team_bp['BP_IP']) * 9
+        
         team_df = pd.merge(team_bat, team_pitch, on='Tm')
         team_df = team_df[team_df['Tm'] != 'TOT']
         team_df['Team_G'] = team_df['Team_G'].replace(0, 1)
         team_df['RS_per_G'] = team_df['RS'] / team_df['Team_G']
         team_df['RA_per_G'] = team_df['RA'] / team_df['Team_G']
+        
+        team_df = pd.merge(team_df, team_bp[['Tm', 'BP_RA9']], on='Tm', how='left')
+        team_df['BP_RA9'] = team_df['BP_RA9'].fillna(team_df['RA_per_G']) # Fallback
         
         today = datetime.now()
         two_weeks_ago = today - timedelta(days=14)
@@ -222,7 +248,6 @@ elif page == "🎲 Monte Carlo Simulation Engine":
             away_t = st.sidebar.selectbox("Away Team:", MLB_TEAMS, index=0)
             home_t = st.sidebar.selectbox("Home Team:", MLB_TEAMS, index=1)
             
-            # Match live odds to selection
             matchup_key = f"{away_t} @ {home_t}"
             default_away_ml = int(live_odds.get(matchup_key, [100, -110])[0])
             default_home_ml = int(live_odds.get(matchup_key, [100, -110])[1])
@@ -261,16 +286,23 @@ elif page == "🎲 Monte Carlo Simulation Engine":
                 if not recent_bat_agg.empty and h_abbr in recent_bat_agg['Tm'].values:
                     h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
 
+                # 14-Day Momentum Blended Offense
                 a_blended_rs = (a_stats['RS_per_G'] * 0.70) + (a_recent_offense * 0.30)
                 h_blended_rs = (h_stats['RS_per_G'] * 0.70) + (h_recent_offense * 0.30)
                 
                 a_sp_fip = pitcher_df[pitcher_df['Name'] == away_sp]['FIP'].values[0] if away_sp != "League Average SP" else a_stats['RA_per_G']
                 h_sp_fip = pitcher_df[pitcher_df['Name'] == home_sp]['FIP'].values[0] if home_sp != "League Average SP" else h_stats['RA_per_G']
                 
-                away_lam = ((a_blended_rs * 0.4) + (h_sp_fip * 0.6)) * p_factor
-                home_lam = ((h_blended_rs * 0.4) + (a_sp_fip * 0.6)) * p_factor
+                # --- NEW MATH: 61% SP FIP + 39% Bullpen RA9 ---
+                a_run_prevention = (a_sp_fip * 0.61) + (a_stats['BP_RA9'] * 0.39)
+                h_run_prevention = (h_sp_fip * 0.61) + (h_stats['BP_RA9'] * 0.39)
+                
+                # Standard Expected Runs formula: (Team Runs Scored + Opponent Runs Allowed) / 2
+                away_lam = ((a_blended_rs + h_run_prevention) / 2) * p_factor
+                home_lam = ((h_blended_rs + a_run_prevention) / 2) * p_factor
                 
                 st.caption(f"*Momentum Adjusted Offensive Baselines: {away_t} ({a_blended_rs:.2f} runs) vs {home_t} ({h_blended_rs:.2f} runs)*")
+                st.caption(f"*Opposing Run Prevention (SP + Bullpen RA9): {away_t} Defense ({a_run_prevention:.2f} runs) vs {home_t} Defense ({h_run_prevention:.2f} runs)*")
                 
                 if st.button("▶ Run 10,000 Probabilistic Iterations"):
                     sim_a = np.random.poisson(away_lam, 10000)
@@ -281,7 +313,6 @@ elif page == "🎲 Monte Carlo Simulation Engine":
                     model_away_prob = a_wins / 10000
                     model_home_prob = h_wins / 10000
                     
-                    # Save results in session state for logging
                     st.session_state['last_sim'] = {
                         'away_t': away_t, 'home_t': home_t,
                         'away_ml': vegas_away, 'home_ml': vegas_home,
@@ -289,11 +320,10 @@ elif page == "🎲 Monte Carlo Simulation Engine":
                         'lam_a': away_lam, 'lam_h': home_lam
                     }
                     
-                # Always show the results if they exist in session state
                 if 'last_sim' in st.session_state and st.session_state['last_sim']['away_t'] == away_t and st.session_state['last_sim']['home_t'] == home_t:
                     sim_data = st.session_state['last_sim']
                     
-                    st.write(f"Park & SP Adjusted Expected Runs: {sim_data['away_t']} **{sim_data['lam_a']:.2f}** | {sim_data['home_t']} **{sim_data['lam_h']:.2f}**")
+                    st.write(f"Final Park Adjusted Expected Runs: {sim_data['away_t']} **{sim_data['lam_a']:.2f}** | {sim_data['home_t']} **{sim_data['lam_h']:.2f}**")
                     
                     c1, c2 = st.columns(2)
                     v_a_prob = 100/(sim_data['away_ml']+100) if sim_data['away_ml'] > 0 else abs(sim_data['away_ml'])/(abs(sim_data['away_ml'])+100)
