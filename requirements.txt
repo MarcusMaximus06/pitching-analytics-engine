@@ -4,3 +4,5 @@ pybaseball
 lxml
 html5lib
 plotly
+requests
+gspread
