@@ -328,10 +328,14 @@ if sport == "⚾ MLB Baseball":
                     a_stats = team_df[team_df['Tm'] == away_p_target].iloc[0]
                     h_stats = team_df[team_df['Tm'] == home_p_target].iloc[0]
                     a_abbr, h_abbr = FULL_TO_ABBR.get(away_t, ''), FULL_TO_ABBR.get(home_t, '')
+                    
                     a_recent_offense = a_stats['RS_per_G']
-                    if not recent_bat_agg.empty && a_abbr in recent_bat_agg['Tm'].values: a_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == a_abbr]['Recent_RS_per_G'].values[0]
+                    if not recent_bat_agg.empty and a_abbr in recent_bat_agg['Tm'].values: 
+                        a_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == a_abbr]['Recent_RS_per_G'].values[0]
                     h_recent_offense = h_stats['RS_per_G']
-                    if not recent_bat_agg.empty && h_abbr in recent_bat_agg['Tm'].values: h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
+                    if not recent_bat_agg.empty and h_abbr in recent_bat_agg['Tm'].values: 
+                        h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
+                        
                     a_blended_rs = (a_stats['RS_per_G'] * 0.70) + (a_recent_offense * 0.30)
                     h_blended_rs = (h_stats['RS_per_G'] * 0.70) + (h_recent_offense * 0.30)
                     a_sp_fip = pitcher_df[pitcher_df['Name'] == away_sp]['FIP'].values[0] if away_sp != "League Average SP" else a_stats['RA_per_G']
@@ -425,7 +429,6 @@ elif sport == "🥎 NCAA Softball":
                     
                     if 'games' in resp:
                         for g in resp['games']:
-                            # Safe navigation for both flat and nested JSON structures
                             game_data = g.get('game', g)
                             state = game_data.get('gameState', '').lower()
                             
@@ -450,7 +453,6 @@ elif sport == "🥎 NCAA Softball":
             for i, row in pending_rows:
                 d_str, away_t, model_pick = row[0], row[1].lower(), row[7].lower()
                 
-                # Check for substring matches since NCAA and WarrenNolan team naming can slightly differ
                 winner_found = None
                 for key, val in score_dict.items():
                     if key.startswith(d_str):
@@ -460,7 +462,6 @@ elif sport == "🥎 NCAA Softball":
                             break
                             
                 if winner_found:
-                    # Is actual winner model's pick?
                     model_pick_clean = model_pick.replace(" ", "")
                     winner_clean = winner_found.replace(" ", "")
                     new_status = "WIN" if (model_pick_clean in winner_clean or winner_clean in model_pick_clean) else "LOSS"
@@ -543,7 +544,6 @@ elif sport == "🥎 NCAA Softball":
             team_col = [c for c in df.columns if 'Team' in c or 'School' in c][0]
             record_col = [c for c in df.columns if 'Record' in c and 'Conf' not in c][0]
             
-            # Identify SOS rank column
             sos_rank_col = [c for c in df.columns if 'SOS' in c or 'Sched' in c]
             sos_col = sos_rank_col[0] if sos_rank_col else None
             
@@ -553,7 +553,6 @@ elif sport == "🥎 NCAA Softball":
                 team = str(row[team_col]).strip()
                 rec_str = str(row[record_col]).strip()
                 
-                # Get SOS Rank (Default to average 150 if not found)
                 sos_rank = 150
                 if sos_col:
                     try:
@@ -609,7 +608,6 @@ elif sport == "🥎 NCAA Softball":
         softball_eras = scrape_ncaa_softball_pitching()
         
         if softball_teams and softball_eras:
-            # Intersection matching 
             valid_teams = sorted(list(set(softball_teams.keys()).intersection(set(softball_eras.keys()))))
             if len(valid_teams) < 20:
                 softball_teams = {k: v[0] for k, v in fallback_teams.items()}
@@ -636,30 +634,24 @@ elif sport == "🥎 NCAA Softball":
             with col2:
                 st.subheader("Simulated Prediction Outputs")
                 
-                # Raw Winning Percentages
                 wp_a = softball_teams[away_team]
                 wp_b = softball_teams[home_team]
                 
-                # SOS Ranks
                 sos_rank_a = softball_sos.get(away_team, 150)
                 sos_rank_b = softball_sos.get(home_team, 150)
                 
-                # Calculate Strength of Schedule multipliers
                 sos_mult_a = 1.15 - 0.30 * ((sos_rank_a - 1) / 300)
                 sos_mult_b = 1.15 - 0.30 * ((sos_rank_b - 1) / 300)
                 
-                # SOS-Adjusted Win Percentages
                 wp_adj_a = wp_a * sos_mult_a
                 wp_adj_b = wp_b * sos_mult_b
                 
-                # Pitching quality adjustments relative to standard 2.50 ERA
                 final_a = wp_adj_a * (2.50 / max(0.10, away_era))
                 final_b = wp_adj_b * (2.50 / max(0.10, home_era))
                 
                 final_a = max(0.01, min(0.99, final_a))
                 final_b = max(0.01, min(0.99, final_b))
                 
-                # Master Log5 formula
                 log5_away = (final_a - final_a * final_b) / (final_a + final_b - 2.0 * final_a * final_b)
                 log5_away = max(0.01, min(0.99, log5_away))
                 log5_home = 1.0 - log5_away
