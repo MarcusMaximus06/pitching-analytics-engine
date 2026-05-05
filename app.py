@@ -276,10 +276,14 @@ if sport == "⚾ MLB Baseball":
                                 a_stats = team_df[team_df['Tm'] == away_p_target].iloc[0]
                                 h_stats = team_df[team_df['Tm'] == home_p_target].iloc[0]
                                 a_abbr, h_abbr = FULL_TO_ABBR.get(away_t, ''), FULL_TO_ABBR.get(home_t, '')
+                                
                                 a_recent_offense = a_stats['RS_per_G']
-                                if not recent_bat_agg.empty and a_abbr in recent_bat_agg['Tm'].values: a_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == a_abbr]['Recent_RS_per_G'].values[0]
+                                if not recent_bat_agg.empty and a_abbr in recent_bat_agg['Tm'].values: 
+                                    a_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == a_abbr]['Recent_RS_per_G'].values[0]
                                 h_recent_offense = h_stats['RS_per_G']
-                                if not recent_bat_agg.empty and h_abbr in recent_bat_agg['Tm'].values: h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
+                                if not recent_bat_agg.empty and h_abbr in recent_bat_agg['Tm'].values: 
+                                    h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
+                                    
                                 a_blended_rs = (a_stats['RS_per_G'] * 0.70) + (a_recent_offense * 0.30)
                                 h_blended_rs = (h_stats['RS_per_G'] * 0.70) + (h_recent_offense * 0.30)
                                 a_run_prevention = (a_stats['RA_per_G'] * 0.61) + (a_stats['BP_RA9'] * 0.39)
@@ -405,6 +409,61 @@ elif sport == "🥎 NCAA Softball":
             mod_acc = (model_wins / total_games * 100) if total_games > 0 else 0.0
             return total_games, mod_acc
         except Exception: return 0, 0.0
+
+    # --- NEW: AUTO-SCHEDULER (SCOREBOARD API HOOK) ---
+    def get_daily_softball_games():
+        try:
+            today = datetime.now()
+            year, month, day = today.strftime("%Y"), today.strftime("%m"), today.strftime("%d")
+            url = f"https://data.ncaa.com/casandbox/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json"
+            resp = requests.get(url, timeout=10).json()
+            games_list = []
+            if 'games' in resp:
+                for g in resp['games']:
+                    game_data = g.get('game', g)
+                    away_info = game_data.get('away', {})
+                    home_info = game_data.get('home', {})
+                    away_team_name = away_info.get('names', {}).get('short', away_info.get('teamName', ''))
+                    home_team_name = home_info.get('names', {}).get('short', home_info.get('teamName', ''))
+                    if away_team_name and home_team_name:
+                        games_list.append((away_team_name, home_team_name))
+            return games_list
+        except Exception:
+            return []
+
+    # --- NEW: FUZZY NAME MAPPER ---
+    def map_ncaa_to_warren_nolan(ncaa_name, valid_teams):
+        ncaa_clean = ncaa_name.lower().replace(".", "").replace(" ", "")
+        for vt in valid_teams:
+            vt_clean = vt.lower().replace(" ", "")
+            if ncaa_clean == vt_clean or ncaa_clean in vt_clean or vt_clean in ncaa_clean:
+                return vt
+        
+        abbreviations = {
+            'oklahoma st': 'Oklahoma State',
+            'okla st': 'Oklahoma State',
+            'oklahoma': 'Oklahoma',
+            'fsu': 'Florida State',
+            'florida st': 'Florida State',
+            'arizona st': 'Arizona State',
+            'boston u': 'Boston University',
+            'michigan st': 'Michigan State',
+            'mississippi st': 'Mississippi State',
+            'miss state': 'Mississippi State',
+            'nc state': 'North Carolina State',
+            'penn st': 'Penn State',
+            'san diego st': 'San Diego State',
+            'south carolina': 'South Carolina',
+            'texas am': 'Texas A&M',
+            'texas tech': 'Texas Tech',
+            'virginia tech': 'Virginia Tech',
+            'va tech': 'Virginia Tech',
+            'wichita st': 'Wichita State'
+        }
+        for k, v in abbreviations.items():
+            if k in ncaa_name.lower() and v in valid_teams:
+                return v
+        return None
 
     # --- AUTO-GRADER: NCAA SCOREBOARD API ---
     def auto_grade_softball_pending_bets():
@@ -615,9 +674,70 @@ elif sport == "🥎 NCAA Softball":
                 softball_eras = fallback_eras
                 valid_teams = sorted(list(softball_teams.keys()))
             
+            # --- NEW: AUTOMATED SOFTBALL DAILY SLATE RUNNER ---
+            st.subheader("⚡ Automated Daily Softball Slate Runner")
+            st.markdown("Simulate every Division I game scheduled for today on the NCAA Scoreboard and log them to Google Sheets in one click.")
+            if st.button("▶ Auto-Run & Log Entire Softball Slate"):
+                with st.spinner("Fetching today's NCAA schedule & running simulations..."):
+                    scheduled_games = get_daily_softball_games()
+                    if not scheduled_games:
+                        st.warning("No D1 Softball games found on today's NCAA schedule yet.")
+                    else:
+                        logged_count = 0
+                        for away_ncaa, home_ncaa in scheduled_games:
+                            # Map NCAA names to WarrenNolan keys
+                            away_t = map_ncaa_to_warren_nolan(away_ncaa, valid_teams)
+                            home_t = map_ncaa_to_warren_nolan(home_ncaa, valid_teams)
+                            
+                            if away_t and home_t and away_t != home_t:
+                                wp_a = softball_teams[away_t]
+                                wp_b = softball_teams[home_t]
+                                
+                                sos_rank_a = softball_sos.get(away_t, 150)
+                                sos_rank_b = softball_sos.get(home_t, 150)
+                                
+                                sos_mult_a = 1.15 - 0.30 * ((sos_rank_a - 1) / 300)
+                                sos_mult_b = 1.15 - 0.30 * ((sos_rank_b - 1) / 300)
+                                
+                                wp_adj_a = wp_a * sos_mult_a
+                                wp_adj_b = wp_b * sos_mult_b
+                                
+                                # Use scraped team season ERAs
+                                away_era_val = softball_eras.get(away_t, 2.50)
+                                home_era_val = softball_eras.get(home_t, 2.50)
+                                
+                                final_a = wp_adj_a * (2.50 / max(0.10, away_era_val))
+                                final_b = wp_adj_b * (2.50 / max(0.10, home_era_val))
+                                
+                                final_a = max(0.01, min(0.99, final_a))
+                                final_b = max(0.01, min(0.99, final_b))
+                                
+                                log5_away = (final_a - final_a * final_b) / (final_a + final_b - 2.0 * final_a * final_b)
+                                log5_away = max(0.01, min(0.99, log5_away))
+                                log5_home = 1.0 - log5_away
+                                
+                                predicted_winner = away_t if log5_away > log5_home else home_t
+                                
+                                date_str = datetime.now().strftime("%Y-%m-%d")
+                                row_data = [
+                                    date_str, away_t, home_t, 
+                                    away_era_val, home_era_val, 
+                                    f"{log5_away:.1%}", f"{log5_home:.1%}", 
+                                    predicted_winner, "PENDING"
+                                ]
+                                
+                                if log_softball_to_sheets(row_data):
+                                    logged_count += 1
+                                    
+                        if logged_count > 0:
+                            st.success(f"✅ Successfully simulated today's slate and logged {logged_count} games to Google Sheets!")
+                        else:
+                            st.info("No matchups from today's schedule could be confidently mapped to our 66 powerhouse teams.")
+            
+            st.markdown("---")
             col1, col2 = st.columns(2)
             with col1:
-                st.subheader("Matchup Configuration")
+                st.subheader("Manual Matchup Override")
                 away_team = st.selectbox("Away Team:", valid_teams, index=0)
                 home_team = st.selectbox("Home Team:", valid_teams, index=1 if len(valid_teams) > 1 else 0)
                 
