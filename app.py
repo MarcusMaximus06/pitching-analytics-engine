@@ -360,12 +360,12 @@ if sport == "⚾ MLB Baseball":
                 except Exception: st.error("Engine failure mapping data.")
 
 # ==========================================================
-# SPORT BRANCH 2: NCAA SOFTBALL
+# SPORT BRANCH 2: NCAA SOFTBALL (FULLY AUTOMATED!)
 # ==========================================================
 elif sport == "🥎 NCAA Softball":
     st.title("🥎 NCAA Softball Simulation Engine")
     st.markdown("### 📊 Log5 Win Probability Tracker")
-    st.caption("*Scrapes live WarrenNolan RPI standings to simulate 7-inning matchups based on Win Pct and Starting Pitcher adjustments.*")
+    st.caption("*Scrapes live WarrenNolan standings and team-wide pitching ERAs to simulate 7-inning matchups automatically.*")
     
     # --- AUTOMATED SOFTBALL GOOGLE SHEET CONNECT ---
     def log_softball_to_sheets(row_data):
@@ -387,17 +387,16 @@ elif sport == "🥎 NCAA Softball":
             st.error(f"Softball Sheet Log Error: {e}")
             return False
 
-    # --- WARREN NOLAN NCAA SOFTBALL SCRAPER ---
-    @st.cache_data(ttl=14400) # Cache for 4 hours to preserve memory & server health
+    # --- WARREN NOLAN STANDINGS SCRAPER ---
+    @st.cache_data(ttl=14400) # Cache for 4 hours
     def scrape_ncaa_softball_standings():
-        # Clean fallbacks in case WarrenNolan blocks Render's IP
         fallback_teams = {
-            'Oklahoma Sooners': 0.895, 'Texas Longhorns': 0.880, 'Oklahoma State Cowgirls': 0.825,
-            'Tennessee Lady Vols': 0.810, 'Duke Blue Devils': 0.845, 'UCLA Bruins': 0.790,
-            'Stanford Cardinal': 0.760, 'LSU Tigers': 0.775, 'Washington Huskies': 0.725,
-            'Florida Gators': 0.765, 'Georgia Bulldogs': 0.745, 'Alabama Crimson Tide': 0.690,
-            'Florida State Seminoles': 0.735, 'Missouri Tigers': 0.710, 'Virginia Tech Hokies': 0.720,
-            'Arkansas Razorbacks': 0.715, 'Clemson Tigers': 0.680, 'Texas A&M Aggies': 0.705
+            'Oklahoma': 0.895, 'Texas': 0.880, 'Oklahoma State': 0.825,
+            'Tennessee': 0.810, 'Duke': 0.845, 'UCLA': 0.790,
+            'Stanford': 0.760, 'LSU': 0.775, 'Washington': 0.725,
+            'Florida': 0.765, 'Georgia': 0.745, 'Alabama': 0.690,
+            'Florida State': 0.735, 'Missouri': 0.710, 'Virginia Tech': 0.720,
+            'Arkansas': 0.715, 'Clemson': 0.680, 'Texas A&M': 0.705
         }
         try:
             url = "https://www.warrennolan.com/softball/2026/rpi-clean"
@@ -406,7 +405,6 @@ elif sport == "🥎 NCAA Softball":
             dfs = pd.read_html(response.text)
             df = dfs[0]
             
-            # Normalize column names
             df.columns = [str(c).strip() for c in df.columns]
             team_col = [c for c in df.columns if 'Team' in c or 'School' in c][0]
             record_col = [c for c in df.columns if 'Record' in c and 'Conf' not in c][0]
@@ -419,17 +417,51 @@ elif sport == "🥎 NCAA Softball":
                     parts = rec_str.split('-')
                     w, l = float(parts[0]), float(parts[1])
                     win_pct = w / (w + l) if (w + l) > 0 else 0.500
-                    # Standardize Win Pct slightly to keep Log5 clean (avoid exact 1.0 or 0.0)
                     win_pct = max(0.050, min(0.950, win_pct))
                     softball_data[team] = round(win_pct, 4)
             return softball_data
         except Exception:
             return fallback_teams
 
-    with st.spinner("Scraping NCAA Softball Baselines from WarrenNolan..."):
+    # --- NEW: WARREN NOLAN TEAM ERA SCRAPER ---
+    @st.cache_data(ttl=14400) # Cache for 4 hours
+    def scrape_ncaa_softball_pitching():
+        fallback_eras = {
+            'Oklahoma': 1.82, 'Texas': 1.95, 'Oklahoma State': 2.15,
+            'Tennessee': 1.90, 'Duke': 2.05, 'UCLA': 2.30,
+            'Stanford': 1.75, 'LSU': 2.25, 'Washington': 2.45,
+            'Florida': 2.35, 'Georgia': 2.40, 'Alabama': 2.10,
+            'Florida State': 2.50, 'Missouri': 2.30, 'Virginia Tech': 2.65,
+            'Arkansas': 2.20, 'Clemson': 2.15, 'Texas A&M': 2.35
+        }
+        try:
+            url = "https://www.warrennolan.com/softball/2026/stats-team-pitching"
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            response = requests.get(url, headers=headers, timeout=10)
+            dfs = pd.read_html(response.text)
+            df = dfs[0]
+            
+            df.columns = [str(c).strip() for c in df.columns]
+            team_col = [c for c in df.columns if 'Team' in c or 'School' in c][0]
+            era_col = [c for c in df.columns if 'ERA' in c][0]
+            
+            era_data = {}
+            for _, row in df.iterrows():
+                team = str(row[team_col]).strip()
+                try:
+                    era_val = float(row[era_col])
+                    era_data[team] = era_val
+                except ValueError:
+                    continue
+            return era_data
+        except Exception:
+            return fallback_eras
+
+    with st.spinner("Scraping NCAA Softball Baselines & ERAs..."):
         softball_teams = scrape_ncaa_softball_standings()
+        softball_eras = scrape_ncaa_softball_pitching()
         
-        if softball_teams:
+        if softball_teams and softball_eras:
             team_list = sorted(list(softball_teams.keys()))
             
             col1, col2 = st.columns(2)
@@ -438,28 +470,32 @@ elif sport == "🥎 NCAA Softball":
                 away_team = st.selectbox("Away Team:", team_list, index=0)
                 home_team = st.selectbox("Home Team:", team_list, index=1 if len(team_list) > 1 else 0)
                 
+                # Dynamic ERA Fetching: Automatically matches selected school
+                default_away_era = softball_eras.get(away_team, 2.50)
+                default_home_era = softball_eras.get(home_team, 2.50)
+                
                 st.markdown("---")
                 st.write("**Pitcher Quality Customization**")
                 st.caption("*Softball is highly pitching-dominant. Lower Starting Pitcher ERAs dynamically scale their team's Log5 win probability.*")
-                away_era = st.slider(f"{away_team} Starting Pitcher ERA:", 0.00, 7.00, 2.20, step=0.10)
-                home_era = st.slider(f"{home_team} Starting Pitcher ERA:", 0.00, 7.00, 2.20, step=0.10)
+                
+                # Streamlit Trick: Key changes automatically reset slider value to the newly scraped ERA!
+                away_era = st.slider(f"{away_team} Starting Pitcher ERA:", 0.00, 7.00, float(default_away_era), step=0.10, key=f"away_era_slider_{away_team}")
+                home_era = st.slider(f"{home_team} Starting Pitcher ERA:", 0.00, 7.00, float(default_home_era), step=0.10, key=f"home_era_slider_{home_team}")
             
             with col2:
                 st.subheader("Simulated Prediction Outputs")
                 
-                # Fetch baseline winning percentages
                 wp_a = softball_teams[away_team]
                 wp_b = softball_teams[home_team]
                 
-                # Math: Pitcher ERA adjustments relative to division standard ERA (2.50)
+                # Log5 Pitching quality weighting (relative to a 2.50 baseline ERA)
                 adj_a = wp_a * (2.50 / max(0.10, away_era))
                 adj_b = wp_b * (2.50 / max(0.10, home_era))
                 
-                # Keep adjusted winning percentages bounded safely between 0.01 and 0.99
                 adj_a = max(0.01, min(0.99, adj_a))
                 adj_b = max(0.01, min(0.99, adj_b))
                 
-                # Log5 Win Expectancy Formula
+                # Log5 Equation
                 log5_away = (adj_a - adj_a * adj_b) / (adj_a + adj_b - 2.0 * adj_a * adj_b)
                 log5_away = max(0.01, min(0.99, log5_away))
                 log5_home = 1.0 - log5_away
@@ -483,4 +519,4 @@ elif sport == "🥎 NCAA Softball":
                         if log_softball_to_sheets(row_data):
                             st.success("✅ Logged successfully to the 'Softball Log' tab!")
         else:
-            st.error("Could not compile softball standings database.")
+            st.error("Could not compile softball standings or pitching statistics database.")
