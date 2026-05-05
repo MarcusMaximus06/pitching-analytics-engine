@@ -360,7 +360,7 @@ if sport == "⚾ MLB Baseball":
                 except Exception: st.error("Engine failure mapping data.")
 
 # ==========================================================
-# SPORT BRANCH 2: NCAA SOFTBALL (FULLY AUTOMATED!)
+# SPORT BRANCH 2: NCAA SOFTBALL (DYNAMIC & HIGH FIDELITY!)
 # ==========================================================
 elif sport == "🥎 NCAA Softball":
     st.title("🥎 NCAA Softball Simulation Engine")
@@ -373,7 +373,6 @@ elif sport == "🥎 NCAA Softball":
             gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
             sh = gc.open("MLB Daily Prediction Model")
             
-            # Auto-Create Tab if it doesn't exist
             try:
                 worksheet = sh.worksheet("Softball Log")
             except gspread.exceptions.WorksheetNotFound:
@@ -387,23 +386,61 @@ elif sport == "🥎 NCAA Softball":
             st.error(f"Softball Sheet Log Error: {e}")
             return False
 
-    # --- WARREN NOLAN STANDINGS SCRAPER ---
-    @st.cache_data(ttl=14400) # Cache for 4 hours
+    # --- DUAL-SCRAPER: STANDINGS & PITCHING ---
+    # Top 66 NCAA DI Powerhouses (Strictly matched between both fallback lists to prevent dropdown voids)
+    fallback_teams = {
+        'Alabama': 0.690, 'Arizona': 0.710, 'Arizona State': 0.550, 'Arkansas': 0.715, 'Auburn': 0.620,
+        'Baylor': 0.650, 'Boston University': 0.820, 'BYU': 0.580, 'California': 0.680, 'Charlotte': 0.700,
+        'Clemson': 0.680, 'Duke': 0.845, 'Florida': 0.765, 'Florida Atlantic': 0.670, 'Florida State': 0.735,
+        'Georgia': 0.745, 'Georgia Tech': 0.590, 'Grand Canyon': 0.750, 'Houston': 0.520, 'Illinois': 0.480,
+        'Indiana': 0.600, 'Iowa State': 0.450, 'James Madison': 0.580, 'Kansas': 0.610, 'Kentucky': 0.600,
+        'Liberty': 0.660, 'Louisiana': 0.780, 'Louisville': 0.560, 'LSU': 0.775, 'McNeese': 0.740,
+        'Miami (OH)': 0.810, 'Michigan': 0.690, 'Minnesota': 0.580, 'Mississippi State': 0.640, 'Missouri': 0.710,
+        'Nebraska': 0.590, 'North Carolina': 0.550, 'Northwestern': 0.650, 'Notre Dame': 0.570, 'Ohio State': 0.580,
+        'Oklahoma': 0.895, 'Oklahoma State': 0.825, 'Ole Miss': 0.540, 'Oregon': 0.660, 'Oregon State': 0.480,
+        'Penn State': 0.620, 'San Diego State': 0.610, 'South Alabama': 0.650, 'South Carolina': 0.610, 'South Florida': 0.590,
+        'Stanford': 0.760, 'Syracuse': 0.500, 'Tennessee': 0.810, 'Texas': 0.880, 'Texas A&M': 0.705,
+        'Texas State': 0.720, 'Texas Tech': 0.560, 'UCLA': 0.790, 'UCF': 0.580, 'USC Upstate': 0.680,
+        'Utah': 0.570, 'Virginia': 0.630, 'Virginia Tech': 0.720, 'Washington': 0.725, 'Wichita State': 0.580,
+        'Wisconsin': 0.520
+    }
+
+    fallback_eras = {
+        'Alabama': 2.10, 'Arizona': 2.60, 'Arizona State': 3.20, 'Arkansas': 2.20, 'Auburn': 2.45,
+        'Baylor': 2.55, 'Boston University': 1.95, 'BYU': 3.10, 'California': 2.75, 'Charlotte': 2.30,
+        'Clemson': 2.15, 'Duke': 2.05, 'Florida': 2.35, 'Florida Atlantic': 2.40, 'Florida State': 2.50,
+        'Georgia': 2.40, 'Georgia Tech': 3.10, 'Grand Canyon': 2.25, 'Houston': 3.60, 'Illinois': 3.40,
+        'Indiana': 3.20, 'Iowa State': 3.80, 'James Madison': 2.90, 'Kansas': 2.80, 'Kentucky': 2.95,
+        'Liberty': 2.45, 'Louisiana': 2.10, 'Louisville': 3.30, 'LSU': 2.25, 'McNeese': 2.15,
+        'Miami (OH)': 2.20, 'Michigan': 2.40, 'Minnesota': 2.95, 'Mississippi State': 2.65, 'Missouri': 2.30,
+        'Nebraska': 2.85, 'North Carolina': 3.15, 'Northwestern': 2.50, 'Notre Dame': 2.90, 'Ohio State': 3.05,
+        'Oklahoma': 1.82, 'Oklahoma State': 2.15, 'Ole Miss': 2.80, 'Oregon': 2.55, 'Oregon State': 3.40,
+        'Penn State': 2.60, 'San Diego State': 2.50, 'South Alabama': 2.20, 'South Carolina': 2.70, 'South Florida': 2.45,
+        'Stanford': 1.75, 'Syracuse': 3.35, 'Tennessee': 1.90, 'Texas': 1.95, 'Texas A&M': 2.35,
+        'Texas State': 2.10, 'Texas Tech': 3.45, 'UCLA': 2.30, 'UCF': 2.80, 'USC Upstate': 2.40,
+        'Utah': 2.90, 'Virginia': 2.45, 'Virginia Tech': 2.65, 'Washington': 2.45, 'Wichita State': 3.10,
+        'Wisconsin': 3.15
+    }
+
+    @st.cache_data(ttl=14400)
     def scrape_ncaa_softball_standings():
-        fallback_teams = {
-            'Oklahoma': 0.895, 'Texas': 0.880, 'Oklahoma State': 0.825,
-            'Tennessee': 0.810, 'Duke': 0.845, 'UCLA': 0.790,
-            'Stanford': 0.760, 'LSU': 0.775, 'Washington': 0.725,
-            'Florida': 0.765, 'Georgia': 0.745, 'Alabama': 0.690,
-            'Florida State': 0.735, 'Missouri': 0.710, 'Virginia Tech': 0.720,
-            'Arkansas': 0.715, 'Clemson': 0.680, 'Texas A&M': 0.705
-        }
         try:
             url = "https://www.warrennolan.com/softball/2026/rpi-clean"
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0'}
             response = requests.get(url, headers=headers, timeout=10)
             dfs = pd.read_html(response.text)
-            df = dfs[0]
+            
+            # Smart Table Selector (Finds RPI Clean metrics table dynamically)
+            df = None
+            for t in dfs:
+                cols = [str(c) for c in t.columns]
+                has_team = any('Team' in c or 'School' in c for c in cols)
+                has_record = any('Record' in c and 'Conf' not in c for c in cols)
+                if has_team and has_record:
+                    df = t
+                    break
+            
+            if df is None: return fallback_teams
             
             df.columns = [str(c).strip() for c in df.columns]
             team_col = [c for c in df.columns if 'Team' in c or 'School' in c][0]
@@ -423,23 +460,25 @@ elif sport == "🥎 NCAA Softball":
         except Exception:
             return fallback_teams
 
-    # --- NEW: WARREN NOLAN TEAM ERA SCRAPER ---
-    @st.cache_data(ttl=14400) # Cache for 4 hours
+    @st.cache_data(ttl=14400)
     def scrape_ncaa_softball_pitching():
-        fallback_eras = {
-            'Oklahoma': 1.82, 'Texas': 1.95, 'Oklahoma State': 2.15,
-            'Tennessee': 1.90, 'Duke': 2.05, 'UCLA': 2.30,
-            'Stanford': 1.75, 'LSU': 2.25, 'Washington': 2.45,
-            'Florida': 2.35, 'Georgia': 2.40, 'Alabama': 2.10,
-            'Florida State': 2.50, 'Missouri': 2.30, 'Virginia Tech': 2.65,
-            'Arkansas': 2.20, 'Clemson': 2.15, 'Texas A&M': 2.35
-        }
         try:
             url = "https://www.warrennolan.com/softball/2026/stats-team-pitching"
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0'}
             response = requests.get(url, headers=headers, timeout=10)
             dfs = pd.read_html(response.text)
-            df = dfs[0]
+            
+            # Smart Table Selector (Finds pitching statistics table dynamically)
+            df = None
+            for t in dfs:
+                cols = [str(c) for c in t.columns]
+                has_team = any('Team' in c or 'School' in c for c in cols)
+                has_era = any('ERA' in c for c in cols)
+                if has_team and has_era:
+                    df = t
+                    break
+            
+            if df is None: return fallback_eras
             
             df.columns = [str(c).strip() for c in df.columns]
             team_col = [c for c in df.columns if 'Team' in c or 'School' in c][0]
@@ -451,8 +490,7 @@ elif sport == "🥎 NCAA Softball":
                 try:
                     era_val = float(row[era_col])
                     era_data[team] = era_val
-                except ValueError:
-                    continue
+                except ValueError: continue
             return era_data
         except Exception:
             return fallback_eras
@@ -462,15 +500,21 @@ elif sport == "🥎 NCAA Softball":
         softball_eras = scrape_ncaa_softball_pitching()
         
         if softball_teams and softball_eras:
-            team_list = sorted(list(softball_teams.keys()))
+            # Union matching teams to guarantee dropdown integrity
+            valid_teams = sorted(list(set(softball_teams.keys()).intersection(set(softball_eras.keys()))))
+            
+            # If union is small, default back to our highly stable fallback list
+            if len(valid_teams) < 20:
+                softball_teams = fallback_teams
+                softball_eras = fallback_eras
+                valid_teams = sorted(list(softball_teams.keys()))
             
             col1, col2 = st.columns(2)
             with col1:
                 st.subheader("Matchup Configuration")
-                away_team = st.selectbox("Away Team:", team_list, index=0)
-                home_team = st.selectbox("Home Team:", team_list, index=1 if len(team_list) > 1 else 0)
+                away_team = st.selectbox("Away Team:", valid_teams, index=0)
+                home_team = st.selectbox("Home Team:", valid_teams, index=1 if len(valid_teams) > 1 else 0)
                 
-                # Dynamic ERA Fetching: Automatically matches selected school
                 default_away_era = softball_eras.get(away_team, 2.50)
                 default_home_era = softball_eras.get(home_team, 2.50)
                 
@@ -478,7 +522,7 @@ elif sport == "🥎 NCAA Softball":
                 st.write("**Pitcher Quality Customization**")
                 st.caption("*Softball is highly pitching-dominant. Lower Starting Pitcher ERAs dynamically scale their team's Log5 win probability.*")
                 
-                # Streamlit Trick: Key changes automatically reset slider value to the newly scraped ERA!
+                # Streamlit Trick: Key changes automatically reset slider value to newly scraped ERA!
                 away_era = st.slider(f"{away_team} Starting Pitcher ERA:", 0.00, 7.00, float(default_away_era), step=0.10, key=f"away_era_slider_{away_team}")
                 home_era = st.slider(f"{home_team} Starting Pitcher ERA:", 0.00, 7.00, float(default_home_era), step=0.10, key=f"home_era_slider_{home_team}")
             
@@ -488,14 +532,12 @@ elif sport == "🥎 NCAA Softball":
                 wp_a = softball_teams[away_team]
                 wp_b = softball_teams[home_team]
                 
-                # Log5 Pitching quality weighting (relative to a 2.50 baseline ERA)
                 adj_a = wp_a * (2.50 / max(0.10, away_era))
                 adj_b = wp_b * (2.50 / max(0.10, home_era))
                 
                 adj_a = max(0.01, min(0.99, adj_a))
                 adj_b = max(0.01, min(0.99, adj_b))
                 
-                # Log5 Equation
                 log5_away = (adj_a - adj_a * adj_b) / (adj_a + adj_b - 2.0 * adj_a * adj_b)
                 log5_away = max(0.01, min(0.99, log5_away))
                 log5_home = 1.0 - log5_away
