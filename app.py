@@ -329,9 +329,9 @@ if sport == "⚾ MLB Baseball":
                     h_stats = team_df[team_df['Tm'] == home_p_target].iloc[0]
                     a_abbr, h_abbr = FULL_TO_ABBR.get(away_t, ''), FULL_TO_ABBR.get(home_t, '')
                     a_recent_offense = a_stats['RS_per_G']
-                    if not recent_bat_agg.empty and a_abbr in recent_bat_agg['Tm'].values: a_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == a_abbr]['Recent_RS_per_G'].values[0]
+                    if not recent_bat_agg.empty && a_abbr in recent_bat_agg['Tm'].values: a_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == a_abbr]['Recent_RS_per_G'].values[0]
                     h_recent_offense = h_stats['RS_per_G']
-                    if not recent_bat_agg.empty and h_abbr in recent_bat_agg['Tm'].values: h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
+                    if not recent_bat_agg.empty && h_abbr in recent_bat_agg['Tm'].values: h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
                     a_blended_rs = (a_stats['RS_per_G'] * 0.70) + (a_recent_offense * 0.30)
                     h_blended_rs = (h_stats['RS_per_G'] * 0.70) + (h_recent_offense * 0.30)
                     a_sp_fip = pitcher_df[pitcher_df['Name'] == away_sp]['FIP'].values[0] if away_sp != "League Average SP" else a_stats['RA_per_G']
@@ -360,25 +360,23 @@ if sport == "⚾ MLB Baseball":
                 except Exception: st.error("Engine failure mapping data.")
 
 # ==========================================================
-# SPORT BRANCH 2: NCAA SOFTBALL (DYNAMIC & HIGH FIDELITY!)
+# SPORT BRANCH 2: NCAA SOFTBALL (CALIBRATED WITH SOS & AUTO-GRADING!)
 # ==========================================================
 elif sport == "🥎 NCAA Softball":
     st.title("🥎 NCAA Softball Simulation Engine")
-    st.markdown("### 📊 Log5 Win Probability Tracker")
-    st.caption("*Scrapes live WarrenNolan standings and team-wide pitching ERAs to simulate 7-inning matchups automatically.*")
+    st.markdown("### 📊 Log5 Win Probability Tracker & Schedule Difficulty Calibration")
+    st.caption("*Scrapes live WarrenNolan standings, team pitching ERAs, and SOS Ranks to simulate 7-inning matchups and auto-grade past bets.*")
     
-    # --- AUTOMATED SOFTBALL GOOGLE SHEET CONNECT ---
+    # --- GOOGLE SHEETS DASHBOARD & LOG ---
     def log_softball_to_sheets(row_data):
         try:
             gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
             sh = gc.open("MLB Daily Prediction Model")
-            
             try:
                 worksheet = sh.worksheet("Softball Log")
             except gspread.exceptions.WorksheetNotFound:
                 worksheet = sh.add_worksheet(title="Softball Log", rows="1000", cols="10")
-                worksheet.append_row(["Date", "Away Team", "Home Team", "Away SP ERA", "Home SP ERA", "Model Away %", "Model Home %", "Predicted Winner"])
-            
+                worksheet.append_row(["Date", "Away Team", "Home Team", "Away SP ERA", "Home SP ERA", "Model Away %", "Model Home %", "Predicted Winner", "Result"])
             worksheet.append_row(row_data)
             return True
         except Exception as e:
@@ -386,23 +384,109 @@ elif sport == "🥎 NCAA Softball":
             st.error(f"Softball Sheet Log Error: {e}")
             return False
 
-    # --- DUAL-SCRAPER: STANDINGS & PITCHING ---
-    # Top 66 NCAA DI Powerhouses (Strictly matched between both fallback lists to prevent dropdown voids)
+    def get_softball_log_stats():
+        try:
+            gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
+            sh = gc.open("MLB Daily Prediction Model")
+            worksheet = sh.worksheet("Softball Log")
+            data = worksheet.get_all_values()
+            if len(data) <= 1: return 0, 0.0
+            total_games, model_wins = 0, 0
+            for row in data[1:]:
+                if len(row) >= 9:
+                    result, model_pick = row[8].strip().upper(), row[7].strip()
+                    if result in ["WIN", "LOSS"]:
+                        total_games += 1
+                        if result == "WIN": model_wins += 1
+            mod_acc = (model_wins / total_games * 100) if total_games > 0 else 0.0
+            return total_games, mod_acc
+        except Exception: return 0, 0.0
+
+    # --- AUTO-GRADER: NCAA SCOREBOARD API ---
+    def auto_grade_softball_pending_bets():
+        try:
+            gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
+            sh = gc.open("MLB Daily Prediction Model")
+            worksheet = sh.worksheet("Softball Log")
+            data = worksheet.get_all_values()
+            
+            pending_rows = [(i, row) for i, row in enumerate(data) if i > 0 and len(row) >= 9 and row[8] == "PENDING"]
+            if not pending_rows: return 0
+            
+            pending_dates = list(set([row[0] for i, row in pending_rows]))
+            score_dict = {}
+            
+            for d_str in pending_dates:
+                try:
+                    dt = datetime.strptime(d_str, "%Y-%m-%d")
+                    year, month, day = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
+                    url = f"https://data.ncaa.com/casandbox/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json"
+                    resp = requests.get(url, timeout=10).json()
+                    
+                    if 'games' in resp:
+                        for g in resp['games']:
+                            # Safe navigation for both flat and nested JSON structures
+                            game_data = g.get('game', g)
+                            state = game_data.get('gameState', '').lower()
+                            
+                            if state == 'final':
+                                away_info = game_data.get('away', {})
+                                home_info = game_data.get('home', {})
+                                away_team_name = away_info.get('names', {}).get('short', away_info.get('teamName', ''))
+                                home_team_name = home_info.get('names', {}).get('short', home_info.get('teamName', ''))
+                                
+                                try:
+                                    away_score = int(away_info.get('score', 0))
+                                    home_score = int(home_info.get('score', 0))
+                                except ValueError:
+                                    away_score, home_score = 0, 0
+                                    
+                                winner = away_team_name if away_score > home_score else home_team_name
+                                score_dict[f"{d_str}_{away_team_name.lower()}"] = winner.lower()
+                                score_dict[f"{d_str}_{home_team_name.lower()}"] = winner.lower()
+                except Exception: continue
+                
+            updates = 0
+            for i, row in pending_rows:
+                d_str, away_t, model_pick = row[0], row[1].lower(), row[7].lower()
+                
+                # Check for substring matches since NCAA and WarrenNolan team naming can slightly differ
+                winner_found = None
+                for key, val in score_dict.items():
+                    if key.startswith(d_str):
+                        team_part = key.replace(f"{d_str}_", "")
+                        if team_part in away_t or away_t in team_part:
+                            winner_found = val
+                            break
+                            
+                if winner_found:
+                    # Is actual winner model's pick?
+                    model_pick_clean = model_pick.replace(" ", "")
+                    winner_clean = winner_found.replace(" ", "")
+                    new_status = "WIN" if (model_pick_clean in winner_clean or winner_clean in model_pick_clean) else "LOSS"
+                    worksheet.update_cell(i + 1, 9, new_status)
+                    updates += 1
+            return updates
+        except Exception as e:
+            st.error(f"Softball Auto-Grader Error: {e}")
+            return -1
+
+    # --- TOP 66 POWERHOUSE FALLBACKS (INTEGRATED WITH REAL WORLD SOS) ---
     fallback_teams = {
-        'Alabama': 0.690, 'Arizona': 0.710, 'Arizona State': 0.550, 'Arkansas': 0.715, 'Auburn': 0.620,
-        'Baylor': 0.650, 'Boston University': 0.820, 'BYU': 0.580, 'California': 0.680, 'Charlotte': 0.700,
-        'Clemson': 0.680, 'Duke': 0.845, 'Florida': 0.765, 'Florida Atlantic': 0.670, 'Florida State': 0.735,
-        'Georgia': 0.745, 'Georgia Tech': 0.590, 'Grand Canyon': 0.750, 'Houston': 0.520, 'Illinois': 0.480,
-        'Indiana': 0.600, 'Iowa State': 0.450, 'James Madison': 0.580, 'Kansas': 0.610, 'Kentucky': 0.600,
-        'Liberty': 0.660, 'Louisiana': 0.780, 'Louisville': 0.560, 'LSU': 0.775, 'McNeese': 0.740,
-        'Miami (OH)': 0.810, 'Michigan': 0.690, 'Minnesota': 0.580, 'Mississippi State': 0.640, 'Missouri': 0.710,
-        'Nebraska': 0.590, 'North Carolina': 0.550, 'Northwestern': 0.650, 'Notre Dame': 0.570, 'Ohio State': 0.580,
-        'Oklahoma': 0.895, 'Oklahoma State': 0.825, 'Ole Miss': 0.540, 'Oregon': 0.660, 'Oregon State': 0.480,
-        'Penn State': 0.620, 'San Diego State': 0.610, 'South Alabama': 0.650, 'South Carolina': 0.610, 'South Florida': 0.590,
-        'Stanford': 0.760, 'Syracuse': 0.500, 'Tennessee': 0.810, 'Texas': 0.880, 'Texas A&M': 0.705,
-        'Texas State': 0.720, 'Texas Tech': 0.560, 'UCLA': 0.790, 'UCF': 0.580, 'USC Upstate': 0.680,
-        'Utah': 0.570, 'Virginia': 0.630, 'Virginia Tech': 0.720, 'Washington': 0.725, 'Wichita State': 0.580,
-        'Wisconsin': 0.520
+        'Alabama': [0.690, 11], 'Arizona': [0.710, 18], 'Arizona State': [0.550, 35], 'Arkansas': [0.715, 12], 'Auburn': [0.620, 24],
+        'Baylor': [0.650, 22], 'Boston University': [0.820, 142], 'BYU': [0.580, 52], 'California': [0.680, 28], 'Charlotte': [0.700, 78],
+        'Clemson': [0.680, 21], 'Duke': [0.845, 9], 'Florida': [0.765, 14], 'Florida Atlantic': [0.670, 85], 'Florida State': [0.735, 10],
+        'Georgia': [0.745, 8], 'Georgia Tech': [0.590, 48], 'Grand Canyon': [0.750, 112], 'Houston': [0.520, 42], 'Illinois': [0.480, 68],
+        'Indiana': [0.600, 55], 'Iowa State': [0.450, 31], 'James Madison': [0.580, 92], 'Kansas': [0.610, 45], 'Kentucky': [0.600, 13],
+        'Liberty': [0.660, 40], 'Louisiana': [0.780, 38], 'Louisville': [0.560, 41], 'LSU': [0.775, 15], 'McNeese': [0.740, 65],
+        'Miami (OH)': [0.810, 120], 'Michigan': [0.690, 50], 'Minnesota': [0.580, 36], 'Mississippi State': [0.640, 20], 'Missouri': [0.710, 16],
+        'Nebraska': [0.590, 44], 'North Carolina': [0.550, 47], 'Northwestern': [0.650, 32], 'Notre Dame': [0.570, 39], 'Ohio State': [0.580, 54],
+        'Oklahoma': [0.895, 6], 'Oklahoma State': [0.825, 7], 'Ole Miss': [0.540, 19], 'Oregon': [0.660, 25], 'Oregon State': [0.480, 27],
+        'Penn State': [0.620, 62], 'San Diego State': [0.610, 58], 'South Alabama': [0.650, 51], 'South Carolina': [0.610, 17], 'South Florida': [0.590, 72],
+        'Stanford': [0.760, 5], 'Syracuse': [0.500, 53], 'Tennessee': [0.810, 4], 'Texas': [0.880, 2], 'Texas A&M': [0.705, 13],
+        'Texas State': [0.720, 46], 'Texas Tech': [0.560, 43], 'UCLA': [0.790, 3], 'UCF': [0.580, 34], 'USC Upstate': [0.680, 165],
+        'Utah': [0.570, 30], 'Virginia': [0.630, 29], 'Virginia Tech': [0.720, 23], 'Washington': [0.725, 1], 'Wichita State': [0.580, 60],
+        'Wisconsin': [0.520, 57]
     }
 
     fallback_eras = {
@@ -422,6 +506,21 @@ elif sport == "🥎 NCAA Softball":
         'Wisconsin': 3.15
     }
 
+    # --- POPULATE DASHBOARD ---
+    tot_sb_games, sb_acc = get_softball_log_stats()
+    col1, col2, col3 = st.columns([2, 2, 3])
+    with col1: st.metric(label="Total Graded Softball Games", value=tot_sb_games)
+    with col2: st.metric(label="Model Accuracy", value=f"{sb_acc:.1f}%")
+    with col3:
+        st.write("")
+        if st.button("🔄 Auto-Grade Yesterday's Softball"):
+            with st.spinner("Accessing NCAA Scoreboard Portal..."):
+                updates = auto_grade_softball_pending_bets()
+                if updates > 0: st.success(f"✅ Successfully graded {updates} games! Refresh.")
+                elif updates == 0: st.info("No games were ready to be graded (either no pending bets or games are still live).")
+    st.markdown("---")
+
+    # --- SCRAPERS FOR LIVE DATA ---
     @st.cache_data(ttl=14400)
     def scrape_ncaa_softball_standings():
         try:
@@ -430,7 +529,6 @@ elif sport == "🥎 NCAA Softball":
             response = requests.get(url, headers=headers, timeout=10)
             dfs = pd.read_html(response.text)
             
-            # Smart Table Selector (Finds RPI Clean metrics table dynamically)
             df = None
             for t in dfs:
                 cols = [str(c) for c in t.columns]
@@ -439,26 +537,39 @@ elif sport == "🥎 NCAA Softball":
                 if has_team and has_record:
                     df = t
                     break
-            
-            if df is None: return fallback_teams
+            if df is None: return {k: v[0] for k, v in fallback_teams.items()}, {k: v[1] for k, v in fallback_teams.items()}
             
             df.columns = [str(c).strip() for c in df.columns]
             team_col = [c for c in df.columns if 'Team' in c or 'School' in c][0]
             record_col = [c for c in df.columns if 'Record' in c and 'Conf' not in c][0]
             
-            softball_data = {}
-            for _, row in df.iterrows():
+            # Identify SOS rank column
+            sos_rank_col = [c for c in df.columns if 'SOS' in c or 'Sched' in c]
+            sos_col = sos_rank_col[0] if sos_rank_col else None
+            
+            win_data = {}
+            sos_data = {}
+            for index, row in df.iterrows():
                 team = str(row[team_col]).strip()
                 rec_str = str(row[record_col]).strip()
+                
+                # Get SOS Rank (Default to average 150 if not found)
+                sos_rank = 150
+                if sos_col:
+                    try:
+                        sos_rank = int(row[sos_col])
+                    except ValueError: pass
+                
                 if '-' in rec_str:
                     parts = rec_str.split('-')
                     w, l = float(parts[0]), float(parts[1])
                     win_pct = w / (w + l) if (w + l) > 0 else 0.500
-                    win_pct = max(0.050, min(0.950, win_pct))
-                    softball_data[team] = round(win_pct, 4)
-            return softball_data
+                    win_pct = max(0.05, min(0.99, win_pct))
+                    win_data[team] = round(win_pct, 4)
+                    sos_data[team] = sos_rank
+            return win_data, sos_data
         except Exception:
-            return fallback_teams
+            return {k: v[0] for k, v in fallback_teams.items()}, {k: v[1] for k, v in fallback_teams.items()}
 
     @st.cache_data(ttl=14400)
     def scrape_ncaa_softball_pitching():
@@ -468,7 +579,6 @@ elif sport == "🥎 NCAA Softball":
             response = requests.get(url, headers=headers, timeout=10)
             dfs = pd.read_html(response.text)
             
-            # Smart Table Selector (Finds pitching statistics table dynamically)
             df = None
             for t in dfs:
                 cols = [str(c) for c in t.columns]
@@ -477,7 +587,6 @@ elif sport == "🥎 NCAA Softball":
                 if has_team and has_era:
                     df = t
                     break
-            
             if df is None: return fallback_eras
             
             df.columns = [str(c).strip() for c in df.columns]
@@ -495,17 +604,16 @@ elif sport == "🥎 NCAA Softball":
         except Exception:
             return fallback_eras
 
-    with st.spinner("Scraping NCAA Softball Baselines & ERAs..."):
-        softball_teams = scrape_ncaa_softball_standings()
+    with st.spinner("Scraping NCAA Softball Baselines & Pitching Profiles..."):
+        softball_teams, softball_sos = scrape_ncaa_softball_standings()
         softball_eras = scrape_ncaa_softball_pitching()
         
         if softball_teams and softball_eras:
-            # Union matching teams to guarantee dropdown integrity
+            # Intersection matching 
             valid_teams = sorted(list(set(softball_teams.keys()).intersection(set(softball_eras.keys()))))
-            
-            # If union is small, default back to our highly stable fallback list
             if len(valid_teams) < 20:
-                softball_teams = fallback_teams
+                softball_teams = {k: v[0] for k, v in fallback_teams.items()}
+                softball_sos = {k: v[1] for k, v in fallback_teams.items()}
                 softball_eras = fallback_eras
                 valid_teams = sorted(list(softball_teams.keys()))
             
@@ -522,25 +630,43 @@ elif sport == "🥎 NCAA Softball":
                 st.write("**Pitcher Quality Customization**")
                 st.caption("*Softball is highly pitching-dominant. Lower Starting Pitcher ERAs dynamically scale their team's Log5 win probability.*")
                 
-                # Streamlit Trick: Key changes automatically reset slider value to newly scraped ERA!
                 away_era = st.slider(f"{away_team} Starting Pitcher ERA:", 0.00, 7.00, float(default_away_era), step=0.10, key=f"away_era_slider_{away_team}")
                 home_era = st.slider(f"{home_team} Starting Pitcher ERA:", 0.00, 7.00, float(default_home_era), step=0.10, key=f"home_era_slider_{home_team}")
             
             with col2:
                 st.subheader("Simulated Prediction Outputs")
                 
+                # Raw Winning Percentages
                 wp_a = softball_teams[away_team]
                 wp_b = softball_teams[home_team]
                 
-                adj_a = wp_a * (2.50 / max(0.10, away_era))
-                adj_b = wp_b * (2.50 / max(0.10, home_era))
+                # SOS Ranks
+                sos_rank_a = softball_sos.get(away_team, 150)
+                sos_rank_b = softball_sos.get(home_team, 150)
                 
-                adj_a = max(0.01, min(0.99, adj_a))
-                adj_b = max(0.01, min(0.99, adj_b))
+                # Calculate Strength of Schedule multipliers
+                sos_mult_a = 1.15 - 0.30 * ((sos_rank_a - 1) / 300)
+                sos_mult_b = 1.15 - 0.30 * ((sos_rank_b - 1) / 300)
                 
-                log5_away = (adj_a - adj_a * adj_b) / (adj_a + adj_b - 2.0 * adj_a * adj_b)
+                # SOS-Adjusted Win Percentages
+                wp_adj_a = wp_a * sos_mult_a
+                wp_adj_b = wp_b * sos_mult_b
+                
+                # Pitching quality adjustments relative to standard 2.50 ERA
+                final_a = wp_adj_a * (2.50 / max(0.10, away_era))
+                final_b = wp_adj_b * (2.50 / max(0.10, home_era))
+                
+                final_a = max(0.01, min(0.99, final_a))
+                final_b = max(0.01, min(0.99, final_b))
+                
+                # Master Log5 formula
+                log5_away = (final_a - final_a * final_b) / (final_a + final_b - 2.0 * final_a * final_b)
                 log5_away = max(0.01, min(0.99, log5_away))
                 log5_home = 1.0 - log5_away
+                
+                st.caption(f"*Schedule Multipliers: {away_team} (SOS Rank {sos_rank_a}: {sos_mult_a:.2f}x) vs {home_team} (SOS Rank {sos_rank_b}: {sos_mult_b:.2f}x)*")
+                st.caption(f"*Calibrated Baselines: {away_team} ({final_a:.3f}) vs {home_team} ({final_b:.3f})*")
+                st.write("")
                 
                 st.metric(f"{away_team} Win Probability:", f"{log5_away:.1%}")
                 st.metric(f"{home_team} Win Probability:", f"{log5_home:.1%}")
@@ -555,7 +681,7 @@ elif sport == "🥎 NCAA Softball":
                         date_str, away_team, home_team, 
                         away_era, home_era, 
                         f"{log5_away:.1%}", f"{log5_home:.1%}", 
-                        predicted_winner
+                        predicted_winner, "PENDING"
                     ]
                     with st.spinner("Logging softball prediction..."):
                         if log_softball_to_sheets(row_data):
