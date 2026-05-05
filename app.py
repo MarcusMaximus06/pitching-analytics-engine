@@ -93,7 +93,6 @@ def log_to_google_sheets(row_data):
         if "200" in str(e): return True
         return False
 
-# --- NEW: READ GOOGLE SHEETS DASHBOARD DATA ---
 def get_master_log_stats():
     try:
         gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
@@ -101,13 +100,13 @@ def get_master_log_stats():
         worksheet = sh.worksheet("Master Log")
         data = worksheet.get_all_values()
         
-        if len(data) <= 1: return 0, 0.0, 0.0 # Empty sheet
+        if len(data) <= 1: return 0, 0.0, 0.0 
         
         total_games = 0
         model_wins = 0
         vegas_wins = 0
         
-        for row in data[1:]: # Skip headers
+        for row in data[1:]: 
             if len(row) >= 9:
                 result = row[8].strip().upper()
                 model_pick = row[7].strip()
@@ -116,22 +115,66 @@ def get_master_log_stats():
                 away_t = row[1]
                 home_t = row[2]
                 
-                # Determine Vegas Pick (Favorite)
                 vegas_pick = away_t if away_ml < home_ml else home_t
                 
                 if result in ["WIN", "LOSS"]:
                     total_games += 1
-                    if result == "WIN": model_wins += 1 # Assuming "WIN" means the model pick was correct
+                    if result == "WIN": model_wins += 1 
                     
-                    # Check if Vegas got it right based on actual winner
                     actual_winner = model_pick if result == "WIN" else (away_t if model_pick == home_t else home_t)
                     if actual_winner == vegas_pick: vegas_wins += 1
                         
         mod_acc = (model_wins / total_games * 100) if total_games > 0 else 0.0
         veg_acc = (vegas_wins / total_games * 100) if total_games > 0 else 0.0
         return total_games, mod_acc, veg_acc
-    except Exception as e:
+    except Exception:
         return 0, 0.0, 0.0
+
+# --- THE AUTO-GRADER ---
+def auto_grade_pending_bets():
+    try:
+        gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
+        sh = gc.open("MLB Daily Prediction Model")
+        worksheet = sh.worksheet("Master Log")
+        data = worksheet.get_all_values()
+        
+        pending_dates = list(set([row[0] for row in data[1:] if len(row) >= 9 and row[8] == "PENDING"]))
+        if not pending_dates: return 0
+        
+        score_dict = {}
+        for d_str in pending_dates:
+            url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={d_str}"
+            resp = requests.get(url).json()
+            if 'dates' in resp and len(resp['dates']) > 0:
+                games = resp['dates'][0]['games']
+                for g in games:
+                    if g['status']['abstractGameState'] == 'Final':
+                        away = g['teams']['away']['team']['name']
+                        home = g['teams']['home']['team']['name']
+                        away_score = g['teams']['away'].get('score', 0)
+                        home_score = g['teams']['home'].get('score', 0)
+                        winner = away if away_score > home_score else home
+                        score_dict[f"{d_str}_{away}"] = winner
+                        score_dict[f"{d_str}_{home}"] = winner
+                        
+        updates = 0
+        for i, row in enumerate(data):
+            if i == 0: continue
+            if len(row) >= 9 and row[8] == "PENDING":
+                d_str = row[0]
+                away_t = row[1]
+                model_pick = row[7]
+                
+                lookup_key = f"{d_str}_{away_t}"
+                if lookup_key in score_dict:
+                    actual_winner = score_dict[lookup_key]
+                    new_status = "WIN" if model_pick == actual_winner else "LOSS"
+                    worksheet.update_cell(i + 1, 9, new_status)
+                    updates += 1
+        return updates
+    except Exception as e:
+        st.error(f"Auto-Grader Error: {e}")
+        return -1
 
 def calc_advanced_metrics(df):
     if 'BB9' not in df.columns: df['BB9'] = (df['BB'] / df['IP']) * 9
@@ -148,11 +191,9 @@ def load_pitching_data():
     season_df = pitching_stats_bref(2026)
     season_df['Name'] = season_df['Name'].apply(clean_name)
     season_df = calc_advanced_metrics(season_df)
-    
     today = datetime.now()
     two_weeks_ago = today - timedelta(days=14)
     recent_df = pitching_stats_range(two_weeks_ago.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'))
-    
     if not recent_df.empty:
         recent_df['Name'] = recent_df['Name'].apply(clean_name)
         recent_df = calc_advanced_metrics(recent_df)
@@ -170,32 +211,26 @@ def get_team_data():
     try:
         bat_df = batting_stats_bref(2026)
         pitch_df = pitching_stats_bref(2026)
-        
         team_bat = bat_df.groupby('Tm').agg(RS=('R', 'sum')).reset_index()
         team_pitch = pitch_df.groupby('Tm').agg(RA=('R', 'sum'), Team_G=('GS', 'sum')).reset_index()
-        
         pitch_df['is_reliever'] = pitch_df['GS'] <= (pitch_df['G'] * 0.25)
         bp_df = pitch_df[pitch_df['is_reliever']]
         team_bp = bp_df.groupby('Tm').agg(BP_R=('R', 'sum'), BP_IP=('IP', 'sum')).reset_index()
         team_bp['BP_IP'] = team_bp['BP_IP'].replace(0, 1)
         team_bp['BP_RA9'] = (team_bp['BP_R'] / team_bp['BP_IP']) * 9
-        
         team_df = pd.merge(team_bat, team_pitch, on='Tm')
         team_df = team_df[team_df['Tm'] != 'TOT']
         team_df['Team_G'] = team_df['Team_G'].replace(0, 1)
         team_df['RS_per_G'] = team_df['RS'] / team_df['Team_G']
         team_df['RA_per_G'] = team_df['RA'] / team_df['Team_G']
-        
         team_df = pd.merge(team_df, team_bp[['Tm', 'BP_RA9']], on='Tm', how='left')
         team_df['BP_RA9'] = team_df['BP_RA9'].fillna(team_df['RA_per_G'])
-        
         today = datetime.now()
         two_weeks_ago = today - timedelta(days=14)
         recent_bat = batting_stats_range(two_weeks_ago.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'))
         recent_bat_agg = recent_bat.groupby('Tm').agg(Recent_RS=('R', 'sum'), Recent_G=('G', 'max')).reset_index()
         recent_bat_agg['Recent_G'] = recent_bat_agg['Recent_G'].replace(0, 1)
         recent_bat_agg['Recent_RS_per_G'] = recent_bat_agg['Recent_RS'] / recent_bat_agg['Recent_G']
-        
         return team_df.sort_values('Tm'), recent_bat_agg
     except Exception as e: 
         return pd.DataFrame(), pd.DataFrame()
@@ -233,13 +268,21 @@ elif page == "🎲 Monte Carlo Simulation Engine":
     st.markdown("### 📊 Live Model Log & Automation")
     st.caption("*Integrates with The-Odds-API to pull live DraftKings lines and securely writes to your connected Google Sheet.*")
     
-    # --- POPULATE DASHBOARD ---
     tot_games, mod_acc, veg_acc = get_master_log_stats()
     
-    col1, col2, col3 = st.columns(3)
-    with col1: st.metric(label="Total Graded Games Logged", value=tot_games)
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 3])
+    with col1: st.metric(label="Total Graded Games", value=tot_games)
     with col2: st.metric(label="Model Accuracy", value=f"{mod_acc:.1f}%")
-    with col3: st.metric(label="Vegas Odds Accuracy", value=f"{veg_acc:.1f}%")
+    with col3: st.metric(label="Vegas Accuracy", value=f"{veg_acc:.1f}%")
+    with col4: 
+        st.write("") # Spacing
+        if st.button("🔄 Auto-Grade Yesterday's Bets"):
+            with st.spinner("Pinging MLB Stats API..."):
+                updates = auto_grade_pending_bets()
+                if updates > 0:
+                    st.success(f"✅ Successfully graded {updates} games! Refresh the page to see your updated metrics.")
+                elif updates == 0:
+                    st.info("No games were ready to be graded (either no pending bets or games are still live).")
     st.markdown("---")
     
     with st.spinner('Syncing data, live odds, and Google authentications...'):
@@ -249,7 +292,6 @@ elif page == "🎲 Monte Carlo Simulation Engine":
         
         if not team_df.empty and not pitcher_df.empty:
             
-            # --- THE DAILY MASTER RUNNER ---
             st.subheader("⚡ Automated Daily Slate Runner")
             st.markdown("Click this button once a day to simulate every active matchup and log the Actionable Edges to Google Sheets.")
             if st.button("▶ Auto-Run & Log Entire Daily Slate"):
@@ -278,7 +320,6 @@ elif page == "🎲 Monte Carlo Simulation Engine":
                             a_blended_rs = (a_stats['RS_per_G'] * 0.70) + (a_recent_offense * 0.30)
                             h_blended_rs = (h_stats['RS_per_G'] * 0.70) + (h_recent_offense * 0.30)
                             
-                            # Auto-Runner assumes League Average SP if specific starters aren't locked yet
                             a_run_prevention = (a_stats['RA_per_G'] * 0.61) + (a_stats['BP_RA9'] * 0.39)
                             h_run_prevention = (h_stats['RA_per_G'] * 0.61) + (h_stats['BP_RA9'] * 0.39)
                             
