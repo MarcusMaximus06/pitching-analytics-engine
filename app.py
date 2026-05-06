@@ -174,21 +174,10 @@ if sport == "⚾ MLB Baseball":
             st.error(f"Auto-Grader Error: {e}")
             return -1
 
-    def calc_advanced_metrics(df):
-        if 'BB9' not in df.columns: df['BB9'] = (df['BB'] / df['IP']) * 9
-        if 'SO9' not in df.columns: df['SO9'] = (df['SO'] / df['IP']) * 9
-        if 'FIP' not in df.columns:
-            hbp = df['HBP'] if 'HBP' in df.columns else 0
-            df['FIP'] = ((13 * df['HR']) + (3 * (df['BB'] + hbp)) - (2 * df['SO'])) / df['IP'] + 3.15
-        df = df.dropna(subset=['ERA', 'FIP', 'SO9', 'BB9'])
-        df['FPI'] = ((df['SO9'] * 1.5) - (df['BB9'] * 1.2) - df['FIP']).round(2)
-        return df
-
     @st.cache_data(ttl=3600)
     def load_pitching_data():
         season_df = pitching_stats_bref(2026)
         season_df['Name'] = season_df['Name'].apply(clean_name)
-        season_df = calc_advanced_metrics(season_df)
         return season_df
 
     @st.cache_data(ttl=3600)
@@ -306,8 +295,14 @@ if sport == "⚾ MLB Baseball":
                 default_away_ml = int(live_odds.get(matchup_key, [100, -110])[0])
                 default_home_ml = int(live_odds.get(matchup_key, [100, -110])[1])
                 away_p_target, home_p_target = TEAM_NAME_MAP.get(away_t, away_t), TEAM_NAME_MAP.get(home_t, home_t)
-                away_pitchers = sorted(pitcher_df[pitcher_df['Tm'] == away_p_target]['Name'].unique().tolist())
-                home_pitchers = sorted(pitcher_df[pitcher_df['Tm'] == home_p_target]['Name'].unique().tolist())
+                
+                # Failsafe for pitchers in lean mode
+                if not pitcher_df.empty and 'Tm' in pitcher_df.columns:
+                    away_pitchers = sorted(pitcher_df[pitcher_df['Tm'] == away_p_target]['Name'].unique().tolist())
+                    home_pitchers = sorted(pitcher_df[pitcher_df['Tm'] == home_p_target]['Name'].unique().tolist())
+                else:
+                    away_pitchers, home_pitchers = [], []
+                    
                 away_sp = st.sidebar.selectbox(f"{away_t} SP:", ["League Average SP"] + away_pitchers)
                 home_sp = st.sidebar.selectbox(f"{home_t} SP:", ["League Average SP"] + home_pitchers)
                 location = st.sidebar.selectbox("Location:", list(PARK_FACTORS.keys()), index=list(PARK_FACTORS.keys()).index(home_t) if home_t in PARK_FACTORS else 0)
@@ -330,10 +325,8 @@ if sport == "⚾ MLB Baseball":
                         
                     a_blended_rs = (a_stats['RS_per_G'] * 0.70) + (a_recent_offense * 0.30)
                     h_blended_rs = (h_stats['RS_per_G'] * 0.70) + (h_recent_offense * 0.30)
-                    a_sp_fip = pitcher_df[pitcher_df['Name'] == away_sp]['FIP'].values[0] if away_sp != "League Average SP" else a_stats['RA_per_G']
-                    h_sp_fip = pitcher_df[pitcher_df['Name'] == home_sp]['FIP'].values[0] if home_sp != "League Average SP" else h_stats['RA_per_G']
-                    a_run_prevention = (a_sp_fip * 0.61) + (a_stats['BP_RA9'] * 0.39)
-                    h_run_prevention = (h_sp_fip * 0.61) + (h_stats['BP_RA9'] * 0.39)
+                    a_run_prevention = (a_stats['RA_per_G'] * 0.61) + (a_stats['BP_RA9'] * 0.39)
+                    h_run_prevention = (h_stats['RA_per_G'] * 0.61) + (h_stats['BP_RA9'] * 0.39)
                     away_lam = ((a_blended_rs + h_run_prevention) / 2) * p_factor
                     home_lam = ((h_blended_rs + a_run_prevention) / 2) * p_factor
                     
@@ -355,9 +348,101 @@ if sport == "⚾ MLB Baseball":
                             if model_home_prob > v_h_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
                 except Exception: st.error("Engine failure mapping data.")
 
+    # --- NEW FANTASY SPORTS ENGINE ---
     elif page == "🏆 Fantasy Sports Predictor":
-        st.title("🏆 Fantasy Sports Predictor")
-        st.info("The Daily Fantasy Sports (DFS) & Prop Prediction engine is currently in development. Ready for the next build phase.")
+        st.title("🏆 Season-Long Fantasy Hub")
+        st.markdown("### 🏈 NFL (Sleeper/ESPN PPR) & ⚾ MLB (Standard Points)")
+        
+        fantasy_sport = st.radio("Select Active Fantasy Sport:", ["⚾ MLB Trade Analyzer & Projections", "🏈 NFL PPR Engine (Offseason Shell)"])
+        st.markdown("---")
+        
+        if fantasy_sport == "⚾ MLB Trade Analyzer & Projections":
+            st.subheader("⚖️ ESPN Standard Points Trade Analyzer")
+            st.caption("Calculates Rest-of-Season (ROS) projected fantasy points based on 162-game pace and ESPN default scoring.")
+            
+            with st.spinner("Crunching YTD metrics to generate Rest-of-Season projections..."):
+                try:
+                    # 1. Fetch & Clean Data
+                    bat_df = batting_stats_bref(2026)
+                    pitch_df = load_pitching_data()
+                    
+                    bat_df['Name'] = bat_df['Name'].apply(clean_name)
+                    pitch_df['Name'] = pitch_df['Name'].apply(clean_name)
+                    
+                    # 2. ESPN Standard Batter Points: TB(1), BB(1), R(1), RBI(1), SB(1), SO(-1)
+                    for col in ['H', '2B', '3B', 'HR', 'BB', 'R', 'RBI', 'SB', 'SO', 'G']:
+                        if col not in bat_df.columns: bat_df[col] = 0
+                        
+                    # Calculate Total Bases (TB) if missing
+                    if 'TB' not in bat_df.columns:
+                        bat_df['1B'] = bat_df['H'] - bat_df['2B'] - bat_df['3B'] - bat_df['HR']
+                        bat_df['TB'] = bat_df['1B'] + (2 * bat_df['2B']) + (3 * bat_df['3B']) + (4 * bat_df['HR'])
+                        
+                    bat_df['FPts'] = bat_df['TB'] + bat_df['BB'] + bat_df['R'] + bat_df['RBI'] + bat_df['SB'] - bat_df['SO']
+                    bat_df['FPts_per_G'] = (bat_df['FPts'] / bat_df['G'].replace(0, 1)).round(2)
+                    bat_df['ROS_Proj'] = (bat_df['FPts_per_G'] * (162 - bat_df['G'])).clip(lower=0).round(1)
+                    bat_df['Position'] = 'Batter'
+                    
+                    # 3. ESPN Standard Pitcher Points: IP(3), K(1), W(5), SV(5), L(-5), ER(-2), H(-1), BB(-1)
+                    for col in ['IP', 'SO', 'W', 'SV', 'L', 'ER', 'H', 'BB', 'G']:
+                        if col not in pitch_df.columns: pitch_df[col] = 0
+                        
+                    pitch_df['FPts'] = (pitch_df['IP'] * 3) + pitch_df['SO'] + (pitch_df['W'] * 5) + (pitch_df['SV'] * 5) - (pitch_df['L'] * 5) - (pitch_df['ER'] * 2) - pitch_df['H'] - pitch_df['BB']
+                    pitch_df['FPts_per_G'] = (pitch_df['FPts'] / pitch_df['G'].replace(0, 1)).round(2)
+                    
+                    # Pitcher pace is trickier (SP vs RP). We scale based on average pitcher appearances.
+                    max_pitcher_g = pitch_df['G'].max() if not pitch_df.empty and pitch_df['G'].max() > 0 else 80
+                    pitch_df['ROS_Proj'] = (pitch_df['FPts_per_G'] * ((162 - (pitch_df['G'] * (162/max_pitcher_g)))) ).clip(lower=0).round(1)
+                    pitch_df['Position'] = 'Pitcher'
+                    
+                    # Combine for Trade Analyzer
+                    fantasy_df = pd.concat([
+                        bat_df[['Name', 'Position', 'FPts', 'FPts_per_G', 'ROS_Proj']], 
+                        pitch_df[['Name', 'Position', 'FPts', 'FPts_per_G', 'ROS_Proj']]
+                    ]).sort_values('ROS_Proj', ascending=False).dropna(subset=['ROS_Proj'])
+                    
+                    all_players = sorted(fantasy_df['Name'].unique().tolist())
+                    
+                    # 4. The Trade UI
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        team_a = st.multiselect("Team A Receives:", all_players, key="team_a")
+                    with col2:
+                        team_b = st.multiselect("Team B Receives:", all_players, key="team_b")
+                        
+                    if st.button("⚖️ Analyze Trade Edge"):
+                        if team_a or team_b:
+                            a_df = fantasy_df[fantasy_df['Name'].isin(team_a)]
+                            b_df = fantasy_df[fantasy_df['Name'].isin(team_b)]
+                            
+                            a_proj = a_df['ROS_Proj'].sum()
+                            b_proj = b_df['ROS_Proj'].sum()
+                            
+                            c1, c2 = st.columns(2)
+                            with c1:
+                                st.metric("Team A Total ROS Projection", f"{a_proj:.1f} FPts")
+                                if not a_df.empty: st.dataframe(a_df[['Name', 'Position', 'FPts_per_G', 'ROS_Proj']], hide_index=True)
+                            with c2:
+                                st.metric("Team B Total ROS Projection", f"{b_proj:.1f} FPts")
+                                if not b_df.empty: st.dataframe(b_df[['Name', 'Position', 'FPts_per_G', 'ROS_Proj']], hide_index=True)
+                                
+                            st.markdown("---")
+                            diff = abs(a_proj - b_proj)
+                            if a_proj > b_proj + 15:
+                                st.success(f"📈 **Team A** wins this trade by a projected **{diff:.1f}** Rest-of-Season points.")
+                            elif b_proj > a_proj + 15:
+                                st.success(f"📈 **Team B** wins this trade by a projected **{diff:.1f}** Rest-of-Season points.")
+                            else:
+                                st.info(f"🤝 This trade is highly balanced. Only a **{diff:.1f}** point differential.")
+                        else:
+                            st.warning("Add players to both sides to analyze a trade.")
+                            
+                except Exception as e:
+                    st.error(f"Failed to compile fantasy metrics: {e}")
+                    
+        elif fantasy_sport == "🏈 NFL PPR Engine (Offseason Shell)":
+            st.subheader("🏈 NFL Sleeper / ESPN Integrations")
+            st.info("NFL Data scrapers and Sleeper API hooks are currently standing by. This module will activate when 2026 preseason metrics become available.")
 
 # ==========================================================
 # SPORT BRANCH 2: NCAA SOFTBALL (CALIBRATED WITH SOS & AUTO-GRADING!)
