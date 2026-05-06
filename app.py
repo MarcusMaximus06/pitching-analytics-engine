@@ -45,7 +45,7 @@ if sport == "⚾ MLB Baseball":
 
     PARK_FACTORS = {
         'Arizona Diamondbacks': 102, 'Atlanta Braves': 100, 'Baltimore Orioles': 98, 'Boston Red Sox': 107, 
-        'Chicago Cubs': 102, 'Chicago White Sox': 102, 'Cincinnati Reds': 111, 'Cleveland Guardians': 101, 
+        'Chicago Cubs': 102, 'Chicago White Sox': 102, 'Cincinnati Reds': 111, 'Cleveland Reds': 111, 'Cleveland Guardians': 101, 
         'Colorado Rockies': 114, 'Detroit Tigers': 98, 'Houston Astros': 96, 'Kansas City Royals': 101, 
         'Los Angeles Angels': 97, 'Los Angeles Dodgers': 97, 'Miami Marlins': 95, 'Milwaukee Brewers': 101, 
         'Minnesota Twins': 99, 'New York Mets': 99, 'New York Yankees': 99, 'Oakland Athletics': 94, 
@@ -185,7 +185,7 @@ if sport == "⚾ MLB Baseball":
         df['FPI'] = ((df['SO9'] * 1.5) - (df['BB9'] * 1.2) - df['FIP']).round(2)
         return df
 
-    @st.cache_data
+    @st.cache_data(ttl=3600)
     def load_pitching_data():
         season_df = pitching_stats_bref(2026)
         season_df['Name'] = season_df['Name'].apply(clean_name)
@@ -205,7 +205,21 @@ if sport == "⚾ MLB Baseball":
             merged_df['Momentum_Shift'] = None
         return merged_df
 
-    @st.cache_data
+    @st.cache_data(ttl=86400) # Cache Statcast for 24 hours to prevent extreme stalling
+    def get_pitcher_statcast_data(player_name, start_date, end_date):
+        try:
+            names = player_name.split(" ")
+            if len(names) < 2: return pd.DataFrame()
+            first, last = names[0].lower(), names[-1].lower()
+            lookup = playerid_lookup(last, first)
+            if lookup.empty: return pd.DataFrame()
+            mlbam_id = lookup['key_mlbam'].values[0]
+            st_data = statcast_pitcher(start_date, end_date, mlbam_id)
+            return st_data
+        except Exception:
+            return pd.DataFrame()
+
+    @st.cache_data(ttl=3600)
     def get_team_data():
         try:
             bat_df = batting_stats_bref(2026)
@@ -244,7 +258,6 @@ if sport == "⚾ MLB Baseball":
                 selected_player = st.sidebar.selectbox("Target Profile Search:", ["All Pitchers"] + sorted(raw_df['Name'].unique().tolist()))
                 display_cols = ['Name', 'Tm', 'IP', 'FPI', 'Momentum_Shift', 'ERA', 'SO9', 'BB9']
                 
-                # --- STATCAST VISUAL ENGINE RESTORED ---
                 if selected_player != "All Pitchers":
                     st.subheader(f"Isolated Profile: {selected_player}")
                     p_data = raw_df[raw_df['Name'] == selected_player]
@@ -253,35 +266,28 @@ if sport == "⚾ MLB Baseball":
                     st.markdown("### 🔬 Advanced Statcast Arsenal")
                     with st.spinner(f"Fetching Statcast metrics from MLBAM for {selected_player}..."):
                         try:
-                            names = selected_player.split(" ")
-                            if len(names) >= 2:
-                                first, last = names[0].lower(), names[-1].lower()
-                                lookup = playerid_lookup(last, first)
-                                if not lookup.empty:
-                                    mlbam_id = lookup['key_mlbam'].values[0]
-                                    st_data = statcast_pitcher('2026-03-01', get_local_date_str(), mlbam_id)
-                                    
-                                    if not st_data.empty:
-                                        pitch_mix = st_data['pitch_name'].value_counts().reset_index()
-                                        pitch_mix.columns = ['Pitch', 'Count']
-                                        fig1 = px.pie(pitch_mix, values='Count', names='Pitch', title='Pitch Arsenal Breakdown', hole=0.4)
-                                        
-                                        vel_spin = st_data.groupby('pitch_name').agg(
-                                            Velocity=('release_speed', 'mean'),
-                                            Spin_Rate=('release_spin_rate', 'mean')
-                                        ).reset_index()
-                                        
-                                        fig2 = px.bar(vel_spin, x='Pitch', y='Spin_Rate', color='Velocity', 
-                                                     title='Average Spin Rate & Velocity (RPM)',
-                                                     labels={'Spin_Rate': 'Spin Rate (RPM)', 'Velocity': 'Velocity (MPH)'})
-                                                     
-                                        c1, c2 = st.columns(2)
-                                        with c1: st.plotly_chart(fig1, use_container_width=True)
-                                        with c2: st.plotly_chart(fig2, use_container_width=True)
-                                    else:
-                                        st.warning("No Statcast pitch tracking data found for this player in the current season.")
-                                else:
-                                    st.warning("Could not locate an MLBAM ID for this player in the Statcast registry.")
+                            # Using the newly restored cached function here
+                            st_data = get_pitcher_statcast_data(selected_player, '2026-03-01', get_local_date_str())
+                            
+                            if not st_data.empty:
+                                pitch_mix = st_data['pitch_name'].value_counts().reset_index()
+                                pitch_mix.columns = ['Pitch', 'Count']
+                                fig1 = px.pie(pitch_mix, values='Count', names='Pitch', title='Pitch Arsenal Breakdown', hole=0.4)
+                                
+                                vel_spin = st_data.groupby('pitch_name').agg(
+                                    Velocity=('release_speed', 'mean'),
+                                    Spin_Rate=('release_spin_rate', 'mean')
+                                ).reset_index()
+                                
+                                fig2 = px.bar(vel_spin, x='Pitch', y='Spin_Rate', color='Velocity', 
+                                             title='Average Spin Rate & Velocity (RPM)',
+                                             labels={'Spin_Rate': 'Spin Rate (RPM)', 'Velocity': 'Velocity (MPH)'})
+                                             
+                                c1, c2 = st.columns(2)
+                                with c1: st.plotly_chart(fig1, use_container_width=True)
+                                with c2: st.plotly_chart(fig2, use_container_width=True)
+                            else:
+                                st.warning("No Statcast pitch tracking data found for this player in the current season.")
                         except Exception as e:
                             st.warning(f"Statcast lookup failed: {e}")
                             
@@ -455,7 +461,6 @@ elif sport == "🥎 NCAA Softball":
     st.markdown("### 📊 Log5 Win Probability Tracker & Schedule Difficulty Calibration")
     st.caption("*Scrapes live WarrenNolan standings, team pitching ERAs, and SOS Ranks to simulate 7-inning matchups and auto-grade past bets.*")
     
-    # 1. CORE FUNCTIONS
     def log_softball_to_sheets(row_data):
         try:
             gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
@@ -602,10 +607,8 @@ elif sport == "🥎 NCAA Softball":
             st.error(f"Softball Auto-Grader Error: {e}")
             return -1
 
-    # 2. FETCH STATS FIRST (Prevents NameError during UI render)
     tot_sb_games, sb_acc = get_softball_log_stats()
 
-    # 3. RENDER DASHBOARD METRICS
     col1, col2, col3 = st.columns([2, 2, 3])
     with col1: st.metric(label="Total Graded Softball Games", value=tot_sb_games)
     with col2: st.metric(label="Model Accuracy", value=f"{sb_acc:.1f}%")
@@ -729,7 +732,6 @@ elif sport == "🥎 NCAA Softball":
         st.write("")
         if st.button("🔄 Auto-Grade Yesterday's Softball"):
             with st.spinner("Accessing NCAA Scoreboard Portal..."):
-                # We need valid_teams to run this, so we compute it inside if clicked
                 softball_teams, _ = scrape_ncaa_softball_standings()
                 softball_eras = scrape_ncaa_softball_pitching()
                 v_teams = sorted(list(set(softball_teams.keys()).intersection(set(softball_eras.keys()))))
