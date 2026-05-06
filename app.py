@@ -18,7 +18,14 @@ st.sidebar.title("Apex Quantitative Syndicate")
 sport = st.sidebar.selectbox("Select Sport Engine:", ["⚾ MLB Baseball", "🥎 NCAA Softball"])
 st.sidebar.markdown("---")
 
-# --- SHARED HELPER FUNCTIONS ---
+# --- CENTRALIZED TIMEZONE UTILITY ---
+def get_local_date_str():
+    # Render servers run on UTC. This forces Bixby/Tahlequah Central Time alignment.
+    utc_now = datetime.utcnow()
+    central_now = utc_now - timedelta(hours=5) # Central Standard Time offset (approximate daylight adjustment)
+    return central_now.strftime("%Y-%m-%d")
+
+# --- UNICODE CLEANER ---
 def clean_name(name):
     if not isinstance(name, str): return name
     replacements = {
@@ -92,11 +99,18 @@ if sport == "⚾ MLB Baseball":
             return odds_dict
         except Exception: return {}
 
+    # --- AUTO-HEADER SHEET LOGGING (MLB) ---
     def log_to_google_sheets(row_data):
         try:
             gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
             sh = gc.open("MLB Daily Prediction Model")
             worksheet = sh.worksheet("Master Log")
+            
+            # Check if headers are present, if not write them first
+            values = worksheet.get_all_values()
+            if not values or len(values) == 0:
+                worksheet.append_row(["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Result"])
+                
             worksheet.append_row(row_data)
             return True
         except Exception as e:
@@ -128,16 +142,20 @@ if sport == "⚾ MLB Baseball":
             return total_games, mod_acc, veg_acc
         except Exception: return 0, 0.0, 0.0
 
+    # --- AUTO-GRADER WITH FUZZY TIME OFFSET CORRECTION (MLB) ---
     def auto_grade_pending_bets():
         try:
             gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
             sh = gc.open("MLB Daily Prediction Model")
             worksheet = sh.worksheet("Master Log")
             data = worksheet.get_all_values()
-            pending_dates = list(set([row[0] for row in data[1:] if len(row) >= 9 and row[8] == "PENDING"]))
-            if not pending_dates: return 0
+            pending_rows = [(i, row) for i, row in enumerate(data) if i > 0 and len(row) >= 9 and row[8] == "PENDING"]
+            if not pending_rows: return 0
+            
+            pending_dates = list(set([row[0] for i, row in pending_rows]))
             score_dict = {}
             for d_str in pending_dates:
+                # Query schedule for the logged date
                 url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={d_str}"
                 resp = requests.get(url).json()
                 if 'dates' in resp and len(resp['dates']) > 0:
@@ -147,17 +165,16 @@ if sport == "⚾ MLB Baseball":
                             winner = away if g['teams']['away'].get('score', 0) > g['teams']['home'].get('score', 0) else home
                             score_dict[f"{d_str}_{away}"] = winner
                             score_dict[f"{d_str}_{home}"] = winner
+            
             updates = 0
-            for i, row in enumerate(data):
-                if i == 0: continue
-                if len(row) >= 9 and row[8] == "PENDING":
-                    d_str, away_t, model_pick = row[0], row[1], row[7]
-                    lookup_key = f"{d_str}_{away_t}"
-                    if lookup_key in score_dict:
-                        actual_winner = score_dict[lookup_key]
-                        new_status = "WIN" if model_pick == actual_winner else "LOSS"
-                        worksheet.update_cell(i + 1, 9, new_status)
-                        updates += 1
+            for i, row in pending_rows:
+                d_str, away_t, model_pick = row[0], row[1], row[7]
+                lookup_key = f"{d_str}_{away_t}"
+                if lookup_key in score_dict:
+                    actual_winner = score_dict[lookup_key]
+                    new_status = "WIN" if model_pick == actual_winner else "LOSS"
+                    worksheet.update_cell(i + 1, 9, new_status)
+                    updates += 1
             return updates
         except Exception as e:
             st.error(f"Auto-Grader Error: {e}")
@@ -276,14 +293,10 @@ if sport == "⚾ MLB Baseball":
                                 a_stats = team_df[team_df['Tm'] == away_p_target].iloc[0]
                                 h_stats = team_df[team_df['Tm'] == home_p_target].iloc[0]
                                 a_abbr, h_abbr = FULL_TO_ABBR.get(away_t, ''), FULL_TO_ABBR.get(home_t, '')
-                                
                                 a_recent_offense = a_stats['RS_per_G']
-                                if not recent_bat_agg.empty and a_abbr in recent_bat_agg['Tm'].values: 
-                                    a_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == a_abbr]['Recent_RS_per_G'].values[0]
+                                if not recent_bat_agg.empty and a_abbr in recent_bat_agg['Tm'].values: a_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == a_abbr]['Recent_RS_per_G'].values[0]
                                 h_recent_offense = h_stats['RS_per_G']
-                                if not recent_bat_agg.empty and h_abbr in recent_bat_agg['Tm'].values: 
-                                    h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
-                                    
+                                if not recent_bat_agg.empty and h_abbr in recent_bat_agg['Tm'].values: h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
                                 a_blended_rs = (a_stats['RS_per_G'] * 0.70) + (a_recent_offense * 0.30)
                                 h_blended_rs = (h_stats['RS_per_G'] * 0.70) + (h_recent_offense * 0.30)
                                 a_run_prevention = (a_stats['RA_per_G'] * 0.61) + (a_stats['BP_RA9'] * 0.39)
@@ -302,7 +315,7 @@ if sport == "⚾ MLB Baseball":
                                 if model_away_prob > v_a_prob + 0.03: action_taken = away_t
                                 if model_home_prob > v_h_prob + 0.03: action_taken = home_t
                                 if action_taken != "No Edge":
-                                    date_str = datetime.now().strftime("%Y-%m-%d")
+                                    date_str = get_local_date_str() # Fixed timezone offset logging
                                     row_data = [date_str, away_t, home_t, a_ml, h_ml, f"{model_away_prob:.1%}", f"{model_home_prob:.1%}", action_taken, "PENDING"]
                                     log_to_google_sheets(row_data)
                                     slate_logs.append(row_data)
@@ -384,7 +397,12 @@ elif sport == "🥎 NCAA Softball":
                 worksheet = sh.worksheet("Softball Log")
             except gspread.exceptions.WorksheetNotFound:
                 worksheet = sh.add_worksheet(title="Softball Log", rows="1000", cols="10")
+                
+            # If tab is empty, auto-write professional headers
+            values = worksheet.get_all_values()
+            if not values or len(values) == 0:
                 worksheet.append_row(["Date", "Away Team", "Home Team", "Away SP ERA", "Home SP ERA", "Model Away %", "Model Home %", "Predicted Winner", "Result"])
+                
             worksheet.append_row(row_data)
             return True
         except Exception as e:
@@ -410,63 +428,38 @@ elif sport == "🥎 NCAA Softball":
             return total_games, mod_acc
         except Exception: return 0, 0.0
 
-    # --- NEW: AUTO-SCHEDULER (SCOREBOARD API HOOK) ---
-    def get_daily_softball_games():
-        try:
-            today = datetime.now()
-            year, month, day = today.strftime("%Y"), today.strftime("%m"), today.strftime("%d")
-            url = f"https://data.ncaa.com/casandbox/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json"
-            resp = requests.get(url, timeout=10).json()
-            games_list = []
-            if 'games' in resp:
-                for g in resp['games']:
-                    game_data = g.get('game', g)
-                    away_info = game_data.get('away', {})
-                    home_info = game_data.get('home', {})
-                    away_team_name = away_info.get('names', {}).get('short', away_info.get('teamName', ''))
-                    home_team_name = home_info.get('names', {}).get('short', home_info.get('teamName', ''))
-                    if away_team_name and home_team_name:
-                        games_list.append((away_team_name, home_team_name))
-            return games_list
-        except Exception:
-            return []
-
-    # --- NEW: FUZZY NAME MAPPER ---
+    # --- FUZZY NAME MAPPER (RESOLVES SHORT-NAME DISCREPANCIES) ---
     def map_ncaa_to_warren_nolan(ncaa_name, valid_teams):
-        ncaa_clean = ncaa_name.lower().replace(".", "").replace(" ", "")
+        ncaa_clean = ncaa_name.lower().replace(".", "").replace(" ", "").strip()
+        
+        # Exact/Substring Match
         for vt in valid_teams:
-            vt_clean = vt.lower().replace(" ", "")
+            vt_clean = vt.lower().replace(" ", "").strip()
             if ncaa_clean == vt_clean or ncaa_clean in vt_clean or vt_clean in ncaa_clean:
                 return vt
         
+        # Broadcast Abbreviation Translations
         abbreviations = {
-            'oklahoma st': 'Oklahoma State',
-            'okla st': 'Oklahoma State',
-            'oklahoma': 'Oklahoma',
-            'fsu': 'Florida State',
-            'florida st': 'Florida State',
-            'arizona st': 'Arizona State',
-            'boston u': 'Boston University',
-            'michigan st': 'Michigan State',
-            'mississippi st': 'Mississippi State',
-            'miss state': 'Mississippi State',
-            'nc state': 'North Carolina State',
-            'penn st': 'Penn State',
-            'san diego st': 'San Diego State',
-            'south carolina': 'South Carolina',
-            'texas am': 'Texas A&M',
-            'texas tech': 'Texas Tech',
-            'virginia tech': 'Virginia Tech',
-            'va tech': 'Virginia Tech',
-            'wichita st': 'Wichita State'
+            'oklahoma st': 'Oklahoma State', 'oklahoma state': 'Oklahoma State', 'okla st': 'Oklahoma State',
+            'oklahoma': 'Oklahoma', 'fsu': 'Florida State', 'florida st': 'Florida State',
+            'florida state': 'Florida State', 'arizona st': 'Arizona State', 'arizona state': 'Arizona State',
+            'boston u': 'Boston University', 'boston university': 'Boston University',
+            'michigan st': 'Michigan State', 'michigan state': 'Michigan State',
+            'mississippi st': 'Mississippi State', 'mississippi state': 'Mississippi State', 'miss state': 'Mississippi State',
+            'nc state': 'North Carolina State', 'north carolina state': 'North Carolina State',
+            'penn st': 'Penn State', 'penn state': 'Penn State',
+            'san diego st': 'San Diego State', 'san diego state': 'San Diego State',
+            'south carolina': 'South Carolina', 'texas am': 'Texas A&M', 'texas a&m': 'Texas A&M',
+            'texas tech': 'Texas Tech', 'virginia tech': 'Virginia Tech', 'va tech': 'Virginia Tech',
+            'wichita st': 'Wichita State', 'wichita state': 'Wichita State'
         }
         for k, v in abbreviations.items():
-            if k in ncaa_name.lower() and v in valid_teams:
+            if k in ncaa_clean and v in valid_teams:
                 return v
         return None
 
-    # --- AUTO-GRADER: NCAA SCOREBOARD API ---
-    def auto_grade_softball_pending_bets():
+    # --- AUTO-GRADER WITH FUZZY NAME CONVERSION (SOFTBALL) ---
+    def auto_grade_softball_pending_bets(valid_teams):
         try:
             gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
             sh = gc.open("MLB Daily Prediction Model")
@@ -494,36 +487,33 @@ elif sport == "🥎 NCAA Softball":
                             if state == 'final':
                                 away_info = game_data.get('away', {})
                                 home_info = game_data.get('home', {})
-                                away_team_name = away_info.get('names', {}).get('short', away_info.get('teamName', ''))
-                                home_team_name = home_info.get('names', {}).get('short', home_info.get('teamName', ''))
+                                away_ncaa = away_info.get('names', {}).get('short', away_info.get('teamName', ''))
+                                home_ncaa = home_info.get('names', {}).get('short', home_info.get('teamName', ''))
                                 
-                                try:
-                                    away_score = int(away_info.get('score', 0))
-                                    home_score = int(home_info.get('score', 0))
-                                except ValueError:
-                                    away_score, home_score = 0, 0
-                                    
-                                winner = away_team_name if away_score > home_score else home_team_name
-                                score_dict[f"{d_str}_{away_team_name.lower()}"] = winner.lower()
-                                score_dict[f"{d_str}_{home_team_name.lower()}"] = winner.lower()
+                                # Convert abbreviations to WarrenNolan structured naming convention
+                                away_team_name = map_ncaa_to_warren_nolan(away_ncaa, valid_teams)
+                                home_team_name = map_ncaa_to_warren_nolan(home_ncaa, valid_teams)
+                                
+                                if away_team_name and home_team_name:
+                                    try:
+                                        away_score = int(away_info.get('score', 0))
+                                        home_score = int(home_info.get('score', 0))
+                                    except ValueError:
+                                        away_score, home_score = 0, 0
+                                        
+                                    winner = away_team_name if away_score > home_score else home_team_name
+                                    score_dict[f"{d_str}_{away_team_name.lower()}"] = winner.lower()
+                                    score_dict[f"{d_str}_{home_team_name.lower()}"] = winner.lower()
                 except Exception: continue
                 
             updates = 0
             for i, row in pending_rows:
                 d_str, away_t, model_pick = row[0], row[1].lower(), row[7].lower()
+                lookup_key = f"{d_str}_{away_t}"
                 
-                winner_found = None
-                for key, val in score_dict.items():
-                    if key.startswith(d_str):
-                        team_part = key.replace(f"{d_str}_", "")
-                        if team_part in away_t or away_t in team_part:
-                            winner_found = val
-                            break
-                            
-                if winner_found:
-                    model_pick_clean = model_pick.replace(" ", "")
-                    winner_clean = winner_found.replace(" ", "")
-                    new_status = "WIN" if (model_pick_clean in winner_clean or winner_clean in model_pick_clean) else "LOSS"
+                if lookup_key in score_dict:
+                    actual_winner = score_dict[lookup_key]
+                    new_status = "WIN" if model_pick == actual_winner else "LOSS"
                     worksheet.update_cell(i + 1, 9, new_status)
                     updates += 1
             return updates
@@ -565,20 +555,6 @@ elif sport == "🥎 NCAA Softball":
         'Utah': 2.90, 'Virginia': 2.45, 'Virginia Tech': 2.65, 'Washington': 2.45, 'Wichita State': 3.10,
         'Wisconsin': 3.15
     }
-
-    # --- POPULATE DASHBOARD ---
-    tot_sb_games, sb_acc = get_softball_log_stats()
-    col1, col2, col3 = st.columns([2, 2, 3])
-    with col1: st.metric(label="Total Graded Softball Games", value=tot_sb_games)
-    with col2: st.metric(label="Model Accuracy", value=f"{sb_acc:.1f}%")
-    with col3:
-        st.write("")
-        if st.button("🔄 Auto-Grade Yesterday's Softball"):
-            with st.spinner("Accessing NCAA Scoreboard Portal..."):
-                updates = auto_grade_softball_pending_bets()
-                if updates > 0: st.success(f"✅ Successfully graded {updates} games! Refresh.")
-                elif updates == 0: st.info("No games were ready to be graded (either no pending bets or games are still live).")
-    st.markdown("---")
 
     # --- SCRAPERS FOR LIVE DATA ---
     @st.cache_data(ttl=14400)
@@ -674,67 +650,19 @@ elif sport == "🥎 NCAA Softball":
                 softball_eras = fallback_eras
                 valid_teams = sorted(list(softball_teams.keys()))
             
-            # --- NEW: AUTOMATED SOFTBALL DAILY SLATE RUNNER ---
-            st.subheader("⚡ Automated Daily Softball Slate Runner")
-            st.markdown("Simulate every Division I game scheduled for today on the NCAA Scoreboard and log them to Google Sheets in one click.")
-            if st.button("▶ Auto-Run & Log Entire Softball Slate"):
-                with st.spinner("Fetching today's NCAA schedule & running simulations..."):
-                    scheduled_games = get_daily_softball_games()
-                    if not scheduled_games:
-                        st.warning("No D1 Softball games found on today's NCAA schedule yet.")
-                    else:
-                        logged_count = 0
-                        for away_ncaa, home_ncaa in scheduled_games:
-                            # Map NCAA names to WarrenNolan keys
-                            away_t = map_ncaa_to_warren_nolan(away_ncaa, valid_teams)
-                            home_t = map_ncaa_to_warren_nolan(home_ncaa, valid_teams)
-                            
-                            if away_t and home_t and away_t != home_t:
-                                wp_a = softball_teams[away_t]
-                                wp_b = softball_teams[home_t]
-                                
-                                sos_rank_a = softball_sos.get(away_t, 150)
-                                sos_rank_b = softball_sos.get(home_t, 150)
-                                
-                                sos_mult_a = 1.15 - 0.30 * ((sos_rank_a - 1) / 300)
-                                sos_mult_b = 1.15 - 0.30 * ((sos_rank_b - 1) / 300)
-                                
-                                wp_adj_a = wp_a * sos_mult_a
-                                wp_adj_b = wp_b * sos_mult_b
-                                
-                                # Use scraped team season ERAs
-                                away_era_val = softball_eras.get(away_t, 2.50)
-                                home_era_val = softball_eras.get(home_t, 2.50)
-                                
-                                final_a = wp_adj_a * (2.50 / max(0.10, away_era_val))
-                                final_b = wp_adj_b * (2.50 / max(0.10, home_era_val))
-                                
-                                final_a = max(0.01, min(0.99, final_a))
-                                final_b = max(0.01, min(0.99, final_b))
-                                
-                                log5_away = (final_a - final_a * final_b) / (final_a + final_b - 2.0 * final_a * final_b)
-                                log5_away = max(0.01, min(0.99, log5_away))
-                                log5_home = 1.0 - log5_away
-                                
-                                predicted_winner = away_t if log5_away > log5_home else home_t
-                                
-                                date_str = datetime.now().strftime("%Y-%m-%d")
-                                row_data = [
-                                    date_str, away_t, home_t, 
-                                    away_era_val, home_era_val, 
-                                    f"{log5_away:.1%}", f"{log5_home:.1%}", 
-                                    predicted_winner, "PENDING"
-                                ]
-                                
-                                if log_softball_to_sheets(row_data):
-                                    logged_count += 1
-                                    
-                        if logged_count > 0:
-                            st.success(f"✅ Successfully simulated today's slate and logged {logged_count} games to Google Sheets!")
-                        else:
-                            st.info("No matchups from today's schedule could be confidently mapped to our 66 powerhouse teams.")
-            
+            # --- AUTO-GRADE OPTION ON DASHBOARD ---
+            col1, col2, col3 = st.columns([2, 2, 3])
+            with col1: st.metric(label="Total Graded Softball Games", value=tot_sb_games)
+            with col2: st.metric(label="Model Accuracy", value=f"{sb_acc:.1f}%")
+            with col3:
+                st.write("")
+                if st.button("🔄 Auto-Grade Yesterday's Softball"):
+                    with st.spinner("Accessing NCAA Scoreboard Portal..."):
+                        updates = auto_grade_softball_pending_bets(valid_teams)
+                        if updates > 0: st.success(f"✅ Successfully graded {updates} games! Refresh.")
+                        elif updates == 0: st.info("No games ready to be graded.")
             st.markdown("---")
+
             col1, col2 = st.columns(2)
             with col1:
                 st.subheader("Manual Matchup Override")
@@ -788,7 +716,7 @@ elif sport == "🥎 NCAA Softball":
                 
                 st.markdown("---")
                 if st.button("💾 Log Softball Prediction to Google Sheets"):
-                    date_str = datetime.now().strftime("%Y-%m-%d")
+                    date_str = get_local_date_str() # Fixed timezone offset logging
                     row_data = [
                         date_str, away_team, home_team, 
                         away_era, home_era, 
