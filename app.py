@@ -235,7 +235,6 @@ if sport == "⚾ MLB Baseball":
             return team_df.sort_values('Tm'), recent_bat_agg
         except Exception: return pd.DataFrame(), pd.DataFrame()
 
-    # --- MLB PAGE UI ROUTING ---
     if page == "⚾ Pitching Analytics Matrix":
         st.title("⚾ Pitching Analytics Matrix")
         with st.spinner('Compiling matrix...'):
@@ -312,7 +311,7 @@ if sport == "⚾ MLB Baseball":
                                 if model_away_prob > v_a_prob + 0.03: action_taken = away_t
                                 if model_home_prob > v_h_prob + 0.03: action_taken = home_t
                                 if action_taken != "No Edge":
-                                    date_str = get_local_date_str() # Fixed timezone offset logging
+                                    date_str = get_local_date_str() 
                                     row_data = [date_str, away_t, home_t, a_ml, h_ml, f"{model_away_prob:.1%}", f"{model_home_prob:.1%}", action_taken, "PENDING"]
                                     log_to_google_sheets(row_data)
                                     slate_logs.append(row_data)
@@ -385,7 +384,6 @@ elif sport == "🥎 NCAA Softball":
     st.markdown("### 📊 Log5 Win Probability Tracker & Schedule Difficulty Calibration")
     st.caption("*Scrapes live WarrenNolan standings, team pitching ERAs, and SOS Ranks to simulate 7-inning matchups and auto-grade past bets.*")
     
-    # --- GOOGLE SHEETS DASHBOARD & LOG ---
     def log_softball_to_sheets(row_data):
         try:
             gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
@@ -395,7 +393,6 @@ elif sport == "🥎 NCAA Softball":
             except gspread.exceptions.WorksheetNotFound:
                 worksheet = sh.add_worksheet(title="Softball Log", rows="1000", cols="10")
                 
-            # Automatically write clean, professional headers if sheet is empty
             values = worksheet.get_all_values()
             if not values or len(values) == 0:
                 worksheet.append_row(["Date", "Away Team", "Home Team", "Away SP ERA", "Home SP ERA", "Model Away %", "Model Home %", "Predicted Winner", "Result"])
@@ -425,17 +422,14 @@ elif sport == "🥎 NCAA Softball":
             return total_games, mod_acc
         except Exception: return 0, 0.0
 
-    # --- FUZZY NAME MAPPER (RESOLVES SHORT-NAME DISCREPANCIES) ---
     def map_ncaa_to_warren_nolan(ncaa_name, valid_teams):
         ncaa_clean = ncaa_name.lower().replace(".", "").replace(" ", "").strip()
         
-        # Exact/Substring Match
         for vt in valid_teams:
             vt_clean = vt.lower().replace(" ", "").strip()
             if ncaa_clean == vt_clean or ncaa_clean in vt_clean or vt_clean in ncaa_clean:
                 return vt
         
-        # Broadcast Abbreviation Translations
         abbreviations = {
             'oklahoma st': 'Oklahoma State', 'oklahoma state': 'Oklahoma State', 'okla st': 'Oklahoma State',
             'oklahoma': 'Oklahoma', 'fsu': 'Florida State', 'florida st': 'Florida State',
@@ -455,7 +449,6 @@ elif sport == "🥎 NCAA Softball":
                 return v
         return None
 
-    # --- AUTO-GRADER WITH FUZZY NAME CONVERSION (SOFTBALL) ---
     def auto_grade_softball_pending_bets(valid_teams):
         try:
             gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
@@ -487,7 +480,6 @@ elif sport == "🥎 NCAA Softball":
                                 away_ncaa = away_info.get('names', {}).get('short', away_info.get('teamName', ''))
                                 home_ncaa = home_info.get('names', {}).get('short', home_info.get('teamName', ''))
                                 
-                                # Convert abbreviations to WarrenNolan structured naming convention
                                 away_team_name = map_ncaa_to_warren_nolan(away_ncaa, valid_teams)
                                 home_team_name = map_ncaa_to_warren_nolan(home_ncaa, valid_teams)
                                 
@@ -518,7 +510,6 @@ elif sport == "🥎 NCAA Softball":
             st.error(f"Softball Auto-Grader Error: {e}")
             return -1
 
-    # --- TOP 66 POWERHOUSE FALLBACKS (INTEGRATED WITH REAL WORLD SOS) ---
     fallback_teams = {
         'Alabama': [0.690, 11], 'Arizona': [0.710, 18], 'Arizona State': [0.550, 35], 'Arkansas': [0.715, 12], 'Auburn': [0.620, 24],
         'Baylor': [0.650, 22], 'Boston University': [0.820, 142], 'BYU': [0.580, 52], 'California': [0.680, 28], 'Charlotte': [0.700, 78],
@@ -553,7 +544,6 @@ elif sport == "🥎 NCAA Softball":
         'Wisconsin': 3.15
     }
 
-    # --- SCRAPERS FOR LIVE DATA ---
     @st.cache_data(ttl=14400)
     def scrape_ncaa_softball_standings():
         try:
@@ -647,7 +637,6 @@ elif sport == "🥎 NCAA Softball":
                 softball_eras = fallback_eras
                 valid_teams = sorted(list(softball_teams.keys()))
             
-            # --- AUTO-GRADE OPTION ON DASHBOARD ---
             col1, col2, col3 = st.columns([2, 2, 3])
             with col1: st.metric(label="Total Graded Softball Games", value=tot_sb_games)
             with col2: st.metric(label="Model Accuracy", value=f"{sb_acc:.1f}%")
@@ -713,7 +702,7 @@ elif sport == "🥎 NCAA Softball":
                 
                 st.markdown("---")
                 if st.button("💾 Log Softball Prediction to Google Sheets"):
-                    date_str = get_local_date_str() # Fixed timezone offset logging
+                    date_str = get_local_date_str() 
                     row_data = [
                         date_str, away_team, home_team, 
                         away_era, home_era, 
