@@ -20,9 +20,9 @@ st.sidebar.markdown("---")
 
 # --- CENTRALIZED TIMEZONE UTILITY ---
 def get_local_date_str():
-    # Render servers run on UTC. This forces Bixby/Tahlequah Central Time alignment.
+    # Render servers run on UTC. This forces Central Time alignment.
     utc_now = datetime.utcnow()
-    central_now = utc_now - timedelta(hours=5) # Central Standard Time offset (approximate daylight adjustment)
+    central_now = utc_now - timedelta(hours=5) 
     return central_now.strftime("%Y-%m-%d")
 
 # --- UNICODE CLEANER ---
@@ -99,14 +99,13 @@ if sport == "⚾ MLB Baseball":
             return odds_dict
         except Exception: return {}
 
-    # --- AUTO-HEADER SHEET LOGGING (MLB) ---
     def log_to_google_sheets(row_data):
         try:
             gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
             sh = gc.open("MLB Daily Prediction Model")
             worksheet = sh.worksheet("Master Log")
             
-            # Check if headers are present, if not write them first
+            # Write clean headers if sheet is empty
             values = worksheet.get_all_values()
             if not values or len(values) == 0:
                 worksheet.append_row(["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Result"])
@@ -142,7 +141,6 @@ if sport == "⚾ MLB Baseball":
             return total_games, mod_acc, veg_acc
         except Exception: return 0, 0.0, 0.0
 
-    # --- AUTO-GRADER WITH FUZZY TIME OFFSET CORRECTION (MLB) ---
     def auto_grade_pending_bets():
         try:
             gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
@@ -155,7 +153,6 @@ if sport == "⚾ MLB Baseball":
             pending_dates = list(set([row[0] for i, row in pending_rows]))
             score_dict = {}
             for d_str in pending_dates:
-                # Query schedule for the logged date
                 url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={d_str}"
                 resp = requests.get(url).json()
                 if 'dates' in resp and len(resp['dates']) > 0:
@@ -398,7 +395,7 @@ elif sport == "🥎 NCAA Softball":
             except gspread.exceptions.WorksheetNotFound:
                 worksheet = sh.add_worksheet(title="Softball Log", rows="1000", cols="10")
                 
-            # If tab is empty, auto-write professional headers
+            # Automatically write clean, professional headers if sheet is empty
             values = worksheet.get_all_values()
             if not values or len(values) == 0:
                 worksheet.append_row(["Date", "Away Team", "Home Team", "Away SP ERA", "Home SP ERA", "Model Away %", "Model Home %", "Predicted Winner", "Result"])
