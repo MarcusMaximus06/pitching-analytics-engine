@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from pybaseball import pitching_stats_bref, batting_stats_bref, pitching_stats_range, batting_stats_range
+from pybaseball import pitching_stats, batting_stats, pitching_stats_range, batting_stats_range
 from datetime import datetime, timedelta
 import traceback
 import requests
@@ -76,6 +76,15 @@ if sport == "⚾ MLB Baseball":
         'Seattle Mariners': 'SEA', 'St. Louis Cardinals': 'STL', 'Tampa Bay Rays': 'TBR', 'Texas Rangers': 'TEX', 
         'Toronto Blue Jays': 'TOR', 'Washington Nationals': 'WSN'
     }
+
+    # FANGRAPHS FUZZY MATCHER
+    def get_team_row(team_df, full_name):
+        abbr = FULL_TO_ABBR.get(full_name, '')
+        variants = [abbr, abbr.replace('CHW', 'CWS').replace('KCR', 'KC').replace('SDP', 'SD').replace('SFG', 'SF').replace('TBR', 'TB').replace('WSN', 'WSH')]
+        for v in variants:
+            if v in team_df['Team'].values:
+                return team_df[team_df['Team'] == v].iloc[0]
+        return None
 
     @st.cache_data(ttl=3600)
     def get_live_odds():
@@ -176,36 +185,40 @@ if sport == "⚾ MLB Baseball":
 
     @st.cache_data(ttl=3600)
     def load_pitching_data():
-        season_df = pitching_stats_bref(2026)
+        season_df = pitching_stats(2026)
         season_df['Name'] = season_df['Name'].apply(clean_name)
         return season_df
 
     @st.cache_data(ttl=3600)
     def get_team_data():
         try:
-            bat_df = batting_stats_bref(2026)
-            pitch_df = pitching_stats_bref(2026)
-            team_bat = bat_df.groupby('Tm').agg(RS=('R', 'sum')).reset_index()
-            team_pitch = pitch_df.groupby('Tm').agg(RA=('R', 'sum'), Team_G=('GS', 'sum')).reset_index()
+            bat_df = batting_stats(2026)
+            pitch_df = pitching_stats(2026)
+            team_bat = bat_df.groupby('Team').agg(RS=('R', 'sum')).reset_index()
+            team_pitch = pitch_df.groupby('Team').agg(RA=('R', 'sum'), Team_G=('GS', 'sum')).reset_index()
             pitch_df['is_reliever'] = pitch_df['GS'] <= (pitch_df['G'] * 0.25)
             bp_df = pitch_df[pitch_df['is_reliever']]
-            team_bp = bp_df.groupby('Tm').agg(BP_R=('R', 'sum'), BP_IP=('IP', 'sum')).reset_index()
+            team_bp = bp_df.groupby('Team').agg(BP_R=('R', 'sum'), BP_IP=('IP', 'sum')).reset_index()
             team_bp['BP_IP'] = team_bp['BP_IP'].replace(0, 1)
             team_bp['BP_RA9'] = (team_bp['BP_R'] / team_bp['BP_IP']) * 9
-            team_df = pd.merge(team_bat, team_pitch, on='Tm')
-            team_df = team_df[team_df['Tm'] != 'TOT']
+            team_df = pd.merge(team_bat, team_pitch, on='Team')
+            team_df = team_df[team_df['Team'] != 'TOT']
             team_df['Team_G'] = team_df['Team_G'].replace(0, 1)
             team_df['RS_per_G'] = team_df['RS'] / team_df['Team_G']
             team_df['RA_per_G'] = team_df['RA'] / team_df['Team_G']
-            team_df = pd.merge(team_df, team_bp[['Tm', 'BP_RA9']], on='Tm', how='left')
+            team_df = pd.merge(team_df, team_bp[['Team', 'BP_RA9']], on='Team', how='left')
             team_df['BP_RA9'] = team_df['BP_RA9'].fillna(team_df['RA_per_G'])
+            
             today = datetime.now()
             two_weeks_ago = today - timedelta(days=14)
             recent_bat = batting_stats_range(two_weeks_ago.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'))
-            recent_bat_agg = recent_bat.groupby('Tm').agg(Recent_RS=('R', 'sum'), Recent_G=('G', 'max')).reset_index()
+            tm_col = 'Tm' if 'Tm' in recent_bat.columns else 'Team'
+            recent_bat_agg = recent_bat.groupby(tm_col).agg(Recent_RS=('R', 'sum'), Recent_G=('G', 'max')).reset_index()
             recent_bat_agg['Recent_G'] = recent_bat_agg['Recent_G'].replace(0, 1)
             recent_bat_agg['Recent_RS_per_G'] = recent_bat_agg['Recent_RS'] / recent_bat_agg['Recent_G']
-            return team_df.sort_values('Tm'), recent_bat_agg
+            recent_bat_agg.rename(columns={tm_col: 'Team'}, inplace=True)
+            
+            return team_df.sort_values('Team'), recent_bat_agg
         except Exception: return pd.DataFrame(), pd.DataFrame()
 
     if page == "🎲 Monte Carlo Simulation Engine":
@@ -225,7 +238,7 @@ if sport == "⚾ MLB Baseball":
                     elif updates == 0: st.info("No games ready to be graded.")
         st.markdown("---")
         
-        with st.spinner('Syncing data, live odds, and Google authentications...'):
+        with st.spinner('Syncing FanGraphs data, live odds, and Google authentications...'):
             team_df, recent_bat_agg = get_team_data()
             pitcher_df = load_pitching_data()
             live_odds = get_live_odds()
@@ -239,17 +252,19 @@ if sport == "⚾ MLB Baseball":
                             try:
                                 away_t, home_t = game_key.split(" @ ")
                                 a_ml, h_ml = odds
-                                away_p_target, home_p_target = TEAM_NAME_MAP.get(away_t, away_t), TEAM_NAME_MAP.get(home_t, home_t)
-                                a_stats = team_df[team_df['Tm'] == away_p_target].iloc[0]
-                                h_stats = team_df[team_df['Tm'] == home_p_target].iloc[0]
-                                a_abbr, h_abbr = FULL_TO_ABBR.get(away_t, ''), FULL_TO_ABBR.get(home_t, '')
+                                a_stats = get_team_row(team_df, away_t)
+                                h_stats = get_team_row(team_df, home_t)
+                                if a_stats is None or h_stats is None: continue
+                                
+                                a_team_code = a_stats['Team']
+                                h_team_code = h_stats['Team']
                                 
                                 a_recent_offense = a_stats['RS_per_G']
-                                if not recent_bat_agg.empty and a_abbr in recent_bat_agg['Tm'].values: 
-                                    a_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == a_abbr]['Recent_RS_per_G'].values[0]
+                                if not recent_bat_agg.empty and a_team_code in recent_bat_agg['Team'].values: 
+                                    a_recent_offense = recent_bat_agg[recent_bat_agg['Team'] == a_team_code]['Recent_RS_per_G'].values[0]
                                 h_recent_offense = h_stats['RS_per_G']
-                                if not recent_bat_agg.empty and h_abbr in recent_bat_agg['Tm'].values: 
-                                    h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
+                                if not recent_bat_agg.empty and h_team_code in recent_bat_agg['Team'].values: 
+                                    h_recent_offense = recent_bat_agg[recent_bat_agg['Team'] == h_team_code]['Recent_RS_per_G'].values[0]
                                     
                                 a_blended_rs = (a_stats['RS_per_G'] * 0.70) + (a_recent_offense * 0.30)
                                 h_blended_rs = (h_stats['RS_per_G'] * 0.70) + (h_recent_offense * 0.30)
@@ -294,12 +309,14 @@ if sport == "⚾ MLB Baseball":
                 matchup_key = f"{away_t} @ {home_t}"
                 default_away_ml = int(live_odds.get(matchup_key, [100, -110])[0])
                 default_home_ml = int(live_odds.get(matchup_key, [100, -110])[1])
-                away_p_target, home_p_target = TEAM_NAME_MAP.get(away_t, away_t), TEAM_NAME_MAP.get(home_t, home_t)
                 
-                # Failsafe for pitchers in lean mode
-                if not pitcher_df.empty and 'Tm' in pitcher_df.columns:
-                    away_pitchers = sorted(pitcher_df[pitcher_df['Tm'] == away_p_target]['Name'].unique().tolist())
-                    home_pitchers = sorted(pitcher_df[pitcher_df['Tm'] == home_p_target]['Name'].unique().tolist())
+                if not pitcher_df.empty and 'Team' in pitcher_df.columns:
+                    a_stats_manual = get_team_row(team_df, away_t)
+                    h_stats_manual = get_team_row(team_df, home_t)
+                    a_team_code = a_stats_manual['Team'] if a_stats_manual is not None else ''
+                    h_team_code = h_stats_manual['Team'] if h_stats_manual is not None else ''
+                    away_pitchers = sorted(pitcher_df[pitcher_df['Team'] == a_team_code]['Name'].unique().tolist())
+                    home_pitchers = sorted(pitcher_df[pitcher_df['Team'] == h_team_code]['Name'].unique().tolist())
                 else:
                     away_pitchers, home_pitchers = [], []
                     
@@ -312,21 +329,24 @@ if sport == "⚾ MLB Baseball":
                 vegas_home = st.sidebar.number_input("Home ML:", value=default_home_ml)
                 
                 try:
-                    a_stats = team_df[team_df['Tm'] == away_p_target].iloc[0]
-                    h_stats = team_df[team_df['Tm'] == home_p_target].iloc[0]
-                    a_abbr, h_abbr = FULL_TO_ABBR.get(away_t, ''), FULL_TO_ABBR.get(home_t, '')
+                    a_stats = get_team_row(team_df, away_t)
+                    h_stats = get_team_row(team_df, home_t)
+                    a_team_code = a_stats['Team']
+                    h_team_code = h_stats['Team']
                     
                     a_recent_offense = a_stats['RS_per_G']
-                    if not recent_bat_agg.empty and a_abbr in recent_bat_agg['Tm'].values: 
-                        a_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == a_abbr]['Recent_RS_per_G'].values[0]
+                    if not recent_bat_agg.empty and a_team_code in recent_bat_agg['Team'].values: 
+                        a_recent_offense = recent_bat_agg[recent_bat_agg['Team'] == a_team_code]['Recent_RS_per_G'].values[0]
                     h_recent_offense = h_stats['RS_per_G']
-                    if not recent_bat_agg.empty and h_abbr in recent_bat_agg['Tm'].values: 
-                        h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
+                    if not recent_bat_agg.empty and h_team_code in recent_bat_agg['Team'].values: 
+                        h_recent_offense = recent_bat_agg[recent_bat_agg['Team'] == h_team_code]['Recent_RS_per_G'].values[0]
                         
                     a_blended_rs = (a_stats['RS_per_G'] * 0.70) + (a_recent_offense * 0.30)
                     h_blended_rs = (h_stats['RS_per_G'] * 0.70) + (h_recent_offense * 0.30)
-                    a_run_prevention = (a_stats['RA_per_G'] * 0.61) + (a_stats['BP_RA9'] * 0.39)
-                    h_run_prevention = (h_stats['RA_per_G'] * 0.61) + (h_stats['BP_RA9'] * 0.39)
+                    a_sp_fip = pitcher_df[pitcher_df['Name'] == away_sp]['FIP'].values[0] if away_sp != "League Average SP" else a_stats['RA_per_G']
+                    h_sp_fip = pitcher_df[pitcher_df['Name'] == home_sp]['FIP'].values[0] if home_sp != "League Average SP" else h_stats['RA_per_G']
+                    a_run_prevention = (a_sp_fip * 0.61) + (a_stats['BP_RA9'] * 0.39)
+                    h_run_prevention = (h_sp_fip * 0.61) + (h_stats['BP_RA9'] * 0.39)
                     away_lam = ((a_blended_rs + h_run_prevention) / 2) * p_factor
                     home_lam = ((h_blended_rs + a_run_prevention) / 2) * p_factor
                     
@@ -348,7 +368,6 @@ if sport == "⚾ MLB Baseball":
                             if model_home_prob > v_h_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
                 except Exception: st.error("Engine failure mapping data.")
 
-    # --- NEW FANTASY SPORTS ENGINE ---
     elif page == "🏆 Fantasy Sports Predictor":
         st.title("🏆 Season-Long Fantasy Hub")
         st.markdown("### 🏈 NFL (Sleeper/ESPN PPR) & ⚾ MLB (Standard Points)")
@@ -360,42 +379,36 @@ if sport == "⚾ MLB Baseball":
             st.subheader("⚖️ ESPN Standard Points Trade Analyzer")
             st.caption("Calculates Rest-of-Season (ROS) projected fantasy points based on 162-game pace and ESPN default scoring.")
             
-            with st.spinner("Crunching YTD metrics to generate Rest-of-Season projections..."):
+            with st.spinner("Crunching YTD FanGraphs metrics to generate Rest-of-Season projections..."):
                 try:
-                    # 1. Fetch & Clean Data
-                    bat_df = batting_stats_bref(2026)
+                    bat_df = batting_stats(2026)
                     pitch_df = load_pitching_data()
                     
                     bat_df['Name'] = bat_df['Name'].apply(clean_name)
                     pitch_df['Name'] = pitch_df['Name'].apply(clean_name)
                     
-                    # 2. ESPN Standard Batter Points: TB(1), BB(1), R(1), RBI(1), SB(1), SO(-1)
                     for col in ['H', '2B', '3B', 'HR', 'BB', 'R', 'RBI', 'SB', 'SO', 'G']:
                         if col not in bat_df.columns: bat_df[col] = 0
                         
-                    # Calculate Total Bases (TB) if missing
                     if 'TB' not in bat_df.columns:
-                        bat_df['1B'] = bat_df['H'] - bat_df['2B'] - bat_df['3B'] - bat_df['HR']
-                        bat_df['TB'] = bat_df['1B'] + (2 * bat_df['2B']) + (3 * bat_df['3B']) + (4 * bat_df['HR'])
+                        bat_df['1B_calc'] = bat_df['H'] - bat_df['2B'] - bat_df['3B'] - bat_df['HR']
+                        bat_df['TB'] = bat_df['1B_calc'] + (2 * bat_df['2B']) + (3 * bat_df['3B']) + (4 * bat_df['HR'])
                         
                     bat_df['FPts'] = bat_df['TB'] + bat_df['BB'] + bat_df['R'] + bat_df['RBI'] + bat_df['SB'] - bat_df['SO']
                     bat_df['FPts_per_G'] = (bat_df['FPts'] / bat_df['G'].replace(0, 1)).round(2)
                     bat_df['ROS_Proj'] = (bat_df['FPts_per_G'] * (162 - bat_df['G'])).clip(lower=0).round(1)
                     bat_df['Position'] = 'Batter'
                     
-                    # 3. ESPN Standard Pitcher Points: IP(3), K(1), W(5), SV(5), L(-5), ER(-2), H(-1), BB(-1)
                     for col in ['IP', 'SO', 'W', 'SV', 'L', 'ER', 'H', 'BB', 'G']:
                         if col not in pitch_df.columns: pitch_df[col] = 0
                         
                     pitch_df['FPts'] = (pitch_df['IP'] * 3) + pitch_df['SO'] + (pitch_df['W'] * 5) + (pitch_df['SV'] * 5) - (pitch_df['L'] * 5) - (pitch_df['ER'] * 2) - pitch_df['H'] - pitch_df['BB']
                     pitch_df['FPts_per_G'] = (pitch_df['FPts'] / pitch_df['G'].replace(0, 1)).round(2)
                     
-                    # Pitcher pace is trickier (SP vs RP). We scale based on average pitcher appearances.
                     max_pitcher_g = pitch_df['G'].max() if not pitch_df.empty and pitch_df['G'].max() > 0 else 80
                     pitch_df['ROS_Proj'] = (pitch_df['FPts_per_G'] * ((162 - (pitch_df['G'] * (162/max_pitcher_g)))) ).clip(lower=0).round(1)
                     pitch_df['Position'] = 'Pitcher'
                     
-                    # Combine for Trade Analyzer
                     fantasy_df = pd.concat([
                         bat_df[['Name', 'Position', 'FPts', 'FPts_per_G', 'ROS_Proj']], 
                         pitch_df[['Name', 'Position', 'FPts', 'FPts_per_G', 'ROS_Proj']]
@@ -403,12 +416,9 @@ if sport == "⚾ MLB Baseball":
                     
                     all_players = sorted(fantasy_df['Name'].unique().tolist())
                     
-                    # 4. The Trade UI
                     col1, col2 = st.columns(2)
-                    with col1:
-                        team_a = st.multiselect("Team A Receives:", all_players, key="team_a")
-                    with col2:
-                        team_b = st.multiselect("Team B Receives:", all_players, key="team_b")
+                    with col1: team_a = st.multiselect("Team A Receives:", all_players, key="team_a")
+                    with col2: team_b = st.multiselect("Team B Receives:", all_players, key="team_b")
                         
                     if st.button("⚖️ Analyze Trade Edge"):
                         if team_a or team_b:
