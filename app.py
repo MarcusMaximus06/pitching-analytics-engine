@@ -77,7 +77,6 @@ if sport == "⚾ MLB Baseball":
         'Toronto Blue Jays': 'TOR', 'Washington Nationals': 'WSN'
     }
 
-    # FANGRAPHS FUZZY MATCHER
     def get_team_row(team_df, full_name):
         abbr = FULL_TO_ABBR.get(full_name, '')
         variants = [abbr, abbr.replace('CHW', 'CWS').replace('KCR', 'KC').replace('SDP', 'SD').replace('SFG', 'SF').replace('TBR', 'TB').replace('WSN', 'WSH')]
@@ -370,9 +369,9 @@ if sport == "⚾ MLB Baseball":
 
     elif page == "🏆 Fantasy Sports Predictor":
         st.title("🏆 Season-Long Fantasy Hub")
-        st.markdown("### 🏈 NFL (Sleeper/ESPN PPR) & ⚾ MLB (Standard Points)")
+        st.markdown("### 🏈 NFL (Sleeper PPR) & ⚾ MLB (Standard Points)")
         
-        fantasy_sport = st.radio("Select Active Fantasy Sport:", ["⚾ MLB Trade Analyzer & Projections", "🏈 NFL PPR Engine (Offseason Shell)"])
+        fantasy_sport = st.radio("Select Active Fantasy Sport:", ["⚾ MLB Trade Analyzer & Projections", "🏈 NFL Sleeper PPR Trade Engine"])
         st.markdown("---")
         
         if fantasy_sport == "⚾ MLB Trade Analyzer & Projections":
@@ -395,6 +394,7 @@ if sport == "⚾ MLB Baseball":
                         bat_df['TB'] = bat_df['1B_calc'] + (2 * bat_df['2B']) + (3 * bat_df['3B']) + (4 * bat_df['HR'])
                         
                     bat_df['FPts'] = bat_df['TB'] + bat_df['BB'] + bat_df['R'] + bat_df['RBI'] + bat_df['SB'] - bat_df['SO']
+                    bat_df['G'] = pd.to_numeric(bat_df['G'], errors='coerce').fillna(1)
                     bat_df['FPts_per_G'] = (bat_df['FPts'] / bat_df['G'].replace(0, 1)).round(2)
                     bat_df['ROS_Proj'] = (bat_df['FPts_per_G'] * (162 - bat_df['G'])).clip(lower=0).round(1)
                     bat_df['Position'] = 'Batter'
@@ -403,6 +403,7 @@ if sport == "⚾ MLB Baseball":
                         if col not in pitch_df.columns: pitch_df[col] = 0
                         
                     pitch_df['FPts'] = (pitch_df['IP'] * 3) + pitch_df['SO'] + (pitch_df['W'] * 5) + (pitch_df['SV'] * 5) - (pitch_df['L'] * 5) - (pitch_df['ER'] * 2) - pitch_df['H'] - pitch_df['BB']
+                    pitch_df['G'] = pd.to_numeric(pitch_df['G'], errors='coerce').fillna(1)
                     pitch_df['FPts_per_G'] = (pitch_df['FPts'] / pitch_df['G'].replace(0, 1)).round(2)
                     
                     max_pitcher_g = pitch_df['G'].max() if not pitch_df.empty and pitch_df['G'].max() > 0 else 80
@@ -412,9 +413,9 @@ if sport == "⚾ MLB Baseball":
                     fantasy_df = pd.concat([
                         bat_df[['Name', 'Position', 'FPts', 'FPts_per_G', 'ROS_Proj']], 
                         pitch_df[['Name', 'Position', 'FPts', 'FPts_per_G', 'ROS_Proj']]
-                    ]).sort_values('ROS_Proj', ascending=False).dropna(subset=['ROS_Proj'])
+                    ]).dropna(subset=['Name', 'ROS_Proj']).sort_values('ROS_Proj', ascending=False)
                     
-                    all_players = sorted(fantasy_df['Name'].unique().tolist())
+                    all_players = sorted(fantasy_df['Name'].astype(str).unique().tolist())
                     
                     col1, col2 = st.columns(2)
                     with col1: team_a = st.multiselect("Team A Receives:", all_players, key="team_a")
@@ -450,9 +451,99 @@ if sport == "⚾ MLB Baseball":
                 except Exception as e:
                     st.error(f"Failed to compile fantasy metrics: {e}")
                     
-        elif fantasy_sport == "🏈 NFL PPR Engine (Offseason Shell)":
-            st.subheader("🏈 NFL Sleeper / ESPN Integrations")
-            st.info("NFL Data scrapers and Sleeper API hooks are currently standing by. This module will activate when 2026 preseason metrics become available.")
+        elif fantasy_sport == "🏈 NFL Sleeper PPR Trade Engine":
+            @st.cache_data(ttl=86400)
+            def load_sleeper_players():
+                try:
+                    url = "https://api.sleeper.app/v1/players/nfl"
+                    resp = requests.get(url, timeout=10).json()
+                    active_players = {}
+                    for pid, pdata in resp.items():
+                        if pdata.get('active'):
+                            name = f"{pdata.get('first_name', '')} {pdata.get('last_name', '')}".strip()
+                            pos = pdata.get('position', 'UNK')
+                            team = pdata.get('team', 'FA')
+                            active_players[pid] = {'Name': name, 'Pos': pos, 'Team': team}
+                    return active_players
+                except Exception:
+                    return {}
+
+            st.subheader("🏈 Sleeper PPR Dynasty & Redraft Analyzer")
+            st.caption("Sync your Sleeper account or use the manual trade matrix to evaluate PPR values.")
+            
+            with st.spinner("Fetching live Sleeper player registry..."):
+                sleeper_players = load_sleeper_players()
+                
+            if not sleeper_players:
+                st.warning("Could not sync with Sleeper API. Running in manual mode.")
+                player_list = ["Christian McCaffrey (RB - SF)", "CeeDee Lamb (WR - DAL)", "Josh Allen (QB - BUF)", "Justin Jefferson (WR - MIN)", "Tyreek Hill (WR - MIA)"]
+            else:
+                player_list = [f"{data['Name']} ({data['Pos']} - {data['Team']})" for pid, data in sleeper_players.items() if data['Pos'] in ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']]
+                player_list = sorted(list(set(player_list)))
+            
+            st.markdown("### ⚖️ Trade Simulator")
+            col1, col2 = st.columns(2)
+            with col1:
+                team_a_nfl = st.multiselect("Team A Receives:", player_list, key="nfl_team_a")
+            with col2:
+                team_b_nfl = st.multiselect("Team B Receives:", player_list, key="nfl_team_b")
+                
+            st.markdown("#### 🎯 PPR Value Assignment")
+            st.caption("Since it is the offseason, assign your projected 2026 PPR Points (or Dynasty Value metric) for the selected assets.")
+            
+            c1, c2 = st.columns(2)
+            a_val = 0
+            b_val = 0
+            with c1:
+                for p in team_a_nfl:
+                    val = st.number_input(f"Value for {p}:", value=200, step=10, key=f"val_{p}_a")
+                    a_val += val
+            with c2:
+                for p in team_b_nfl:
+                    val = st.number_input(f"Value for {p}:", value=200, step=10, key=f"val_{p}_b")
+                    b_val += val
+                    
+            if st.button("⚖️ Calculate NFL Trade Edge"):
+                if team_a_nfl or team_b_nfl:
+                    st.markdown("---")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("Team A Total Value", f"{a_val} PPR Pts")
+                    with col2:
+                        st.metric("Team B Total Value", f"{b_val} PPR Pts")
+                        
+                    diff = abs(a_val - b_val)
+                    if a_val > b_val + 20:
+                        st.success(f"📈 **Team A** wins this trade by **{diff}** points.")
+                    elif b_val > a_val + 20:
+                        st.success(f"📈 **Team B** wins this trade by **{diff}** points.")
+                    else:
+                        st.info(f"🤝 This trade is highly balanced (Differential: {diff}).")
+                else:
+                    st.warning("Select players to analyze.")
+                    
+            st.markdown("---")
+            st.subheader("📡 Sleeper League Sync")
+            username = st.text_input("Enter Sleeper Username to view active leagues:", value="marcusmaximus06")
+            if st.button("Sync Rosters"):
+                with st.spinner("Pinging Sleeper API..."):
+                    try:
+                        user_resp = requests.get(f"https://api.sleeper.app/v1/user/{username}").json()
+                        if user_resp and 'user_id' in user_resp:
+                            user_id = user_resp['user_id']
+                            leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2026").json()
+                            if not leagues:
+                                leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2025").json()
+                            if leagues:
+                                st.success(f"✅ Synced {len(leagues)} leagues for {username}!")
+                                for league in leagues:
+                                    st.write(f"🏆 **{league['name']}**")
+                            else:
+                                st.info("No active NFL leagues found for this user.")
+                        else:
+                            st.error("User not found on Sleeper.")
+                    except Exception as e:
+                        st.error("Failed to connect to Sleeper API.")
 
 # ==========================================================
 # SPORT BRANCH 2: NCAA SOFTBALL (CALIBRATED WITH SOS & AUTO-GRADING!)
