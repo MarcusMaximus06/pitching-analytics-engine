@@ -456,7 +456,8 @@ if sport == "⚾ MLB Baseball":
             def load_sleeper_players():
                 try:
                     url = "https://api.sleeper.app/v1/players/nfl"
-                    resp = requests.get(url, timeout=10).json()
+                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+                    resp = requests.get(url, headers=headers, timeout=30).json()
                     active_players = {}
                     for pid, pdata in resp.items():
                         if pdata.get('active'):
@@ -528,12 +529,13 @@ if sport == "⚾ MLB Baseball":
             if st.button("Sync Rosters"):
                 with st.spinner("Pinging Sleeper API..."):
                     try:
-                        user_resp = requests.get(f"https://api.sleeper.app/v1/user/{username}").json()
+                        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+                        user_resp = requests.get(f"https://api.sleeper.app/v1/user/{username}", headers=headers, timeout=15).json()
                         if user_resp and 'user_id' in user_resp:
                             user_id = user_resp['user_id']
-                            leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2026").json()
+                            leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2026", headers=headers, timeout=15).json()
                             if not leagues:
-                                leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2025").json()
+                                leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2025", headers=headers, timeout=15).json()
                             if leagues:
                                 st.success(f"✅ Synced {len(leagues)} leagues for {username}!")
                                 for league in leagues:
@@ -543,7 +545,7 @@ if sport == "⚾ MLB Baseball":
                         else:
                             st.error("User not found on Sleeper.")
                     except Exception as e:
-                        st.error("Failed to connect to Sleeper API.")
+                        st.error("Failed to connect to Sleeper API. The connection may have been blocked or timed out.")
 
 # ==========================================================
 # SPORT BRANCH 2: NCAA SOFTBALL (CALIBRATED WITH SOS & AUTO-GRADING!)
