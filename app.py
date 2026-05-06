@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from pybaseball import pitching_stats_bref, batting_stats_bref, pitching_stats_range, batting_stats_range, statcast_pitcher_expected_stats, statcast_pitcher
+from pybaseball import pitching_stats_bref, batting_stats_bref, pitching_stats_range, batting_stats_range, statcast_pitcher_expected_stats, statcast_pitcher, playerid_lookup
 import plotly.express as px
 from datetime import datetime, timedelta
 import traceback
@@ -20,6 +20,7 @@ st.sidebar.markdown("---")
 
 # --- CENTRALIZED TIMEZONE UTILITY ---
 def get_local_date_str():
+    # Render servers run on UTC. This forces Central Time alignment.
     utc_now = datetime.utcnow()
     central_now = utc_now - timedelta(hours=5) 
     return central_now.strftime("%Y-%m-%d")
@@ -233,7 +234,6 @@ if sport == "⚾ MLB Baseball":
             return team_df.sort_values('Tm'), recent_bat_agg
         except Exception: return pd.DataFrame(), pd.DataFrame()
 
-    # --- MLB PAGE UI ROUTING ---
     if page == "⚾ Pitching Analytics Matrix":
         st.title("⚾ Pitching Analytics Matrix")
         with st.spinner('Compiling matrix...'):
@@ -245,37 +245,74 @@ if sport == "⚾ MLB Baseball":
                 selected_player = st.sidebar.selectbox("Target Profile Search:", ["All Pitchers"] + sorted(raw_df['Name'].unique().tolist()))
                 display_cols = ['Name', 'Tm', 'IP', 'FPI', 'Momentum_Shift', 'ERA', 'SO9', 'BB9']
                 
+                # --- STATCAST VISUAL ENGINE RESTORED ---
                 if selected_player != "All Pitchers":
                     st.subheader(f"Isolated Profile: {selected_player}")
                     p_data = raw_df[raw_df['Name'] == selected_player]
                     st.dataframe(p_data[display_cols], hide_index=True)
+                    
+                    st.markdown("### 🔬 Advanced Statcast Arsenal")
+                    with st.spinner(f"Fetching Statcast metrics from MLBAM for {selected_player}..."):
+                        try:
+                            names = selected_player.split(" ")
+                            if len(names) >= 2:
+                                first, last = names[0].lower(), names[-1].lower()
+                                lookup = playerid_lookup(last, first)
+                                if not lookup.empty:
+                                    mlbam_id = lookup['key_mlbam'].values[0]
+                                    # Pull recent statcast data to map pitch arsenal and spin rates
+                                    st_data = statcast_pitcher('2026-03-01', get_local_date_str(), mlbam_id)
+                                    
+                                    if not st_data.empty:
+                                        pitch_mix = st_data['pitch_name'].value_counts().reset_index()
+                                        pitch_mix.columns = ['Pitch', 'Count']
+                                        fig1 = px.pie(pitch_mix, values='Count', names='Pitch', title='Pitch Arsenal Breakdown', hole=0.4)
+                                        
+                                        vel_spin = st_data.groupby('pitch_name').agg(
+                                            Velocity=('release_speed', 'mean'),
+                                            Spin_Rate=('release_spin_rate', 'mean')
+                                        ).reset_index()
+                                        
+                                        fig2 = px.bar(vel_spin, x='Pitch', y='Spin_Rate', color='Velocity', 
+                                                     title='Average Spin Rate & Velocity (RPM)',
+                                                     labels={'Spin_Rate': 'Spin Rate (RPM)', 'Velocity': 'Velocity (MPH)'})
+                                                     
+                                        c1, c2 = st.columns(2)
+                                        with c1: st.plotly_chart(fig1, use_container_width=True)
+                                        with c2: st.plotly_chart(fig2, use_container_width=True)
+                                    else:
+                                        st.warning("No Statcast pitch tracking data found for this player in the current season.")
+                                else:
+                                    st.warning("Could not locate an MLBAM ID for this player in the Statcast registry.")
+                        except Exception as e:
+                            st.warning(f"Statcast lookup failed: {e}")
+                            
                 else:
                     st.subheader("League Overview: The Momentum Tracker")
                     st.dataframe(filtered_df[display_cols].sort_values('Momentum_Shift', ascending=False).head(25), hide_index=True)
 
-                # --- THE RESTORED VISUAL ENGINE ---
-                st.markdown("---")
-                st.subheader("📊 FPI & Momentum Scatter Matrix")
-                st.caption("*Hover over points to inspect profiles. The green quadrant represents elite FPI with positive recent momentum.*")
-                
-                fig = px.scatter(
-                    filtered_df, 
-                    x="FPI", 
-                    y="Momentum_Shift", 
-                    color="ERA",
-                    hover_name="Name", 
-                    hover_data=["Tm", "IP", "SO9", "BB9"],
-                    color_continuous_scale=px.colors.diverging.RdYlGn_r, # Red is bad ERA, Green is good
-                    labels={"Momentum_Shift": "14-Day Momentum Shift", "FPI": "Season FPI Rating"}
-                )
-                
-                # Add crosshairs for league averages
-                fig.add_hline(y=0, line_dash="dot", line_color="white", opacity=0.5)
-                fig.add_vline(x=filtered_df['FPI'].median(), line_dash="dot", line_color="white", opacity=0.5)
-                fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
-                
-                st.plotly_chart(fig, use_container_width=True)
-                
+                    st.markdown("---")
+                    st.subheader("📊 FPI & Momentum Scatter Matrix")
+                    st.caption("*Hover over points to inspect profiles. The top-right quadrant represents elite FPI with positive recent momentum.*")
+                    
+                    fig = px.scatter(
+                        filtered_df, 
+                        x="FPI", 
+                        y="Momentum_Shift", 
+                        color="ERA",
+                        hover_name="Name", 
+                        hover_data=["Tm", "IP", "SO9", "BB9"],
+                        color_continuous_scale=px.colors.diverging.RdYlGn_r, 
+                        labels={"Momentum_Shift": "14-Day Momentum Shift", "FPI": "Season FPI Rating"}
+                    )
+                    
+                    # Target Crosshairs
+                    fig.add_hline(y=0, line_dash="dot", line_color="white", opacity=0.5)
+                    fig.add_vline(x=filtered_df['FPI'].median(), line_dash="dot", line_color="white", opacity=0.5)
+                    fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+
             except Exception as e: st.error(f"Engine failure: {e}")
 
     elif page == "🎲 Monte Carlo Simulation Engine":
@@ -302,6 +339,7 @@ if sport == "⚾ MLB Baseball":
             
             if not team_df.empty and not pitcher_df.empty:
                 st.subheader("⚡ Automated Daily Slate Runner")
+                # --- MLB DAILY SLATE DISPLAY ---
                 if st.button("▶ Auto-Run & Log Entire Daily Slate"):
                     with st.spinner("Simulating full MLB Slate..."):
                         slate_logs = []
@@ -313,10 +351,14 @@ if sport == "⚾ MLB Baseball":
                                 a_stats = team_df[team_df['Tm'] == away_p_target].iloc[0]
                                 h_stats = team_df[team_df['Tm'] == home_p_target].iloc[0]
                                 a_abbr, h_abbr = FULL_TO_ABBR.get(away_t, ''), FULL_TO_ABBR.get(home_t, '')
+                                
                                 a_recent_offense = a_stats['RS_per_G']
-                                if not recent_bat_agg.empty and a_abbr in recent_bat_agg['Tm'].values: a_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == a_abbr]['Recent_RS_per_G'].values[0]
+                                if not recent_bat_agg.empty and a_abbr in recent_bat_agg['Tm'].values: 
+                                    a_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == a_abbr]['Recent_RS_per_G'].values[0]
                                 h_recent_offense = h_stats['RS_per_G']
-                                if not recent_bat_agg.empty and h_abbr in recent_bat_agg['Tm'].values: h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
+                                if not recent_bat_agg.empty and h_abbr in recent_bat_agg['Tm'].values: 
+                                    h_recent_offense = recent_bat_agg[recent_bat_agg['Tm'] == h_abbr]['Recent_RS_per_G'].values[0]
+                                    
                                 a_blended_rs = (a_stats['RS_per_G'] * 0.70) + (a_recent_offense * 0.30)
                                 h_blended_rs = (h_stats['RS_per_G'] * 0.70) + (h_recent_offense * 0.30)
                                 a_run_prevention = (a_stats['RA_per_G'] * 0.61) + (a_stats['BP_RA9'] * 0.39)
@@ -324,6 +366,7 @@ if sport == "⚾ MLB Baseball":
                                 p_factor = PARK_FACTORS.get(home_t, 100) / 100
                                 away_lam = ((a_blended_rs + h_run_prevention) / 2) * p_factor
                                 home_lam = ((h_blended_rs + a_run_prevention) / 2) * p_factor
+                                
                                 sim_a = np.random.poisson(away_lam, 10000)
                                 sim_h = np.random.poisson(home_lam, 10000)
                                 a_wins = np.sum(sim_a > sim_h) + (np.sum(sim_a == sim_h) / 2)
@@ -331,16 +374,25 @@ if sport == "⚾ MLB Baseball":
                                 model_away_prob, model_home_prob = a_wins / 10000, h_wins / 10000
                                 v_a_prob = 100/(a_ml+100) if a_ml > 0 else abs(a_ml)/(abs(a_ml)+100)
                                 v_h_prob = 100/(h_ml+100) if h_ml > 0 else abs(h_ml)/(abs(h_ml)+100)
+                                
                                 action_taken = "No Edge"
                                 if model_away_prob > v_a_prob + 0.03: action_taken = away_t
                                 if model_home_prob > v_h_prob + 0.03: action_taken = home_t
+                                
                                 if action_taken != "No Edge":
                                     date_str = get_local_date_str() 
                                     row_data = [date_str, away_t, home_t, a_ml, h_ml, f"{model_away_prob:.1%}", f"{model_home_prob:.1%}", action_taken, "PENDING"]
                                     log_to_google_sheets(row_data)
                                     slate_logs.append(row_data)
                             except: continue
-                        st.success(f"✅ Successfully processed {len(slate_logs)} edges!")
+                            
+                        if slate_logs:
+                            st.success(f"✅ Successfully processed and logged {len(slate_logs)} edges!")
+                            st.markdown("#### 📅 Today's MLB Actionable Edges")
+                            df_display = pd.DataFrame(slate_logs, columns=["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Status"])
+                            st.dataframe(df_display, use_container_width=True, hide_index=True)
+                        else:
+                            st.info("No actionable edges found on today's MLB slate.")
 
                 st.markdown("---")
                 st.subheader("Manual Matchup Override")
@@ -669,7 +721,6 @@ elif sport == "🥎 NCAA Softball":
         except Exception:
             return fallback_eras
 
-    # === FETCH STATS BEFORE UI RENDERS ===
     tot_sb_games, sb_acc = get_softball_log_stats()
 
     with st.spinner("Scraping NCAA Softball Baselines & Pitching Profiles..."):
@@ -684,7 +735,6 @@ elif sport == "🥎 NCAA Softball":
                 softball_eras = fallback_eras
                 valid_teams = sorted(list(softball_teams.keys()))
             
-            # --- AUTO-GRADE OPTION ON DASHBOARD ---
             col1, col2, col3 = st.columns([2, 2, 3])
             with col1: st.metric(label="Total Graded Softball Games", value=tot_sb_games)
             with col2: st.metric(label="Model Accuracy", value=f"{sb_acc:.1f}%")
@@ -697,7 +747,7 @@ elif sport == "🥎 NCAA Softball":
                         elif updates == 0: st.info("No games ready to be graded.")
             st.markdown("---")
             
-            # --- AUTOMATED SOFTBALL DAILY SLATE RUNNER ---
+            # --- DAILY SLATE DISPLAY (SOFTBALL) ---
             st.subheader("⚡ Automated Daily Softball Slate Runner")
             st.markdown("Simulate every Division I game scheduled for today on the NCAA Scoreboard and log them to Google Sheets in one click.")
             if st.button("▶ Auto-Run & Log Entire Softball Slate"):
@@ -707,6 +757,7 @@ elif sport == "🥎 NCAA Softball":
                         st.warning("No D1 Softball games found on today's NCAA schedule yet.")
                     else:
                         logged_count = 0
+                        slate_logs = [] 
                         for away_ncaa, home_ncaa in scheduled_games:
                             away_t = map_ncaa_to_warren_nolan(away_ncaa, valid_teams)
                             home_t = map_ncaa_to_warren_nolan(home_ncaa, valid_teams)
@@ -749,9 +800,13 @@ elif sport == "🥎 NCAA Softball":
                                 
                                 if log_softball_to_sheets(row_data):
                                     logged_count += 1
+                                    slate_logs.append(row_data)
                                     
                         if logged_count > 0:
                             st.success(f"✅ Successfully simulated today's slate and logged {logged_count} games to Google Sheets!")
+                            st.markdown("#### 📅 Today's NCAA Softball Predictions")
+                            df_display = pd.DataFrame(slate_logs, columns=["Date", "Away Team", "Home Team", "Away SP ERA", "Home SP ERA", "Model Away %", "Model Home %", "Predicted Winner", "Status"])
+                            st.dataframe(df_display, use_container_width=True, hide_index=True)
                         else:
                             st.info("No matchups from today's schedule could be confidently mapped to our 66 powerhouse teams.")
 
