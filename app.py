@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from pybaseball import pitching_stats_bref, batting_stats_bref, pitching_stats_range, batting_stats_range, statcast_pitcher, playerid_lookup
-import plotly.express as px
+from pybaseball import pitching_stats_bref, batting_stats_bref, pitching_stats_range, batting_stats_range
 from datetime import datetime, timedelta
 import traceback
 import requests
@@ -40,12 +39,12 @@ def clean_name(name):
 # SPORT BRANCH 1: MLB BASEBALL
 # ==========================================================
 if sport == "⚾ MLB Baseball":
-    page = st.sidebar.radio("Select Engine:", ["⚾ Pitching Analytics Matrix", "🎲 Monte Carlo Simulation Engine"])
+    page = st.sidebar.radio("Select Engine:", ["🎲 Monte Carlo Simulation Engine", "🏆 Fantasy Sports Predictor"])
     st.sidebar.markdown("---")
 
     PARK_FACTORS = {
         'Arizona Diamondbacks': 102, 'Atlanta Braves': 100, 'Baltimore Orioles': 98, 'Boston Red Sox': 107, 
-        'Chicago Cubs': 102, 'Chicago White Sox': 102, 'Cincinnati Reds': 111, 'Cleveland Reds': 111, 'Cleveland Guardians': 101, 
+        'Chicago Cubs': 102, 'Chicago White Sox': 102, 'Cincinnati Reds': 111, 'Cleveland Guardians': 101, 
         'Colorado Rockies': 114, 'Detroit Tigers': 98, 'Houston Astros': 96, 'Kansas City Royals': 101, 
         'Los Angeles Angels': 97, 'Los Angeles Dodgers': 97, 'Miami Marlins': 95, 'Milwaukee Brewers': 101, 
         'Minnesota Twins': 99, 'New York Mets': 99, 'New York Yankees': 99, 'Oakland Athletics': 94, 
@@ -190,34 +189,7 @@ if sport == "⚾ MLB Baseball":
         season_df = pitching_stats_bref(2026)
         season_df['Name'] = season_df['Name'].apply(clean_name)
         season_df = calc_advanced_metrics(season_df)
-        today = datetime.now()
-        two_weeks_ago = today - timedelta(days=14)
-        recent_df = pitching_stats_range(two_weeks_ago.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'))
-        if not recent_df.empty:
-            recent_df['Name'] = recent_df['Name'].apply(clean_name)
-            recent_df = calc_advanced_metrics(recent_df)
-            recent_df = recent_df[['Name', 'FPI']].rename(columns={'FPI': 'Recent_FPI'})
-            merged_df = pd.merge(season_df, recent_df, on='Name', how='left')
-            merged_df['Momentum_Shift'] = (merged_df['Recent_FPI'] - merged_df['FPI']).round(2)
-        else:
-            merged_df = season_df
-            merged_df['Recent_FPI'] = None
-            merged_df['Momentum_Shift'] = None
-        return merged_df
-
-    @st.cache_data(ttl=86400) # Cache Statcast for 24 hours to prevent extreme stalling
-    def get_pitcher_statcast_data(player_name, start_date, end_date):
-        try:
-            names = player_name.split(" ")
-            if len(names) < 2: return pd.DataFrame()
-            first, last = names[0].lower(), names[-1].lower()
-            lookup = playerid_lookup(last, first)
-            if lookup.empty: return pd.DataFrame()
-            mlbam_id = lookup['key_mlbam'].values[0]
-            st_data = statcast_pitcher(start_date, end_date, mlbam_id)
-            return st_data
-        except Exception:
-            return pd.DataFrame()
+        return season_df
 
     @st.cache_data(ttl=3600)
     def get_team_data():
@@ -247,77 +219,7 @@ if sport == "⚾ MLB Baseball":
             return team_df.sort_values('Tm'), recent_bat_agg
         except Exception: return pd.DataFrame(), pd.DataFrame()
 
-    if page == "⚾ Pitching Analytics Matrix":
-        st.title("⚾ Pitching Analytics Matrix")
-        with st.spinner('Compiling matrix...'):
-            try:
-                raw_df = load_pitching_data()
-                st.sidebar.header("Matrix Parameters")
-                min_ip = st.sidebar.slider("Min IP (Leaderboard):", 1, int(raw_df['IP'].max()), 15)
-                filtered_df = raw_df[raw_df['IP'] >= min_ip]
-                selected_player = st.sidebar.selectbox("Target Profile Search:", ["All Pitchers"] + sorted(raw_df['Name'].unique().tolist()))
-                display_cols = ['Name', 'Tm', 'IP', 'FPI', 'Momentum_Shift', 'ERA', 'SO9', 'BB9']
-                
-                if selected_player != "All Pitchers":
-                    st.subheader(f"Isolated Profile: {selected_player}")
-                    p_data = raw_df[raw_df['Name'] == selected_player]
-                    st.dataframe(p_data[display_cols], hide_index=True)
-                    
-                    st.markdown("### 🔬 Advanced Statcast Arsenal")
-                    with st.spinner(f"Fetching Statcast metrics from MLBAM for {selected_player}..."):
-                        try:
-                            # Using the newly restored cached function here
-                            st_data = get_pitcher_statcast_data(selected_player, '2026-03-01', get_local_date_str())
-                            
-                            if not st_data.empty:
-                                pitch_mix = st_data['pitch_name'].value_counts().reset_index()
-                                pitch_mix.columns = ['Pitch', 'Count']
-                                fig1 = px.pie(pitch_mix, values='Count', names='Pitch', title='Pitch Arsenal Breakdown', hole=0.4)
-                                
-                                vel_spin = st_data.groupby('pitch_name').agg(
-                                    Velocity=('release_speed', 'mean'),
-                                    Spin_Rate=('release_spin_rate', 'mean')
-                                ).reset_index()
-                                
-                                fig2 = px.bar(vel_spin, x='Pitch', y='Spin_Rate', color='Velocity', 
-                                             title='Average Spin Rate & Velocity (RPM)',
-                                             labels={'Spin_Rate': 'Spin Rate (RPM)', 'Velocity': 'Velocity (MPH)'})
-                                             
-                                c1, c2 = st.columns(2)
-                                with c1: st.plotly_chart(fig1, use_container_width=True)
-                                with c2: st.plotly_chart(fig2, use_container_width=True)
-                            else:
-                                st.warning("No Statcast pitch tracking data found for this player in the current season.")
-                        except Exception as e:
-                            st.warning(f"Statcast lookup failed: {e}")
-                            
-                else:
-                    st.subheader("League Overview: The Momentum Tracker")
-                    st.dataframe(filtered_df[display_cols].sort_values('Momentum_Shift', ascending=False).head(25), hide_index=True)
-
-                    st.markdown("---")
-                    st.subheader("📊 FPI & Momentum Scatter Matrix")
-                    st.caption("*Hover over points to inspect profiles. The top-right quadrant represents elite FPI with positive recent momentum.*")
-                    
-                    fig = px.scatter(
-                        filtered_df, 
-                        x="FPI", 
-                        y="Momentum_Shift", 
-                        color="ERA",
-                        hover_name="Name", 
-                        hover_data=["Tm", "IP", "SO9", "BB9"],
-                        color_continuous_scale=px.colors.diverging.RdYlGn_r, 
-                        labels={"Momentum_Shift": "14-Day Momentum Shift", "FPI": "Season FPI Rating"}
-                    )
-                    fig.add_hline(y=0, line_dash="dot", line_color="white", opacity=0.5)
-                    fig.add_vline(x=filtered_df['FPI'].median(), line_dash="dot", line_color="white", opacity=0.5)
-                    fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
-                    
-                    st.plotly_chart(fig, use_container_width=True)
-
-            except Exception as e: st.error(f"Engine failure: {e}")
-
-    elif page == "🎲 Monte Carlo Simulation Engine":
+    if page == "🎲 Monte Carlo Simulation Engine":
         st.title("🎲 Monte Carlo Simulation Engine")
         st.markdown("### 📊 Live Model Log & Automation")
         tot_games, mod_acc, veg_acc = get_master_log_stats()
@@ -452,6 +354,10 @@ if sport == "⚾ MLB Baseball":
                             st.metric(f"{home_t} Win Prob", f"{model_home_prob:.1%}")
                             if model_home_prob > v_h_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
                 except Exception: st.error("Engine failure mapping data.")
+
+    elif page == "🏆 Fantasy Sports Predictor":
+        st.title("🏆 Fantasy Sports Predictor")
+        st.info("The Daily Fantasy Sports (DFS) & Prop Prediction engine is currently in development. Ready for the next build phase.")
 
 # ==========================================================
 # SPORT BRANCH 2: NCAA SOFTBALL (CALIBRATED WITH SOS & AUTO-GRADING!)
