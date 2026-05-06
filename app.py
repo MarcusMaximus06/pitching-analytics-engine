@@ -20,7 +20,6 @@ st.sidebar.markdown("---")
 
 # --- CENTRALIZED TIMEZONE UTILITY ---
 def get_local_date_str():
-    # Render servers run on UTC. This forces Central Time alignment.
     utc_now = datetime.utcnow()
     central_now = utc_now - timedelta(hours=5) 
     return central_now.strftime("%Y-%m-%d")
@@ -260,7 +259,6 @@ if sport == "⚾ MLB Baseball":
                                 lookup = playerid_lookup(last, first)
                                 if not lookup.empty:
                                     mlbam_id = lookup['key_mlbam'].values[0]
-                                    # Pull recent statcast data to map pitch arsenal and spin rates
                                     st_data = statcast_pitcher('2026-03-01', get_local_date_str(), mlbam_id)
                                     
                                     if not st_data.empty:
@@ -305,8 +303,6 @@ if sport == "⚾ MLB Baseball":
                         color_continuous_scale=px.colors.diverging.RdYlGn_r, 
                         labels={"Momentum_Shift": "14-Day Momentum Shift", "FPI": "Season FPI Rating"}
                     )
-                    
-                    # Target Crosshairs
                     fig.add_hline(y=0, line_dash="dot", line_color="white", opacity=0.5)
                     fig.add_vline(x=filtered_df['FPI'].median(), line_dash="dot", line_color="white", opacity=0.5)
                     fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
@@ -339,7 +335,6 @@ if sport == "⚾ MLB Baseball":
             
             if not team_df.empty and not pitcher_df.empty:
                 st.subheader("⚡ Automated Daily Slate Runner")
-                # --- MLB DAILY SLATE DISPLAY ---
                 if st.button("▶ Auto-Run & Log Entire Daily Slate"):
                     with st.spinner("Simulating full MLB Slate..."):
                         slate_logs = []
@@ -460,6 +455,7 @@ elif sport == "🥎 NCAA Softball":
     st.markdown("### 📊 Log5 Win Probability Tracker & Schedule Difficulty Calibration")
     st.caption("*Scrapes live WarrenNolan standings, team pitching ERAs, and SOS Ranks to simulate 7-inning matchups and auto-grade past bets.*")
     
+    # 1. CORE FUNCTIONS
     def log_softball_to_sheets(row_data):
         try:
             gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
@@ -606,6 +602,14 @@ elif sport == "🥎 NCAA Softball":
             st.error(f"Softball Auto-Grader Error: {e}")
             return -1
 
+    # 2. FETCH STATS FIRST (Prevents NameError during UI render)
+    tot_sb_games, sb_acc = get_softball_log_stats()
+
+    # 3. RENDER DASHBOARD METRICS
+    col1, col2, col3 = st.columns([2, 2, 3])
+    with col1: st.metric(label="Total Graded Softball Games", value=tot_sb_games)
+    with col2: st.metric(label="Model Accuracy", value=f"{sb_acc:.1f}%")
+
     fallback_teams = {
         'Alabama': [0.690, 11], 'Arizona': [0.710, 18], 'Arizona State': [0.550, 35], 'Arkansas': [0.715, 12], 'Auburn': [0.620, 24],
         'Baylor': [0.650, 22], 'Boston University': [0.820, 142], 'BYU': [0.580, 52], 'California': [0.680, 28], 'Charlotte': [0.700, 78],
@@ -721,7 +725,19 @@ elif sport == "🥎 NCAA Softball":
         except Exception:
             return fallback_eras
 
-    tot_sb_games, sb_acc = get_softball_log_stats()
+    with col3:
+        st.write("")
+        if st.button("🔄 Auto-Grade Yesterday's Softball"):
+            with st.spinner("Accessing NCAA Scoreboard Portal..."):
+                # We need valid_teams to run this, so we compute it inside if clicked
+                softball_teams, _ = scrape_ncaa_softball_standings()
+                softball_eras = scrape_ncaa_softball_pitching()
+                v_teams = sorted(list(set(softball_teams.keys()).intersection(set(softball_eras.keys()))))
+                if not v_teams: v_teams = sorted(list(fallback_teams.keys()))
+                updates = auto_grade_softball_pending_bets(v_teams)
+                if updates > 0: st.success(f"✅ Successfully graded {updates} games! Refresh.")
+                elif updates == 0: st.info("No games ready to be graded.")
+    st.markdown("---")
 
     with st.spinner("Scraping NCAA Softball Baselines & Pitching Profiles..."):
         softball_teams, softball_sos = scrape_ncaa_softball_standings()
@@ -734,18 +750,6 @@ elif sport == "🥎 NCAA Softball":
                 softball_sos = {k: v[1] for k, v in fallback_teams.items()}
                 softball_eras = fallback_eras
                 valid_teams = sorted(list(softball_teams.keys()))
-            
-            col1, col2, col3 = st.columns([2, 2, 3])
-            with col1: st.metric(label="Total Graded Softball Games", value=tot_sb_games)
-            with col2: st.metric(label="Model Accuracy", value=f"{sb_acc:.1f}%")
-            with col3:
-                st.write("")
-                if st.button("🔄 Auto-Grade Yesterday's Softball"):
-                    with st.spinner("Accessing NCAA Scoreboard Portal..."):
-                        updates = auto_grade_softball_pending_bets(valid_teams)
-                        if updates > 0: st.success(f"✅ Successfully graded {updates} games! Refresh.")
-                        elif updates == 0: st.info("No games ready to be graded.")
-            st.markdown("---")
             
             # --- DAILY SLATE DISPLAY (SOFTBALL) ---
             st.subheader("⚡ Automated Daily Softball Slate Runner")
