@@ -233,6 +233,7 @@ if sport == "⚾ MLB Baseball":
             return team_df.sort_values('Tm'), recent_bat_agg
         except Exception: return pd.DataFrame(), pd.DataFrame()
 
+    # --- MLB PAGE UI ROUTING ---
     if page == "⚾ Pitching Analytics Matrix":
         st.title("⚾ Pitching Analytics Matrix")
         with st.spinner('Compiling matrix...'):
@@ -243,6 +244,7 @@ if sport == "⚾ MLB Baseball":
                 filtered_df = raw_df[raw_df['IP'] >= min_ip]
                 selected_player = st.sidebar.selectbox("Target Profile Search:", ["All Pitchers"] + sorted(raw_df['Name'].unique().tolist()))
                 display_cols = ['Name', 'Tm', 'IP', 'FPI', 'Momentum_Shift', 'ERA', 'SO9', 'BB9']
+                
                 if selected_player != "All Pitchers":
                     st.subheader(f"Isolated Profile: {selected_player}")
                     p_data = raw_df[raw_df['Name'] == selected_player]
@@ -250,7 +252,31 @@ if sport == "⚾ MLB Baseball":
                 else:
                     st.subheader("League Overview: The Momentum Tracker")
                     st.dataframe(filtered_df[display_cols].sort_values('Momentum_Shift', ascending=False).head(25), hide_index=True)
-            except Exception: st.error("Engine failure.")
+
+                # --- THE RESTORED VISUAL ENGINE ---
+                st.markdown("---")
+                st.subheader("📊 FPI & Momentum Scatter Matrix")
+                st.caption("*Hover over points to inspect profiles. The green quadrant represents elite FPI with positive recent momentum.*")
+                
+                fig = px.scatter(
+                    filtered_df, 
+                    x="FPI", 
+                    y="Momentum_Shift", 
+                    color="ERA",
+                    hover_name="Name", 
+                    hover_data=["Tm", "IP", "SO9", "BB9"],
+                    color_continuous_scale=px.colors.diverging.RdYlGn_r, # Red is bad ERA, Green is good
+                    labels={"Momentum_Shift": "14-Day Momentum Shift", "FPI": "Season FPI Rating"}
+                )
+                
+                # Add crosshairs for league averages
+                fig.add_hline(y=0, line_dash="dot", line_color="white", opacity=0.5)
+                fig.add_vline(x=filtered_df['FPI'].median(), line_dash="dot", line_color="white", opacity=0.5)
+                fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+            except Exception as e: st.error(f"Engine failure: {e}")
 
     elif page == "🎲 Monte Carlo Simulation Engine":
         st.title("🎲 Monte Carlo Simulation Engine")
