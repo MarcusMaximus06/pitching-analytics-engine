@@ -8,10 +8,12 @@ from curl_cffi import requests as cffi_requests
 import gspread
 import os
 
-# --- CLOUDFLARE BYPASS V8: THE TLS SPOOFER ---
-# Intercept direct GET and POST requests for Sleeper & Odds APIs
+# --- CLOUDFLARE BYPASS V8: THE SMART TLS SPOOFER ---
+# Intercept network requests, but IGNORE Google APIs so gspread works perfectly
 original_get = requests.get
 def custom_get(url, **kwargs):
+    if "googleapis.com" in str(url) or "googleusercontent.com" in str(url):
+        return original_get(url, **kwargs)
     kwargs.pop('headers', None) 
     try:
         return cffi_requests.get(url, impersonate="chrome120", **kwargs)
@@ -21,6 +23,8 @@ requests.get = custom_get
 
 original_post = requests.post
 def custom_post(url, **kwargs):
+    if "googleapis.com" in str(url) or "googleusercontent.com" in str(url):
+        return original_post(url, **kwargs)
     kwargs.pop('headers', None) 
     try:
         return cffi_requests.post(url, impersonate="chrome120", **kwargs)
@@ -30,6 +34,8 @@ requests.post = custom_post
 
 original_request = requests.Session.request
 def custom_request(self, method, url, **kwargs):
+    if "googleapis.com" in str(url) or "googleusercontent.com" in str(url):
+        return original_request(self, method, url, **kwargs)
     kwargs.pop('headers', None)
     try:
         return cffi_requests.request(method, url, impersonate="chrome120", **kwargs)
