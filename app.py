@@ -1,22 +1,48 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from pybaseball import pitching_stats, batting_stats, pitching_stats_range, batting_stats_range
+from pybaseball import pitching_stats, batting_stats, pitching_stats_range, batting_stats_range, cache
 from datetime import datetime, timedelta
 import traceback
 import requests
 import gspread
 import os
 
-# --- CLOUDFLARE BYPASS: THE CLOAK ---
-# This intercepts all outgoing network requests and disguises your Render server 
-# as a human using Google Chrome. It bypasses 403 Forbidden blocks from FanGraphs & Sleeper.
+# --- CLOUDFLARE BYPASS: THE CLOAK V2 ---
+# 1. Purge the pybaseball cache to destroy any saved 403 errors
+cache.purge()
+
+# 2. Comprehensive header profile to mimic a modern desktop browser
+SPOOF_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Upgrade-Insecure-Requests': '1'
+}
+
+# 3. Intercept Session requests
 original_request = requests.Session.request
 def custom_request(self, method, url, **kwargs):
     kwargs.setdefault('headers', {})
-    kwargs['headers']['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    kwargs['headers'].update(SPOOF_HEADERS)
     return original_request(self, method, url, **kwargs)
 requests.Session.request = custom_request
+
+# 4. Intercept direct GET requests (Crucial for pybaseball)
+original_get = requests.get
+def custom_get(url, **kwargs):
+    kwargs.setdefault('headers', {})
+    kwargs['headers'].update(SPOOF_HEADERS)
+    return original_get(url, **kwargs)
+requests.get = custom_get
+# ---------------------------------------
 
 st.set_page_config(page_title="Apex Multi-Sport Analytics", layout="wide")
 
@@ -276,6 +302,7 @@ if sport == "⚾ MLB Baseball":
                                 a_ml, h_ml = odds
                                 a_stats = get_team_row(team_df, away_t)
                                 h_stats = get_team_row(team_df, home_t)
+                                
                                 if a_stats is None or h_stats is None: continue
                                 
                                 a_team_code = a_stats['Team']
@@ -383,9 +410,11 @@ if sport == "⚾ MLB Baseball":
                         c1, c2 = st.columns(2)
                         v_a_prob = 100/(vegas_away+100) if vegas_away > 0 else abs(vegas_away)/(abs(vegas_away)+100)
                         v_h_prob = 100/(vegas_home+100) if vegas_home > 0 else abs(vegas_home)/(abs(vegas_home)+100)
+        
                         with c1:
                             st.metric(f"{away_t} Win Prob", f"{model_away_prob:.1%}")
                             if model_away_prob > v_a_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
+                
                         with c2:
                             st.metric(f"{home_t} Win Prob", f"{model_home_prob:.1%}")
                             if model_home_prob > v_h_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
@@ -425,7 +454,7 @@ if sport == "⚾ MLB Baseball":
                         bat_df['FPts_per_G'] = (bat_df['FPts'] / bat_df['G'].replace(0, 1)).round(2)
                         bat_df['ROS_Proj'] = (bat_df['FPts_per_G'] * (162 - bat_df['G'])).clip(lower=0).round(1)
                         bat_df['Position'] = 'Batter'
-                        
+    
                         for col in ['IP', 'SO', 'W', 'SV', 'L', 'ER', 'H', 'BB', 'G']:
                             if col not in pitch_df.columns: pitch_df[col] = 0
                             
@@ -869,7 +898,7 @@ elif sport == "🥎 NCAA Softball":
                 softball_sos = {k: v[1] for k, v in fallback_teams.items()}
                 softball_eras = fallback_eras
                 valid_teams = sorted(list(softball_teams.keys()))
-            
+             
             # --- DAILY SLATE DISPLAY (SOFTBALL) ---
             st.subheader("⚡ Automated Daily Softball Slate Runner")
             st.markdown("Simulate every Division I game scheduled for today on the NCAA Scoreboard and log them to Google Sheets in one click.")
@@ -888,10 +917,10 @@ elif sport == "🥎 NCAA Softball":
                             if away_t and home_t and away_t != home_t:
                                 wp_a = softball_teams[away_t]
                                 wp_b = softball_teams[home_t]
-                                
+                                 
                                 sos_rank_a = softball_sos.get(away_t, 150)
                                 sos_rank_b = softball_sos.get(home_t, 150)
-                                
+                                 
                                 sos_mult_a = 1.15 - 0.30 * ((sos_rank_a - 1) / 300)
                                 sos_mult_b = 1.15 - 0.30 * ((sos_rank_b - 1) / 300)
                                 
@@ -910,7 +939,7 @@ elif sport == "🥎 NCAA Softball":
                                 log5_away = (final_a - final_a * final_b) / (final_a + final_b - 2.0 * final_a * final_b)
                                 log5_away = max(0.01, min(0.99, log5_away))
                                 log5_home = 1.0 - log5_away
-                                
+                                 
                                 predicted_winner = away_t if log5_away > log5_home else home_t
                                 
                                 date_str = get_local_date_str()
@@ -961,7 +990,7 @@ elif sport == "🥎 NCAA Softball":
                 
                 sos_mult_a = 1.15 - 0.30 * ((sos_rank_a - 1) / 300)
                 sos_mult_b = 1.15 - 0.30 * ((sos_rank_b - 1) / 300)
-                
+                 
                 wp_adj_a = wp_a * sos_mult_a
                 wp_adj_b = wp_b * sos_mult_b
                 
@@ -981,7 +1010,7 @@ elif sport == "🥎 NCAA Softball":
                 
                 st.metric(f"{away_team} Win Probability:", f"{log5_away:.1%}")
                 st.metric(f"{home_team} Win Probability:", f"{log5_home:.1%}")
-                
+                 
                 predicted_winner = away_team if log5_away > log5_home else home_team
                 st.info(f"🏆 Predicted Winner: **{predicted_winner}**")
                 
