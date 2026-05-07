@@ -9,7 +9,7 @@ import gspread
 import os
 import cloudscraper
 
-# --- CLOUDFLARE BYPASS V3: THE SCRAPER ---
+# --- CLOUDFLARE BYPASS V4: THE ANTI-RECURSION SCRAPER ---
 # 1. Purge the pybaseball cache to destroy any saved 403 errors
 cache.purge()
 
@@ -22,17 +22,21 @@ scraper = cloudscraper.create_scraper(
     }
 )
 
-# 3. Intercept direct GET requests (Crucial for pybaseball)
+# 3. Intercept Session requests SAFELY to prevent infinite recursion
+original_request = requests.Session.request
+def custom_request(self, method, url, **kwargs):
+    # If the scraper itself is making the underlying request, let it pass normally
+    if isinstance(self, cloudscraper.CloudScraper):
+        return original_request(self, method, url, **kwargs)
+    # If pybaseball or standard requests creates a session, hijack it with the scraper
+    return scraper.request(method, url, **kwargs)
+requests.Session.request = custom_request
+
+# 4. Intercept direct GET requests
 original_get = requests.get
 def custom_get(url, **kwargs):
     return scraper.get(url, **kwargs)
 requests.get = custom_get
-
-# 4. Intercept Session requests
-original_request = requests.Session.request
-def custom_request(self, method, url, **kwargs):
-    return scraper.request(method, url, **kwargs)
-requests.Session.request = custom_request
 # ---------------------------------------
 
 st.set_page_config(page_title="Apex Multi-Sport Analytics", layout="wide")
