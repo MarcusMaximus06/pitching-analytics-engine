@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from pybaseball import pitching_stats, batting_stats, pitching_stats_range, batting_stats_range, cache
 from datetime import datetime, timedelta
 import traceback
 import requests
@@ -9,22 +8,26 @@ from curl_cffi import requests as cffi_requests
 import gspread
 import os
 
-# --- CLOUDFLARE BYPASS V6: THE TLS SPOOFER ---
-cache.purge()
-
-# 1. Intercept direct GET requests
+# --- CLOUDFLARE BYPASS V8: THE TLS SPOOFER ---
+# Intercept direct GET and POST requests for Sleeper & Odds APIs
 original_get = requests.get
 def custom_get(url, **kwargs):
-    # Drop default Python headers so the spoofer can use pure Chrome headers
     kwargs.pop('headers', None) 
     try:
-        # Impersonate a modern Chrome browser perfectly
         return cffi_requests.get(url, impersonate="chrome120", **kwargs)
     except Exception:
         return original_get(url, **kwargs)
 requests.get = custom_get
 
-# 2. Intercept Session requests (Used extensively by pybaseball)
+original_post = requests.post
+def custom_post(url, **kwargs):
+    kwargs.pop('headers', None) 
+    try:
+        return cffi_requests.post(url, impersonate="chrome120", **kwargs)
+    except Exception:
+        return original_post(url, **kwargs)
+requests.post = custom_post
+
 original_request = requests.Session.request
 def custom_request(self, method, url, **kwargs):
     kwargs.pop('headers', None)
@@ -44,13 +47,11 @@ st.sidebar.title("Apex Quantitative Syndicate")
 sport = st.sidebar.selectbox("Select Sport Engine:", ["⚾ MLB Baseball", "🥎 NCAA Softball"])
 st.sidebar.markdown("---")
 
-# --- CENTRALIZED TIMEZONE UTILITY ---
 def get_local_date_str():
     utc_now = datetime.utcnow()
     central_now = utc_now - timedelta(hours=5) 
     return central_now.strftime("%Y-%m-%d")
 
-# --- UNICODE CLEANER ---
 def clean_name(name):
     if not isinstance(name, str): return name
     replacements = {
@@ -63,7 +64,7 @@ def clean_name(name):
     return name
 
 # ==========================================================
-# SPORT BRANCH 1: MLB BASEBALL
+# SPORT BRANCH 1: MLB BASEBALL (MLB API NATIVE)
 # ==========================================================
 if sport == "⚾ MLB Baseball":
     page = st.sidebar.radio("Select Engine:", ["🎲 Monte Carlo Simulation Engine", "🏆 Fantasy Sports Predictor"])
@@ -80,48 +81,15 @@ if sport == "⚾ MLB Baseball":
         'Toronto Blue Jays': 101, 'Washington Nationals': 101
     }
 
-    TEAM_NAME_MAP = {
-        'Arizona Diamondbacks': 'Arizona', 'Atlanta Braves': 'Atlanta', 'Baltimore Orioles': 'Baltimore',
-        'Boston Red Sox': 'Boston', 'Chicago Cubs': 'Chicago', 'Chicago White Sox': 'Chicago',
-        'Cincinnati Reds': 'Cincinnati', 'Cleveland Guardians': 'Cleveland', 'Colorado Rockies': 'Colorado',
-        'Detroit Tigers': 'Detroit', 'Houston Astros': 'Houston', 'Kansas City Royals': 'Kansas City',
-        'Los Angeles Angels': 'Los Angeles', 'Los Angeles Dodgers': 'Los Angeles', 'Miami Marlins': 'Miami',
-        'Milwaukee Brewers': 'Milwaukee', 'Minnesota Twins': 'Minnesota', 'New York Mets': 'New York',
-        'New York Yankees': 'New York', 'Oakland Athletics': 'Athletics', 'Philadelphia Phillies': 'Philadelphia',
-        'Pittsburgh Pirates': 'Pittsburgh', 'San Diego Padres': 'San Diego', 'San Francisco Giants': 'San Francisco',
-        'Seattle Mariners': 'Seattle', 'St. Louis Cardinals': 'St. Louis', 'Tampa Bay Rays': 'Tampa Bay',
-        'Texas Rangers': 'Texas', 'Toronto Blue Jays': 'Toronto', 'Washington Nationals': 'Washington'
-    }
-
-    FULL_TO_ABBR = {
-        'Arizona Diamondbacks': 'ARI', 'Atlanta Braves': 'ATL', 'Baltimore Orioles': 'BAL', 'Boston Red Sox': 'BOS', 
-        'Chicago Cubs': 'CHC', 'Chicago White Sox': 'CHW', 'Cincinnati Reds': 'CIN', 'Cleveland Guardians': 'CLE', 
-        'Colorado Rockies': 'COL', 'Detroit Tigers': 'DET', 'Houston Astros': 'HOU', 'Kansas City Royals': 'KCR', 
-        'Los Angeles Angels': 'LAA', 'Los Angeles Dodgers': 'LAD', 'Miami Marlins': 'MIA', 'Milwaukee Brewers': 'MIL', 
-        'Minnesota Twins': 'MIN', 'New York Mets': 'NYM', 'New York Yankees': 'NYY', 'Oakland Athletics': 'OAK', 
-        'Philadelphia Phillies': 'PHI', 'Pittsburgh Pirates': 'PIT', 'San Diego Padres': 'SDP', 'San Francisco Giants': 'SFG', 
-        'Seattle Mariners': 'SEA', 'St. Louis Cardinals': 'STL', 'Tampa Bay Rays': 'TBR', 'Texas Rangers': 'TEX', 
-        'Toronto Blue Jays': 'TOR', 'Washington Nationals': 'WSN'
-    }
-
-    def get_team_row(team_df, full_name):
-        abbr = FULL_TO_ABBR.get(full_name, '')
-        variants = [abbr, abbr.replace('CHW', 'CWS').replace('KCR', 'KC').replace('SDP', 'SD').replace('SFG', 'SF').replace('TBR', 'TB').replace('WSN', 'WSH')]
-        for v in variants:
-            if v in team_df['Team'].values:
-                return team_df[team_df['Team'] == v].iloc[0]
-        return None
-
     @st.cache_data(ttl=3600)
     def get_live_odds():
         api_key = os.environ.get('ODDS_API_KEY')
         if not api_key: return {}
         url = f'https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/?apiKey={api_key}&regions=us&markets=h2h&oddsFormat=american&bookmakers=draftkings,fanduel'
         try:
-            response = requests.get(url, timeout=15)
-            data = response.json()
+            response = requests.get(url, timeout=15).json()
             odds_dict = {}
-            for game in data:
+            for game in response:
                 if 'bookmakers' in game and len(game['bookmakers']) > 0:
                     outcomes = game['bookmakers'][0]['markets'][0]['outcomes']
                     away = game['away_team']
@@ -132,20 +100,80 @@ if sport == "⚾ MLB Baseball":
             return odds_dict
         except Exception: return {}
 
+    @st.cache_data(ttl=7200)
+    def fetch_mlb_api_data():
+        """Fetches raw Standings and complete Pitching/Hitting logs from the official MLB API"""
+        team_data = {}
+        pitcher_data = {}
+        hitter_data = {}
+        
+        try:
+            # 1. Fetch Standings (For Runs Scored / Runs Allowed Context)
+            standings_url = "https://statsapi.mlb.com/api/v1/standings?leagueId=103,104&season=2026"
+            s_resp = requests.get(standings_url, timeout=10).json()
+            for record in s_resp.get('records', []):
+                for t in record.get('teamRecords', []):
+                    t_name = t['team']['name']
+                    g = t.get('gamesPlayed', 1) or 1
+                    rs_g = t.get('runsScored', 0) / g
+                    ra_g = t.get('runsAllowed', 0) / g
+                    team_data[t_name] = {'RS_per_G': rs_g, 'RA_per_G': ra_g}
+
+            # 2. Fetch Pitcher Stat Logs (For FIP Calculation)
+            p_url = "https://statsapi.mlb.com/api/v1/stats?stats=season&group=pitching&playerPool=ALL&season=2026&limit=1500"
+            p_resp = requests.get(p_url, timeout=15).json()
+            for p in p_resp.get('stats', [{}])[0].get('splits', []):
+                p_name = clean_name(p['player']['fullName'])
+                t_name = p.get('team', {}).get('name', 'Free Agent')
+                s = p['stat']
+                
+                ip = float(s.get('inningsPitched', 0.0))
+                if ip > 0:
+                    hr = s.get('homeRuns', 0)
+                    bb = s.get('baseOnBalls', 0)
+                    hbp = s.get('hitByPitch', 0)
+                    k = s.get('strikeOuts', 0)
+                    
+                    # Manual FIP Calculation (Constant ~3.15)
+                    raw_fip = ((13 * hr) + (3 * (bb + hbp)) - (2 * k)) / ip + 3.15
+                    # Regress small sample sizes towards league average
+                    if ip < 20: 
+                        fip = (raw_fip * (ip/20)) + (4.20 * ((20-ip)/20))
+                    else:
+                        fip = raw_fip
+                else:
+                    fip = 4.20 # Fallback
+                
+                pitcher_data[p_name] = {'FIP': fip, 'Team': t_name, 'IP': ip, 'K': s.get('strikeOuts', 0), 'W': s.get('wins',0), 'SV': s.get('saves',0), 'L': s.get('losses',0), 'ER': s.get('earnedRuns',0), 'H': s.get('hits',0), 'BB': s.get('baseOnBalls',0), 'G': s.get('gamesPlayed', 1) or 1}
+
+            # 3. Fetch Hitter Stat Logs (For Fantasy Engine)
+            h_url = "https://statsapi.mlb.com/api/v1/stats?stats=season&group=hitting&playerPool=ALL&season=2026&limit=1500"
+            h_resp = requests.get(h_url, timeout=15).json()
+            for h in h_resp.get('stats', [{}])[0].get('splits', []):
+                h_name = clean_name(h['player']['fullName'])
+                s = h['stat']
+                hitter_data[h_name] = {
+                    'H': s.get('hits',0), '2B': s.get('doubles',0), '3B': s.get('triples',0), 'HR': s.get('homeRuns',0),
+                    'BB': s.get('baseOnBalls',0), 'R': s.get('runs',0), 'RBI': s.get('rbi',0), 'SB': s.get('stolenBases',0),
+                    'SO': s.get('strikeOuts',0), 'G': s.get('gamesPlayed', 1) or 1
+                }
+                
+        except Exception as e:
+            st.error(f"API Sync Warning: {e}")
+            
+        return team_data, pitcher_data, hitter_data
+
     def log_to_google_sheets(row_data):
         try:
             gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
             sh = gc.open("MLB Daily Prediction Model")
             worksheet = sh.worksheet("Master Log")
-            
             values = worksheet.get_all_values()
             if not values or len(values) == 0:
                 worksheet.append_row(["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Result"])
-                
             worksheet.append_row(row_data)
             return True
-        except Exception:
-            return False
+        except Exception: return False
 
     def get_master_log_stats():
         try:
@@ -208,56 +236,6 @@ if sport == "⚾ MLB Baseball":
             st.error(f"Auto-Grader Error: {e}")
             return -1
 
-    @st.cache_data(ttl=3600)
-    def load_pitching_data():
-        try:
-            season_df = pitching_stats(2026)
-            if not season_df.empty and 'Name' in season_df.columns:
-                season_df['Name'] = season_df['Name'].apply(clean_name)
-            return season_df
-        except Exception:
-            return pd.DataFrame()
-
-    @st.cache_data(ttl=3600)
-    def get_team_data():
-        try:
-            bat_df = batting_stats(2026)
-            pitch_df = load_pitching_data()
-            if bat_df is None or bat_df.empty or pitch_df is None or pitch_df.empty:
-                return pd.DataFrame(), pd.DataFrame()
-
-            team_bat = bat_df.groupby('Team').agg(RS=('R', 'sum')).reset_index()
-            team_pitch = pitch_df.groupby('Team').agg(RA=('R', 'sum'), Team_G=('GS', 'sum')).reset_index()
-            pitch_df['is_reliever'] = pitch_df['GS'] <= (pitch_df['G'] * 0.25)
-            bp_df = pitch_df[pitch_df['is_reliever']]
-            team_bp = bp_df.groupby('Team').agg(BP_R=('R', 'sum'), BP_IP=('IP', 'sum')).reset_index()
-            team_bp['BP_IP'] = team_bp['BP_IP'].replace(0, 1)
-            team_bp['BP_RA9'] = (team_bp['BP_R'] / team_bp['BP_IP']) * 9
-            team_df = pd.merge(team_bat, team_pitch, on='Team')
-            team_df = team_df[team_df['Team'] != 'TOT']
-            team_df['Team_G'] = team_df['Team_G'].replace(0, 1)
-            team_df['RS_per_G'] = team_df['RS'] / team_df['Team_G']
-            team_df['RA_per_G'] = team_df['RA'] / team_df['Team_G']
-            team_df = pd.merge(team_df, team_bp[['Team', 'BP_RA9']], on='Team', how='left')
-            team_df['BP_RA9'] = team_df['BP_RA9'].fillna(team_df['RA_per_G'])
-            
-            today = datetime.now()
-            two_weeks_ago = today - timedelta(days=14)
-            recent_bat = batting_stats_range(two_weeks_ago.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'))
-            
-            if not recent_bat.empty:
-                tm_col = 'Tm' if 'Tm' in recent_bat.columns else 'Team'
-                recent_bat_agg = recent_bat.groupby(tm_col).agg(Recent_RS=('R', 'sum'), Recent_G=('G', 'max')).reset_index()
-                recent_bat_agg['Recent_G'] = recent_bat_agg['Recent_G'].replace(0, 1)
-                recent_bat_agg['Recent_RS_per_G'] = recent_bat_agg['Recent_RS'] / recent_bat_agg['Recent_G']
-                recent_bat_agg.rename(columns={tm_col: 'Team'}, inplace=True)
-            else:
-                recent_bat_agg = pd.DataFrame()
-                
-            return team_df.sort_values('Team'), recent_bat_agg
-        except Exception: 
-            return pd.DataFrame(), pd.DataFrame()
-
     if page == "🎲 Monte Carlo Simulation Engine":
         st.title("🎲 Monte Carlo Simulation Engine")
         st.markdown("### 📊 Live Model Log & Automation")
@@ -275,44 +253,54 @@ if sport == "⚾ MLB Baseball":
                     elif updates == 0: st.info("No games ready to be graded.")
         st.markdown("---")
         
-        with st.spinner('Syncing FanGraphs data, live odds, and Google authentications...'):
-            team_df, recent_bat_agg = get_team_data()
-            pitcher_df = load_pitching_data()
+        with st.spinner('Syncing native MLB API data and live odds...'):
+            team_stats, pitcher_stats, _ = fetch_mlb_api_data()
             live_odds = get_live_odds()
             
-            if team_df.empty or pitcher_df.empty:
-                st.warning("⚠️ **FanGraphs is currently blocking data requests (Cloudflare).** The Automated Daily Slate runner is temporarily unavailable.")
+            if not team_stats:
+                st.warning("⚠️ Could not establish connection to MLB Stats API.")
             else:
                 st.subheader("⚡ Automated Daily Slate Runner")
                 if st.button("▶ Auto-Run & Log Entire Daily Slate"):
-                    with st.spinner("Simulating full MLB Slate..."):
+                    with st.spinner("Simulating full MLB Slate using API Metrics..."):
                         slate_logs = []
+                        date_str = get_local_date_str()
+                        
+                        # Get today's probable pitchers
+                        sched_url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={date_str}&hydrate=probablePitcher"
+                        sched_resp = requests.get(sched_url).json()
+                        probables = {}
+                        if 'dates' in sched_resp and len(sched_resp['dates']) > 0:
+                            for g in sched_resp['dates'][0].get('games', []):
+                                a_team = g['teams']['away']['team']['name']
+                                h_team = g['teams']['home']['team']['name']
+                                a_sp = clean_name(g['teams']['away'].get('probablePitcher', {}).get('fullName', 'Unknown'))
+                                h_sp = clean_name(g['teams']['home'].get('probablePitcher', {}).get('fullName', 'Unknown'))
+                                probables[a_team] = a_sp
+                                probables[h_team] = h_sp
+
                         for game_key, odds in live_odds.items():
                             try:
                                 away_t, home_t = game_key.split(" @ ")
                                 a_ml, h_ml = odds
-                                a_stats = get_team_row(team_df, away_t)
-                                h_stats = get_team_row(team_df, home_t)
                                 
-                                if a_stats is None or h_stats is None: continue
+                                a_rs_g = team_stats.get(away_t, {}).get('RS_per_G', 4.5)
+                                h_rs_g = team_stats.get(home_t, {}).get('RS_per_G', 4.5)
+                                a_ra_g = team_stats.get(away_t, {}).get('RA_per_G', 4.5)
+                                h_ra_g = team_stats.get(home_t, {}).get('RA_per_G', 4.5)
                                 
-                                a_team_code = a_stats['Team']
-                                h_team_code = h_stats['Team']
-                                
-                                a_recent_offense = a_stats['RS_per_G']
-                                if not recent_bat_agg.empty and a_team_code in recent_bat_agg['Team'].values: 
-                                    a_recent_offense = recent_bat_agg[recent_bat_agg['Team'] == a_team_code]['Recent_RS_per_G'].values[0]
-                                h_recent_offense = h_stats['RS_per_G']
-                                if not recent_bat_agg.empty and h_team_code in recent_bat_agg['Team'].values: 
-                                    h_recent_offense = recent_bat_agg[recent_bat_agg['Team'] == h_team_code]['Recent_RS_per_G'].values[0]
-                                    
-                                a_blended_rs = (a_stats['RS_per_G'] * 0.70) + (a_recent_offense * 0.30)
-                                h_blended_rs = (h_stats['RS_per_G'] * 0.70) + (h_recent_offense * 0.30)
-                                a_run_prevention = (a_stats['RA_per_G'] * 0.61) + (a_stats['BP_RA9'] * 0.39)
-                                h_run_prevention = (h_stats['RA_per_G'] * 0.61) + (h_stats['BP_RA9'] * 0.39)
+                                away_sp = probables.get(away_t, 'Unknown')
+                                home_sp = probables.get(home_t, 'Unknown')
+                                a_sp_fip = pitcher_stats.get(away_sp, {}).get('FIP', a_ra_g)
+                                h_sp_fip = pitcher_stats.get(home_sp, {}).get('FIP', h_ra_g)
+
+                                # Weighted Run Prevention Model
+                                a_run_prevention = (a_sp_fip * 0.60) + (a_ra_g * 0.40)
+                                h_run_prevention = (h_sp_fip * 0.60) + (h_ra_g * 0.40)
                                 p_factor = PARK_FACTORS.get(home_t, 100) / 100
-                                away_lam = ((a_blended_rs + h_run_prevention) / 2) * p_factor
-                                home_lam = ((h_blended_rs + a_run_prevention) / 2) * p_factor
+                                
+                                away_lam = ((a_rs_g + h_run_prevention) / 2) * p_factor
+                                home_lam = ((h_rs_g + a_run_prevention) / 2) * p_factor
                                 
                                 sim_a = np.random.poisson(away_lam, 10000)
                                 sim_h = np.random.poisson(home_lam, 10000)
@@ -327,7 +315,6 @@ if sport == "⚾ MLB Baseball":
                                 if model_home_prob > v_h_prob + 0.03: action_taken = home_t
                                 
                                 if action_taken != "No Edge":
-                                    date_str = get_local_date_str() 
                                     row_data = [date_str, away_t, home_t, a_ml, h_ml, f"{model_away_prob:.1%}", f"{model_home_prob:.1%}", action_taken, "PENDING"]
                                     log_to_google_sheets(row_data)
                                     slate_logs.append(row_data)
@@ -341,46 +328,65 @@ if sport == "⚾ MLB Baseball":
                         else:
                             st.info("No actionable edges found on today's MLB slate.")
 
-        # ==========================================
-        # DECOUPLED MANUAL OVERRIDE (ALWAYS RENDERS)
-        # ==========================================
         st.markdown("---")
         st.subheader("Manual Matchup Override")
-        st.caption("Standalone Engine: Enter projected parameters to run the Monte Carlo simulation manually.")
+        st.caption("Standalone Engine: Calculates probability edges using native MLB API logic.")
         
-        MLB_TEAMS = sorted(list(TEAM_NAME_MAP.keys()))
+        MLB_TEAMS = sorted(list(PARK_FACTORS.keys()))
+        all_pitcher_names = sorted(list(pitcher_stats.keys())) if 'pitcher_stats' in locals() else []
         
         col_a, col_b = st.columns(2)
         with col_a:
             away_t = st.selectbox("Away Team:", MLB_TEAMS, index=0)
+            away_sp = st.selectbox(f"{away_t} SP Override:", ["League Average SP"] + all_pitcher_names)
             vegas_away = st.number_input("Away ML:", value=100)
-            away_lam = st.number_input(f"Expected Runs ({away_t}):", min_value=0.0, max_value=15.0, value=4.5, step=0.1)
         
         with col_b:
             home_t = st.selectbox("Home Team:", MLB_TEAMS, index=1)
+            home_sp = st.selectbox(f"{home_t} SP Override:", ["League Average SP"] + all_pitcher_names)
             vegas_home = st.number_input("Home ML:", value=-110)
-            home_lam = st.number_input(f"Expected Runs ({home_t}):", min_value=0.0, max_value=15.0, value=4.5, step=0.1)
+            
+        location = st.selectbox("Location:", list(PARK_FACTORS.keys()), index=list(PARK_FACTORS.keys()).index(home_t) if home_t in PARK_FACTORS else 0)
         
         if st.button("▶ Run Manual Simulation"):
-            sim_a = np.random.poisson(away_lam, 10000)
-            sim_h = np.random.poisson(home_lam, 10000)
-            a_wins = np.sum(sim_a > sim_h) + (np.sum(sim_a == sim_h) / 2)
-            h_wins = 10000 - a_wins
-            model_away_prob, model_home_prob = a_wins / 10000, h_wins / 10000
-            
-            st.write(f"Final Expected Runs: {away_t} **{away_lam:.2f}** | {home_t} **{home_lam:.2f}**")
-            
-            res_c1, res_c2 = st.columns(2)
-            v_a_prob = 100/(vegas_away+100) if vegas_away > 0 else abs(vegas_away)/(abs(vegas_away)+100)
-            v_h_prob = 100/(vegas_home+100) if vegas_home > 0 else abs(vegas_home)/(abs(vegas_home)+100)
+            if 'team_stats' in locals() and team_stats:
+                p_factor = PARK_FACTORS.get(location, 100) / 100
+                
+                a_rs_g = team_stats.get(away_t, {}).get('RS_per_G', 4.5)
+                h_rs_g = team_stats.get(home_t, {}).get('RS_per_G', 4.5)
+                a_ra_g = team_stats.get(away_t, {}).get('RA_per_G', 4.5)
+                h_ra_g = team_stats.get(home_t, {}).get('RA_per_G', 4.5)
 
-            with res_c1:
-                st.metric(f"{away_t} Win Prob", f"{model_away_prob:.1%}")
-                if model_away_prob > v_a_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
-    
-            with res_c2:
-                st.metric(f"{home_t} Win Prob", f"{model_home_prob:.1%}")
-                if model_home_prob > v_h_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
+                a_sp_fip = pitcher_stats.get(away_sp, {}).get('FIP', a_ra_g) if away_sp != "League Average SP" else a_ra_g
+                h_sp_fip = pitcher_stats.get(home_sp, {}).get('FIP', h_ra_g) if home_sp != "League Average SP" else h_ra_g
+
+                a_run_prevention = (a_sp_fip * 0.60) + (a_ra_g * 0.40)
+                h_run_prevention = (h_sp_fip * 0.60) + (h_ra_g * 0.40)
+                
+                away_lam = ((a_rs_g + h_run_prevention) / 2) * p_factor
+                home_lam = ((h_rs_g + a_run_prevention) / 2) * p_factor
+
+                sim_a = np.random.poisson(away_lam, 10000)
+                sim_h = np.random.poisson(home_lam, 10000)
+                a_wins = np.sum(sim_a > sim_h) + (np.sum(sim_a == sim_h) / 2)
+                h_wins = 10000 - a_wins
+                model_away_prob, model_home_prob = a_wins / 10000, h_wins / 10000
+                
+                st.write(f"Final Expected Runs: {away_t} **{away_lam:.2f}** | {home_t} **{home_lam:.2f}**")
+                
+                res_c1, res_c2 = st.columns(2)
+                v_a_prob = 100/(vegas_away+100) if vegas_away > 0 else abs(vegas_away)/(abs(vegas_away)+100)
+                v_h_prob = 100/(vegas_home+100) if vegas_home > 0 else abs(vegas_home)/(abs(vegas_home)+100)
+
+                with res_c1:
+                    st.metric(f"{away_t} Win Prob", f"{model_away_prob:.1%}")
+                    if model_away_prob > v_a_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
+        
+                with res_c2:
+                    st.metric(f"{home_t} Win Prob", f"{model_home_prob:.1%}")
+                    if model_home_prob > v_h_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
+            else:
+                st.error("Engine failure connecting to MLB Stats API.")
 
     elif page == "🏆 Fantasy Sports Predictor":
         st.title("🏆 Season-Long Fantasy Hub")
@@ -391,84 +397,64 @@ if sport == "⚾ MLB Baseball":
         
         if fantasy_sport == "⚾ MLB Trade Analyzer & Projections":
             st.subheader("⚖️ ESPN Standard Points Trade Analyzer")
-            st.caption("Calculates Rest-of-Season (ROS) projected fantasy points based on 162-game pace and ESPN default scoring.")
+            st.caption("Calculates Rest-of-Season (ROS) projections natively via MLB API data logs.")
             
-            with st.spinner("Crunching YTD FanGraphs metrics to generate Rest-of-Season projections..."):
-                try:
-                    bat_df = batting_stats(2026)
-                    pitch_df = load_pitching_data()
+            with st.spinner("Compiling League-Wide Player Database..."):
+                _, p_stats, h_stats = fetch_mlb_api_data()
+                
+                if not p_stats or not h_stats:
+                    st.error("🚨 Could not sync with MLB Stats API.")
+                else:
+                    hitter_list = []
+                    for name, s in h_stats.items():
+                        tb = (s['H'] - s['2B'] - s['3B'] - s['HR']) + (2*s['2B']) + (3*s['3B']) + (4*s['HR'])
+                        fpts = tb + s['BB'] + s['R'] + s['RBI'] + s['SB'] - s['SO']
+                        fpts_per_g = fpts / s['G']
+                        ros_proj = fpts_per_g * (162 - s['G'])
+                        hitter_list.append({'Name': name, 'Position': 'Batter', 'FPts': fpts, 'FPts_per_G': round(fpts_per_g, 2), 'ROS_Proj': round(ros_proj, 1)})
                     
-                    if bat_df is None or bat_df.empty or pitch_df is None or pitch_df.empty:
-                        st.error("🚨 FanGraphs is blocking data access. Trade Analyzer unavailable until the Cloudflare block clears.")
-                    else:
-                        bat_df['Name'] = bat_df['Name'].apply(clean_name)
-                        pitch_df['Name'] = pitch_df['Name'].apply(clean_name)
+                    pitcher_list = []
+                    for name, s in p_stats.items():
+                        fpts = (s['IP'] * 3) + s['K'] + (s['W'] * 5) + (s['SV'] * 5) - (s['L'] * 5) - (s['ER'] * 2) - s['H'] - s['BB']
+                        fpts_per_g = fpts / s['G']
+                        ros_proj = fpts_per_g * (162 - s['G'])
+                        pitcher_list.append({'Name': name, 'Position': 'Pitcher', 'FPts': fpts, 'FPts_per_G': round(fpts_per_g, 2), 'ROS_Proj': round(ros_proj, 1)})
                         
-                        for col in ['H', '2B', '3B', 'HR', 'BB', 'R', 'RBI', 'SB', 'SO', 'G']:
-                            if col not in bat_df.columns: bat_df[col] = 0
+                    fantasy_df = pd.DataFrame(hitter_list + pitcher_list)
+                    fantasy_df = fantasy_df.dropna(subset=['ROS_Proj']).sort_values('ROS_Proj', ascending=False)
+                    all_players = sorted(fantasy_df['Name'].astype(str).unique().tolist())
+                    
+                    col1, col2 = st.columns(2)
+                    with col1: team_a = st.multiselect("Team A Receives:", all_players, key="team_a")
+                    with col2: team_b = st.multiselect("Team B Receives:", all_players, key="team_b")
+                        
+                    if st.button("⚖️ Analyze Trade Edge"):
+                        if team_a or team_b:
+                            a_df = fantasy_df[fantasy_df['Name'].isin(team_a)]
+                            b_df = fantasy_df[fantasy_df['Name'].isin(team_b)]
                             
-                        if 'TB' not in bat_df.columns:
-                            bat_df['1B_calc'] = pd.to_numeric(bat_df['H'], errors='coerce').fillna(0) - pd.to_numeric(bat_df['2B'], errors='coerce').fillna(0) - pd.to_numeric(bat_df['3B'], errors='coerce').fillna(0) - pd.to_numeric(bat_df['HR'], errors='coerce').fillna(0)
-                            bat_df['TB'] = bat_df['1B_calc'] + (2 * pd.to_numeric(bat_df['2B'], errors='coerce').fillna(0)) + (3 * pd.to_numeric(bat_df['3B'], errors='coerce').fillna(0)) + (4 * pd.to_numeric(bat_df['HR'], errors='coerce').fillna(0))
+                            a_proj = a_df['ROS_Proj'].sum()
+                            b_proj = b_df['ROS_Proj'].sum()
                             
-                        bat_df['FPts'] = bat_df['TB'] + pd.to_numeric(bat_df['BB'], errors='coerce').fillna(0) + pd.to_numeric(bat_df['R'], errors='coerce').fillna(0) + pd.to_numeric(bat_df['RBI'], errors='coerce').fillna(0) + pd.to_numeric(bat_df['SB'], errors='coerce').fillna(0) - pd.to_numeric(bat_df['SO'], errors='coerce').fillna(0)
-                        bat_df['G'] = pd.to_numeric(bat_df['G'], errors='coerce').fillna(1)
-                        bat_df['FPts_per_G'] = (bat_df['FPts'] / bat_df['G'].replace(0, 1)).round(2)
-                        bat_df['ROS_Proj'] = (bat_df['FPts_per_G'] * (162 - bat_df['G'])).clip(lower=0).round(1)
-                        bat_df['Position'] = 'Batter'
-    
-                        for col in ['IP', 'SO', 'W', 'SV', 'L', 'ER', 'H', 'BB', 'G']:
-                            if col not in pitch_df.columns: pitch_df[col] = 0
-                            
-                        pitch_df['FPts'] = (pd.to_numeric(pitch_df['IP'], errors='coerce').fillna(0) * 3) + pd.to_numeric(pitch_df['SO'], errors='coerce').fillna(0) + (pd.to_numeric(pitch_df['W'], errors='coerce').fillna(0) * 5) + (pd.to_numeric(pitch_df['SV'], errors='coerce').fillna(0) * 5) - (pd.to_numeric(pitch_df['L'], errors='coerce').fillna(0) * 5) - (pd.to_numeric(pitch_df['ER'], errors='coerce').fillna(0) * 2) - pd.to_numeric(pitch_df['H'], errors='coerce').fillna(0) - pd.to_numeric(pitch_df['BB'], errors='coerce').fillna(0)
-                        pitch_df['G'] = pd.to_numeric(pitch_df['G'], errors='coerce').fillna(1)
-                        pitch_df['FPts_per_G'] = (pitch_df['FPts'] / pitch_df['G'].replace(0, 1)).round(2)
-                        
-                        max_pitcher_g = pitch_df['G'].max() if not pitch_df.empty and pitch_df['G'].max() > 0 else 80
-                        pitch_df['ROS_Proj'] = (pitch_df['FPts_per_G'] * ((162 - (pitch_df['G'] * (162/max_pitcher_g)))) ).clip(lower=0).round(1)
-                        pitch_df['Position'] = 'Pitcher'
-                        
-                        fantasy_df = pd.concat([
-                            bat_df[['Name', 'Position', 'FPts', 'FPts_per_G', 'ROS_Proj']], 
-                            pitch_df[['Name', 'Position', 'FPts', 'FPts_per_G', 'ROS_Proj']]
-                        ]).dropna(subset=['Name', 'ROS_Proj']).sort_values('ROS_Proj', ascending=False)
-                        
-                        all_players = sorted(fantasy_df['Name'].astype(str).unique().tolist())
-                        
-                        col1, col2 = st.columns(2)
-                        with col1: team_a = st.multiselect("Team A Receives:", all_players, key="team_a")
-                        with col2: team_b = st.multiselect("Team B Receives:", all_players, key="team_b")
-                            
-                        if st.button("⚖️ Analyze Trade Edge"):
-                            if team_a or team_b:
-                                a_df = fantasy_df[fantasy_df['Name'].isin(team_a)]
-                                b_df = fantasy_df[fantasy_df['Name'].isin(team_b)]
+                            c1, c2 = st.columns(2)
+                            with c1:
+                                st.metric("Team A Total ROS Projection", f"{a_proj:.1f} FPts")
+                                if not a_df.empty: st.dataframe(a_df[['Name', 'Position', 'FPts_per_G', 'ROS_Proj']], hide_index=True)
+                            with c2:
+                                st.metric("Team B Total ROS Projection", f"{b_proj:.1f} FPts")
+                                if not b_df.empty: st.dataframe(b_df[['Name', 'Position', 'FPts_per_G', 'ROS_Proj']], hide_index=True)
                                 
-                                a_proj = a_df['ROS_Proj'].sum()
-                                b_proj = b_df['ROS_Proj'].sum()
-                                
-                                c1, c2 = st.columns(2)
-                                with c1:
-                                    st.metric("Team A Total ROS Projection", f"{a_proj:.1f} FPts")
-                                    if not a_df.empty: st.dataframe(a_df[['Name', 'Position', 'FPts_per_G', 'ROS_Proj']], hide_index=True)
-                                with c2:
-                                    st.metric("Team B Total ROS Projection", f"{b_proj:.1f} FPts")
-                                    if not b_df.empty: st.dataframe(b_df[['Name', 'Position', 'FPts_per_G', 'ROS_Proj']], hide_index=True)
-                                    
-                                st.markdown("---")
-                                diff = abs(a_proj - b_proj)
-                                if a_proj > b_proj + 15:
-                                    st.success(f"📈 **Team A** wins this trade by a projected **{diff:.1f}** Rest-of-Season points.")
-                                elif b_proj > a_proj + 15:
-                                    st.success(f"📈 **Team B** wins this trade by a projected **{diff:.1f}** Rest-of-Season points.")
-                                else:
-                                    st.info(f"🤝 This trade is highly balanced. Only a **{diff:.1f}** point differential.")
+                            st.markdown("---")
+                            diff = abs(a_proj - b_proj)
+                            if a_proj > b_proj + 15:
+                                st.success(f"📈 **Team A** wins this trade by a projected **{diff:.1f}** Rest-of-Season points.")
+                            elif b_proj > a_proj + 15:
+                                st.success(f"📈 **Team B** wins this trade by a projected **{diff:.1f}** Rest-of-Season points.")
                             else:
-                                st.warning("Add players to both sides to analyze a trade.")
-                            
-                except Exception as e:
-                    st.error(f"Failed to compile fantasy metrics: {e}")
-                    
+                                st.info(f"🤝 This trade is highly balanced. Only a **{diff:.1f}** point differential.")
+                        else:
+                            st.warning("Add players to both sides to analyze a trade.")
+
         elif fantasy_sport == "🏈 NFL Sleeper PPR Trade Engine":
             @st.cache_data(ttl=86400)
             def load_sleeper_players():
@@ -493,7 +479,7 @@ if sport == "⚾ MLB Baseball":
                 sleeper_players = load_sleeper_players()
                 
             if not sleeper_players:
-                st.warning("⚠️ Could not sync with Sleeper API (Cloudflare Block). Running in manual mode.")
+                st.warning("⚠️ Could not sync with Sleeper API. Running in manual mode.")
                 player_list = ["Christian McCaffrey (RB - SF)", "CeeDee Lamb (WR - DAL)", "Josh Allen (QB - BUF)", "Justin Jefferson (WR - MIN)", "Tyreek Hill (WR - MIA)"]
             else:
                 player_list = [f"{data['Name']} ({data['Pos']} - {data['Team']})" for pid, data in sleeper_players.items() if data['Pos'] in ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']]
@@ -564,7 +550,7 @@ if sport == "⚾ MLB Baseball":
                         st.error("Failed to connect to Sleeper API. The connection may have been blocked or timed out.")
 
 # ==========================================================
-# SPORT BRANCH 2: NCAA SOFTBALL (CALIBRATED WITH SOS & AUTO-GRADING!)
+# SPORT BRANCH 2: NCAA SOFTBALL
 # ==========================================================
 elif sport == "🥎 NCAA Softball":
     st.title("🥎 NCAA Softball Simulation Engine")
@@ -861,7 +847,6 @@ elif sport == "🥎 NCAA Softball":
                 softball_eras = fallback_eras
                 valid_teams = sorted(list(softball_teams.keys()))
              
-            # --- DAILY SLATE DISPLAY (SOFTBALL) ---
             st.subheader("⚡ Automated Daily Softball Slate Runner")
             st.markdown("Simulate every Division I game scheduled for today on the NCAA Scoreboard and log them to Google Sheets in one click.")
             if st.button("▶ Auto-Run & Log Entire Softball Slate"):
@@ -936,7 +921,6 @@ elif sport == "🥎 NCAA Softball":
                 
                 st.markdown("---")
                 st.write("**Pitcher Quality Customization**")
-                st.caption("*Softball is highly pitching-dominant. Lower Starting Pitcher ERAs dynamically scale their team's Log5 win probability.*")
                 
                 away_era = st.slider(f"{away_team} Starting Pitcher ERA:", 0.00, 7.00, float(default_away_era), step=0.10, key=f"away_era_slider_{away_team}")
                 home_era = st.slider(f"{home_team} Starting Pitcher ERA:", 0.00, 7.00, float(default_home_era), step=0.10, key=f"home_era_slider_{home_team}")
