@@ -7,6 +7,7 @@ import requests
 from curl_cffi import requests as cffi_requests
 import gspread
 import os
+import plotly.graph_objects as go
 
 # --- CLOUDFLARE BYPASS V8: THE SMART TLS SPOOFER ---
 # Intercept network requests, but IGNORE Google APIs so gspread works perfectly
@@ -353,7 +354,7 @@ if sport == "⚾ MLB Baseball":
 
         st.markdown("---")
         st.subheader("Manual Matchup Override")
-        st.caption("Standalone Engine: Calculates probability edges using native MLB API logic.")
+        st.caption("Standalone Engine: Calculates probability edges using native MLB API logic and visualizes Poisson distributions.")
         
         MLB_TEAMS = sorted(list(PARK_FACTORS.keys()))
         all_pitcher_names = sorted(list(pitcher_stats.keys())) if 'pitcher_stats' in locals() else []
@@ -408,6 +409,41 @@ if sport == "⚾ MLB Baseball":
                 with res_c2:
                     st.metric(f"{home_t} Win Prob", f"{model_home_prob:.1%}")
                     if model_home_prob > v_h_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
+
+                # --- PLOTLY VISUALIZATION BLOCK ---
+                st.markdown("#### Simulation Distribution Analysis")
+                fig = go.Figure()
+                # Plot Away Team
+                fig.add_trace(go.Histogram(
+                    x=sim_a, 
+                    name=away_t, 
+                    opacity=0.75, 
+                    histnorm='probability',
+                    marker_color='#1f77b4'
+                ))
+                # Plot Home Team
+                fig.add_trace(go.Histogram(
+                    x=sim_h, 
+                    name=home_t, 
+                    opacity=0.75, 
+                    histnorm='probability',
+                    marker_color='#d62728'
+                ))
+                
+                # Format the chart to be an overlapping probability bell curve
+                fig.update_layout(
+                    barmode='overlay',
+                    title=f'10,000 Poisson Simulations: {away_t} vs {home_t}',
+                    xaxis_title='Simulated Runs Scored',
+                    yaxis_title='Probability of Occurrence',
+                    legend_title="Team",
+                    xaxis=dict(tickmode='linear', tick0=0, dtick=1, range=[0, 15]),
+                    hovermode='x unified'
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                # -----------------------------------
+
             else:
                 st.error("Engine failure connecting to MLB Stats API.")
 
