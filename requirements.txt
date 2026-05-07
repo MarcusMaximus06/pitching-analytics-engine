@@ -4,3 +4,4 @@ numpy
 requests
 gspread
 curl-cffi
+plotly
