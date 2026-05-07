@@ -654,12 +654,10 @@ elif sport == "🥎 NCAA Softball":
             year, month, day = date_str.split('-')
             games_list = []
             
-            # Layer 1: ESPN Primary Feed
-            espn_urls = [
-                f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=500&groups=50",
-                f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=500"
-            ]
-            for e_url in espn_urls:
+            # Layer 1: ESPN Carpet Bomb (Hits all major conference Group IDs)
+            espn_groups = ['50', '65', '8', '12', '9', '1', '2', '3', '4', '18', '21', '25', '90', '100']
+            for grp in espn_groups:
+                e_url = f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=200&groups={grp}"
                 try:
                     resp = requests.get(e_url, timeout=7)
                     if resp.status_code == 200:
@@ -705,47 +703,50 @@ elif sport == "🥎 NCAA Softball":
                     if resp.status_code == 200:
                         extract_ncaa_games(resp.json())
                 except: continue
-                
-            # Layer 3: ESPN HTML Text Parser
-            try:
-                resp = requests.get(f"https://www.espn.com/college-softball/scoreboard/_/date/{year}{month}{day}", timeout=7)
-                teams = re.findall(r'<div class="ScoreCell__TeamName[^>]*>(.*?)</div>', resp.text)
-                if teams and len(teams) % 2 == 0:
-                    for i in range(0, len(teams), 2):
-                        away_t, home_t = teams[i], teams[i+1]
-                        if away_t and home_t and (away_t, home_t) not in games_list:
-                            games_list.append((away_t, home_t))
-            except: pass
 
             return games_list
         except Exception:
             return []
 
     def map_ncaa_to_warren_nolan(ncaa_name, valid_teams):
-        ncaa_clean = ncaa_name.lower().replace(".", "").replace(" ", "").strip()
+        ncaa_clean = ncaa_name.lower().replace(".", "").replace(" ", "").replace("&", "").replace("-", "").strip()
         
+        # 1. Exact Match
         for vt in valid_teams:
-            vt_clean = vt.lower().replace(" ", "").strip()
-            if ncaa_clean == vt_clean or ncaa_clean in vt_clean or vt_clean in ncaa_clean:
+            vt_clean = vt.lower().replace(".", "").replace(" ", "").replace("&", "").replace("-", "").strip()
+            if ncaa_clean == vt_clean:
                 return vt
-        
-        abbreviations = {
-            'oklahoma st': 'Oklahoma State', 'oklahoma state': 'Oklahoma State', 'okla st': 'Oklahoma State',
-            'oklahoma': 'Oklahoma', 'fsu': 'Florida State', 'florida st': 'Florida State',
-            'florida state': 'Florida State', 'arizona st': 'Arizona State', 'arizona state': 'Arizona State',
-            'boston u': 'Boston University', 'boston university': 'Boston University',
-            'michigan st': 'Michigan State', 'michigan state': 'Michigan State',
-            'mississippi st': 'Mississippi State', 'mississippi state': 'Mississippi State', 'miss state': 'Mississippi State',
-            'nc state': 'North Carolina State', 'north carolina state': 'North Carolina State',
-            'penn st': 'Penn State', 'penn state': 'Penn State',
-            'san diego st': 'San Diego State', 'san diego state': 'San Diego State',
-            'south carolina': 'South Carolina', 'texas am': 'Texas A&M', 'texas a&m': 'Texas A&M',
-            'texas tech': 'Texas Tech', 'virginia tech': 'Virginia Tech', 'va tech': 'Virginia Tech',
-            'wichita st': 'Wichita State', 'wichita state': 'Wichita State'
+                
+        # 2. Known Abbreviations
+        abbrev = {
+            'oklahomast': 'Oklahoma State', 'oklast': 'Oklahoma State',
+            'fsu': 'Florida State', 'floridast': 'Florida State',
+            'arizonast': 'Arizona State', 'bostonu': 'Boston University',
+            'michiganst': 'Michigan State', 'mississippist': 'Mississippi State', 'missstate': 'Mississippi State',
+            'ncstate': 'North Carolina State', 'northcarolinastate': 'North Carolina State',
+            'pennst': 'Penn State', 'sandiegost': 'San Diego State',
+            'texasam': 'Texas A&M', 'vatech': 'Virginia Tech', 'virginiatech': 'Virginia Tech',
+            'wichitast': 'Wichita State', 'olemiss': 'Ole Miss',
+            'ucf': 'UCF', 'lsu': 'LSU', 'usc': 'USC', 'byu': 'BYU',
+            'mizzou': 'Missouri', 'southcarolina': 'South Carolina', 'georgiabulldogs': 'Georgia',
+            'floridagators': 'Florida', 'tennesseeut': 'Tennessee', 'arkansasrazorbacks': 'Arkansas'
         }
-        for k, v in abbreviations.items():
-            if k in ncaa_clean and v in valid_teams:
-                return v
+        if ncaa_clean in abbrev and abbrev[ncaa_clean] in valid_teams:
+            return abbrev[ncaa_clean]
+            
+        # 3. Safeguarded Contains Match
+        for vt in valid_teams:
+            vt_clean = vt.lower().replace(".", "").replace(" ", "").replace("&", "").replace("-", "").strip()
+            if (vt_clean in ncaa_clean or ncaa_clean in vt_clean):
+                # Hardcode guardrails to prevent substring cross-contamination
+                if "texasam" in ncaa_clean and vt == "Texas": continue
+                if "floridaatlantic" in ncaa_clean and vt == "Florida": continue
+                if "floridastate" in ncaa_clean and vt == "Florida": continue
+                if "oklahomastate" in ncaa_clean and vt == "Oklahoma": continue
+                if "michiganstate" in ncaa_clean and vt == "Michigan": continue
+                if "arizonastate" in ncaa_clean and vt == "Arizona": continue
+                return vt
+                
         return None
 
     def auto_grade_softball_pending_bets(valid_teams):
@@ -766,12 +767,10 @@ elif sport == "🥎 NCAA Softball":
                     dt = datetime.strptime(d_str, "%Y-%m-%d")
                     year, month, day = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
                     
-                    # 1. ESPN Primary Feed
-                    espn_urls = [
-                        f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=500&groups=50",
-                        f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=500"
-                    ]
-                    for e_url in espn_urls:
+                    # 1. ESPN Carpet Bomb Search
+                    espn_groups = ['50', '65', '8', '12', '9', '1', '2', '3', '4', '18', '21', '25', '90', '100']
+                    for grp in espn_groups:
+                        e_url = f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=200&groups={grp}"
                         try:
                             resp = requests.get(e_url, timeout=7)
                             if resp.status_code == 200:
@@ -844,25 +843,6 @@ elif sport == "🥎 NCAA Softball":
                                 extract_ncaa_scores(resp.json())
                         except: continue
                         
-                    # 3. ESPN HTML Text Parser Fallback
-                    try:
-                        resp = requests.get(f"https://www.espn.com/college-softball/scoreboard/_/date/{year}{month}{day}", timeout=7)
-                        teams = re.findall(r'<div class="ScoreCell__TeamName[^>]*>(.*?)</div>', resp.text)
-                        scores = re.findall(r'<div class="ScoreCell__Score[^>]*>(.*?)</div>', resp.text)
-                        if teams and scores and len(teams) == len(scores) and len(teams) % 2 == 0:
-                            for i in range(0, len(teams), 2):
-                                t1_name = map_ncaa_to_warren_nolan(teams[i], valid_teams)
-                                t2_name = map_ncaa_to_warren_nolan(teams[i+1], valid_teams)
-                                if t1_name and t2_name:
-                                    try:
-                                        s1 = int(scores[i])
-                                        s2 = int(scores[i+1])
-                                    except ValueError:
-                                        s1, s2 = 0, 0
-                                    winner = t1_name if s1 > s2 else t2_name
-                                    score_dict[f"{d_str}_{t1_name.lower()}"] = winner.lower()
-                                    score_dict[f"{d_str}_{t2_name.lower()}"] = winner.lower()
-                    except: pass
                 except Exception: continue
                 
             updates = 0
