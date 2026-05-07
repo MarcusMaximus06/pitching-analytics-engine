@@ -175,11 +175,24 @@ if sport == "⚾ MLB Baseball":
             sh = gc.open("MLB Daily Prediction Model")
             worksheet = sh.worksheet("Master Log")
             values = worksheet.get_all_values()
+            
             if not values or len(values) == 0:
                 worksheet.append_row(["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Result"])
+                values = [["Date", "Away Team", "Home Team"]]
+            
+            # --- DUPLICATE CATCHER ---
+            target_date = row_data[0]
+            target_away = row_data[1]
+            target_home = row_data[2]
+            
+            for row in values[1:]:
+                if len(row) >= 3 and row[0] == target_date and row[1] == target_away and row[2] == target_home:
+                    return "DUPLICATE"
+                    
             worksheet.append_row(row_data)
-            return True
-        except Exception: return False
+            return "SUCCESS"
+        except Exception: 
+            return "ERROR"
 
     def get_master_log_stats():
         try:
@@ -270,6 +283,7 @@ if sport == "⚾ MLB Baseball":
                 if st.button("▶ Auto-Run & Log Entire Daily Slate"):
                     with st.spinner("Simulating full MLB Slate using API Metrics..."):
                         slate_logs = []
+                        new_logs_count = 0
                         date_str = get_local_date_str()
                         
                         # Get today's probable pitchers
@@ -322,12 +336,15 @@ if sport == "⚾ MLB Baseball":
                                 
                                 if action_taken != "No Edge":
                                     row_data = [date_str, away_t, home_t, a_ml, h_ml, f"{model_away_prob:.1%}", f"{model_home_prob:.1%}", action_taken, "PENDING"]
-                                    log_to_google_sheets(row_data)
-                                    slate_logs.append(row_data)
+                                    log_status = log_to_google_sheets(row_data)
+                                    if log_status in ["SUCCESS", "DUPLICATE"]:
+                                        slate_logs.append(row_data)
+                                        if log_status == "SUCCESS":
+                                            new_logs_count += 1
                             except: continue
                             
                         if slate_logs:
-                            st.success(f"✅ Successfully processed and logged {len(slate_logs)} edges!")
+                            st.success(f"✅ Successfully processed {len(slate_logs)} actionable edges! ({new_logs_count} new entries logged to Sheets)")
                             st.markdown("#### 📅 Today's MLB Actionable Edges")
                             df_display = pd.DataFrame(slate_logs, columns=["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Status"])
                             st.dataframe(df_display, use_container_width=True, hide_index=True)
@@ -575,13 +592,23 @@ elif sport == "🥎 NCAA Softball":
             values = worksheet.get_all_values()
             if not values or len(values) == 0:
                 worksheet.append_row(["Date", "Away Team", "Home Team", "Away SP ERA", "Home SP ERA", "Model Away %", "Model Home %", "Predicted Winner", "Result"])
+                values = [["Date", "Away Team", "Home Team"]]
                 
+            # --- DUPLICATE CATCHER ---
+            target_date = row_data[0]
+            target_away = row_data[1]
+            target_home = row_data[2]
+            
+            for row in values[1:]:
+                if len(row) >= 3 and row[0] == target_date and row[1] == target_away and row[2] == target_home:
+                    return "DUPLICATE"
+                    
             worksheet.append_row(row_data)
-            return True
+            return "SUCCESS"
         except Exception as e:
-            if "200" in str(e): return True
+            if "200" in str(e): return "SUCCESS"
             st.error(f"Softball Sheet Log Error: {e}")
-            return False
+            return "ERROR"
 
     def get_softball_log_stats():
         try:
@@ -903,12 +930,14 @@ elif sport == "🥎 NCAA Softball":
                                     predicted_winner, "PENDING"
                                 ]
                                 
-                                if log_softball_to_sheets(row_data):
-                                    logged_count += 1
+                                log_status = log_softball_to_sheets(row_data)
+                                if log_status in ["SUCCESS", "DUPLICATE"]:
                                     slate_logs.append(row_data)
+                                    if log_status == "SUCCESS":
+                                        logged_count += 1
                                     
-                        if logged_count > 0:
-                            st.success(f"✅ Successfully simulated today's slate and logged {logged_count} games to Google Sheets!")
+                        if slate_logs:
+                            st.success(f"✅ Successfully processed {len(slate_logs)} matchups! ({logged_count} new entries logged to Sheets)")
                             st.markdown("#### 📅 Today's NCAA Softball Predictions")
                             df_display = pd.DataFrame(slate_logs, columns=["Date", "Away Team", "Home Team", "Away SP ERA", "Home SP ERA", "Model Away %", "Model Home %", "Predicted Winner", "Status"])
                             st.dataframe(df_display, use_container_width=True, hide_index=True)
@@ -976,7 +1005,10 @@ elif sport == "🥎 NCAA Softball":
                         predicted_winner, "PENDING"
                     ]
                     with st.spinner("Logging softball prediction..."):
-                        if log_softball_to_sheets(row_data):
+                        status = log_softball_to_sheets(row_data)
+                        if status == "SUCCESS":
                             st.success("✅ Logged successfully to the 'Softball Log' tab!")
+                        elif status == "DUPLICATE":
+                            st.info("ℹ️ This matchup is already logged for today.")
         else:
             st.error("Could not compile softball standings or pitching statistics database.")
