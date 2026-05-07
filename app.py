@@ -8,6 +8,7 @@ from curl_cffi import requests as cffi_requests
 import gspread
 import os
 import plotly.graph_objects as go
+import re
 
 # --- CLOUDFLARE BYPASS V8: THE SMART TLS SPOOFER ---
 original_get = requests.get
@@ -651,45 +652,71 @@ elif sport == "🥎 NCAA Softball":
         try:
             date_str = get_local_date_str()
             year, month, day = date_str.split('-')
-            
             games_list = []
             
-            # 1. Primary Feed: ESPN API (Captures post-season & tournaments flawlessly)
-            espn_url = f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=1000"
-            try:
-                resp = requests.get(espn_url, timeout=10)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if 'events' in data:
-                        for event in data['events']:
-                            comps = event.get('competitions', [])
-                            if comps:
-                                competitors = comps[0].get('competitors', [])
-                                if len(competitors) == 2:
-                                    c1_is_home = competitors[0].get('homeAway') == 'home'
-                                    home_t = competitors[0]['team'].get('location', '') if c1_is_home else competitors[1]['team'].get('location', '')
-                                    away_t = competitors[1]['team'].get('location', '') if c1_is_home else competitors[0]['team'].get('location', '')
-                                    if away_t and home_t:
-                                        games_list.append((away_t, home_t))
-            except Exception: pass
-
-            # 2. Secondary Fallback: NCAA Scoreboards
-            for endpoint in ['casablanca', 'casandbox']:
-                url = f"https://data.ncaa.com/{endpoint}/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json"
+            # Layer 1: ESPN Primary Feed
+            espn_urls = [
+                f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=500&groups=50",
+                f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=500"
+            ]
+            for e_url in espn_urls:
                 try:
-                    resp = requests.get(url, timeout=10)
+                    resp = requests.get(e_url, timeout=7)
                     if resp.status_code == 200:
                         data = resp.json()
-                        if 'games' in data:
-                            for g in data['games']:
-                                game_data = g.get('game', g)
-                                away_info = game_data.get('away', {})
-                                home_info = game_data.get('home', {})
-                                away_team_name = away_info.get('names', {}).get('short', away_info.get('teamName', ''))
-                                home_team_name = home_info.get('names', {}).get('short', home_info.get('teamName', ''))
-                                if away_team_name and home_team_name and (away_team_name, home_team_name) not in games_list:
-                                    games_list.append((away_team_name, home_team_name))
+                        if 'events' in data:
+                            for event in data['events']:
+                                comps = event.get('competitions', [])
+                                if comps:
+                                    competitors = comps[0].get('competitors', [])
+                                    if len(competitors) == 2:
+                                        c1_is_home = competitors[0].get('homeAway') == 'home'
+                                        home_t = competitors[0]['team'].get('location', '') if c1_is_home else competitors[1]['team'].get('location', '')
+                                        away_t = competitors[1]['team'].get('location', '') if c1_is_home else competitors[0]['team'].get('location', '')
+                                        if away_t and home_t and (away_t, home_t) not in games_list:
+                                            games_list.append((away_t, home_t))
+                except: pass
+
+            # Layer 2: NCAA Recursive Fallback
+            ncaa_urls = [
+                f"https://data.ncaa.com/casablanca/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json",
+                f"https://data.ncaa.com/casandbox/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json",
+                f"https://data.ncaa.com/casablanca/championships/softball/d1/{year}/scoreboard.json"
+            ]
+            def extract_ncaa_games(data):
+                if isinstance(data, dict):
+                    away_data = data.get('away', {})
+                    home_data = data.get('home', {})
+                    if isinstance(away_data, dict) and isinstance(home_data, dict):
+                        if ('names' in away_data or 'teamName' in away_data) and ('names' in home_data or 'teamName' in home_data):
+                            a_name = away_data.get('names', {}).get('short', away_data.get('teamName', ''))
+                            h_name = home_data.get('names', {}).get('short', home_data.get('teamName', ''))
+                            if a_name and h_name and (a_name, h_name) not in games_list:
+                                games_list.append((a_name, h_name))
+                    for key, value in data.items():
+                        extract_ncaa_games(value)
+                elif isinstance(data, list):
+                    for item in data:
+                        extract_ncaa_games(item)
+
+            for url in ncaa_urls:
+                try:
+                    resp = requests.get(url, timeout=7)
+                    if resp.status_code == 200:
+                        extract_ncaa_games(resp.json())
                 except: continue
+                
+            # Layer 3: ESPN HTML Text Parser
+            try:
+                resp = requests.get(f"https://www.espn.com/college-softball/scoreboard/_/date/{year}{month}{day}", timeout=7)
+                teams = re.findall(r'<div class="ScoreCell__TeamName[^>]*>(.*?)</div>', resp.text)
+                if teams and len(teams) % 2 == 0:
+                    for i in range(0, len(teams), 2):
+                        away_t, home_t = teams[i], teams[i+1]
+                        if away_t and home_t and (away_t, home_t) not in games_list:
+                            games_list.append((away_t, home_t))
+            except: pass
+
             return games_list
         except Exception:
             return []
@@ -740,69 +767,102 @@ elif sport == "🥎 NCAA Softball":
                     year, month, day = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
                     
                     # 1. ESPN Primary Feed
-                    espn_url = f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=1000"
-                    try:
-                        resp = requests.get(espn_url, timeout=10)
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            if 'events' in data and len(data['events']) > 0:
-                                for event in data['events']:
-                                    state = event.get('status', {}).get('type', {}).get('state', '').lower()
-                                    if state == 'post':
-                                        comps = event.get('competitions', [])
-                                        if comps:
-                                            competitors = comps[0].get('competitors', [])
-                                            if len(competitors) == 2:
-                                                c1 = competitors[0]
-                                                c2 = competitors[1]
-                                                
-                                                t1_name = map_ncaa_to_warren_nolan(c1['team'].get('location', ''), valid_teams)
-                                                t2_name = map_ncaa_to_warren_nolan(c2['team'].get('location', ''), valid_teams)
-                                                
-                                                if t1_name and t2_name:
-                                                    try:
-                                                        s1 = int(c1.get('score', 0))
-                                                        s2 = int(c2.get('score', 0))
-                                                    except ValueError:
-                                                        s1, s2 = 0, 0
-                                                        
-                                                    winner = t1_name if s1 > s2 else t2_name
-                                                    score_dict[f"{d_str}_{t1_name.lower()}"] = winner.lower()
-                                                    score_dict[f"{d_str}_{t2_name.lower()}"] = winner.lower()
-                    except Exception: pass
-
-                    # 2. NCAA Fallback Feed
-                    for endpoint in ['casablanca', 'casandbox']:
-                        url = f"https://data.ncaa.com/{endpoint}/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json"
+                    espn_urls = [
+                        f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=500&groups=50",
+                        f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=500"
+                    ]
+                    for e_url in espn_urls:
                         try:
-                            resp = requests.get(url, timeout=10)
+                            resp = requests.get(e_url, timeout=7)
                             if resp.status_code == 200:
                                 data = resp.json()
-                                if 'games' in data:
-                                    for g in data['games']:
-                                        game_data = g.get('game', g)
-                                        state = game_data.get('gameState', '').lower()
-                                        
-                                        if state == 'final':
-                                            away_info = game_data.get('away', {})
-                                            home_info = game_data.get('home', {})
-                                            away_ncaa = away_info.get('names', {}).get('short', away_info.get('teamName', ''))
-                                            home_ncaa = home_info.get('names', {}).get('short', home_info.get('teamName', ''))
-                                            
-                                            away_team_name = map_ncaa_to_warren_nolan(away_ncaa, valid_teams)
-                                            home_team_name = map_ncaa_to_warren_nolan(home_ncaa, valid_teams)
-                                            
-                                            if away_team_name and home_team_name:
-                                                try:
-                                                    away_score = int(away_info.get('score', 0))
-                                                    home_score = int(home_info.get('score', 0))
-                                                except ValueError:
-                                                    away_score, home_score = 0, 0
+                                if 'events' in data and len(data['events']) > 0:
+                                    for event in data['events']:
+                                        state = event.get('status', {}).get('type', {}).get('state', '').lower()
+                                        if state == 'post':
+                                            comps = event.get('competitions', [])
+                                            if comps:
+                                                competitors = comps[0].get('competitors', [])
+                                                if len(competitors) == 2:
+                                                    c1, c2 = competitors[0], competitors[1]
                                                     
-                                                winner = away_team_name if away_score > home_score else home_team_name
-                                                score_dict[f"{d_str}_{away_team_name.lower()}"] = winner.lower()
-                                                score_dict[f"{d_str}_{home_team_name.lower()}"] = winner.lower()
+                                                    t1_name = map_ncaa_to_warren_nolan(c1['team'].get('location', ''), valid_teams)
+                                                    t2_name = map_ncaa_to_warren_nolan(c2['team'].get('location', ''), valid_teams)
+                                                    
+                                                    if t1_name and t2_name:
+                                                        try:
+                                                            s1 = int(c1.get('score', 0))
+                                                            s2 = int(c2.get('score', 0))
+                                                        except ValueError:
+                                                            s1, s2 = 0, 0
+                                                            
+                                                        winner = t1_name if s1 > s2 else t2_name
+                                                        score_dict[f"{d_str}_{t1_name.lower()}"] = winner.lower()
+                                                        score_dict[f"{d_str}_{t2_name.lower()}"] = winner.lower()
+                        except Exception: pass
+
+                    # 2. NCAA Recursive Fallback
+                    def extract_ncaa_scores(data):
+                        if isinstance(data, dict):
+                            away_data = data.get('away', {})
+                            home_data = data.get('home', {})
+                            state = data.get('gameState', '').lower()
+                            
+                            if state == 'final' and isinstance(away_data, dict) and isinstance(home_data, dict):
+                                if ('names' in away_data or 'teamName' in away_data):
+                                    a_name = away_data.get('names', {}).get('short', away_data.get('teamName', ''))
+                                    h_name = home_data.get('names', {}).get('short', home_data.get('teamName', ''))
+                                    
+                                    a_mapped = map_ncaa_to_warren_nolan(a_name, valid_teams)
+                                    h_mapped = map_ncaa_to_warren_nolan(h_name, valid_teams)
+                                    
+                                    if a_mapped and h_mapped:
+                                        try:
+                                            a_score = int(away_data.get('score', 0))
+                                            h_score = int(home_data.get('score', 0))
+                                        except ValueError:
+                                            a_score, h_score = 0, 0
+                                        
+                                        winner = a_mapped if a_score > h_score else h_mapped
+                                        score_dict[f"{d_str}_{a_mapped.lower()}"] = winner.lower()
+                                        score_dict[f"{d_str}_{h_mapped.lower()}"] = winner.lower()
+                            for key, value in data.items():
+                                extract_ncaa_scores(value)
+                        elif isinstance(data, list):
+                            for item in data:
+                                extract_ncaa_scores(item)
+                                
+                    ncaa_urls = [
+                        f"https://data.ncaa.com/casablanca/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json",
+                        f"https://data.ncaa.com/casandbox/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json",
+                        f"https://data.ncaa.com/casablanca/championships/softball/d1/{year}/scoreboard.json"
+                    ]
+                    for url in ncaa_urls:
+                        try:
+                            resp = requests.get(url, timeout=7)
+                            if resp.status_code == 200:
+                                extract_ncaa_scores(resp.json())
                         except: continue
+                        
+                    # 3. ESPN HTML Text Parser Fallback
+                    try:
+                        resp = requests.get(f"https://www.espn.com/college-softball/scoreboard/_/date/{year}{month}{day}", timeout=7)
+                        teams = re.findall(r'<div class="ScoreCell__TeamName[^>]*>(.*?)</div>', resp.text)
+                        scores = re.findall(r'<div class="ScoreCell__Score[^>]*>(.*?)</div>', resp.text)
+                        if teams and scores and len(teams) == len(scores) and len(teams) % 2 == 0:
+                            for i in range(0, len(teams), 2):
+                                t1_name = map_ncaa_to_warren_nolan(teams[i], valid_teams)
+                                t2_name = map_ncaa_to_warren_nolan(teams[i+1], valid_teams)
+                                if t1_name and t2_name:
+                                    try:
+                                        s1 = int(scores[i])
+                                        s2 = int(scores[i+1])
+                                    except ValueError:
+                                        s1, s2 = 0, 0
+                                    winner = t1_name if s1 > s2 else t2_name
+                                    score_dict[f"{d_str}_{t1_name.lower()}"] = winner.lower()
+                                    score_dict[f"{d_str}_{t2_name.lower()}"] = winner.lower()
+                    except: pass
                 except Exception: continue
                 
             updates = 0
