@@ -10,7 +10,6 @@ import os
 import plotly.graph_objects as go
 
 # --- CLOUDFLARE BYPASS V8: THE SMART TLS SPOOFER ---
-# Intercept network requests, but IGNORE Google APIs so gspread works perfectly
 original_get = requests.get
 def custom_get(url, **kwargs):
     if "googleapis.com" in str(url) or "googleusercontent.com" in str(url):
@@ -109,13 +108,11 @@ if sport == "⚾ MLB Baseball":
 
     @st.cache_data(ttl=7200)
     def fetch_mlb_api_data():
-        """Fetches raw Standings and complete Pitching/Hitting logs from the official MLB API"""
         team_data = {}
         pitcher_data = {}
         hitter_data = {}
         
         try:
-            # 1. Fetch Standings (For Runs Scored / Runs Allowed Context)
             standings_url = "https://statsapi.mlb.com/api/v1/standings?leagueId=103,104&season=2026"
             s_resp = requests.get(standings_url, timeout=10).json()
             for record in s_resp.get('records', []):
@@ -126,7 +123,6 @@ if sport == "⚾ MLB Baseball":
                     ra_g = t.get('runsAllowed', 0) / g
                     team_data[t_name] = {'RS_per_G': rs_g, 'RA_per_G': ra_g}
 
-            # 2. Fetch Pitcher Stat Logs (For FIP Calculation)
             p_url = "https://statsapi.mlb.com/api/v1/stats?stats=season&group=pitching&playerPool=ALL&season=2026&limit=1500"
             p_resp = requests.get(p_url, timeout=15).json()
             for p in p_resp.get('stats', [{}])[0].get('splits', []):
@@ -141,19 +137,16 @@ if sport == "⚾ MLB Baseball":
                     hbp = s.get('hitByPitch', 0)
                     k = s.get('strikeOuts', 0)
                     
-                    # Manual FIP Calculation (Constant ~3.15)
                     raw_fip = ((13 * hr) + (3 * (bb + hbp)) - (2 * k)) / ip + 3.15
-                    # Regress small sample sizes towards league average
                     if ip < 20: 
                         fip = (raw_fip * (ip/20)) + (4.20 * ((20-ip)/20))
                     else:
                         fip = raw_fip
                 else:
-                    fip = 4.20 # Fallback
+                    fip = 4.20 
                 
                 pitcher_data[p_name] = {'FIP': fip, 'Team': t_name, 'IP': ip, 'K': s.get('strikeOuts', 0), 'W': s.get('wins',0), 'SV': s.get('saves',0), 'L': s.get('losses',0), 'ER': s.get('earnedRuns',0), 'H': s.get('hits',0), 'BB': s.get('baseOnBalls',0), 'G': s.get('gamesPlayed', 1) or 1}
 
-            # 3. Fetch Hitter Stat Logs (For Fantasy Engine)
             h_url = "https://statsapi.mlb.com/api/v1/stats?stats=season&group=hitting&playerPool=ALL&season=2026&limit=1500"
             h_resp = requests.get(h_url, timeout=15).json()
             for h in h_resp.get('stats', [{}])[0].get('splits', []):
@@ -181,7 +174,6 @@ if sport == "⚾ MLB Baseball":
                 worksheet.append_row(["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Result"])
                 values = [["Date", "Away Team", "Home Team"]]
             
-            # --- DUPLICATE CATCHER ---
             target_date = row_data[0]
             target_away = row_data[1]
             target_home = row_data[2]
@@ -287,7 +279,6 @@ if sport == "⚾ MLB Baseball":
                         new_logs_count = 0
                         date_str = get_local_date_str()
                         
-                        # Get today's probable pitchers
                         sched_url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={date_str}&hydrate=probablePitcher"
                         sched_resp = requests.get(sched_url).json()
                         probables = {}
@@ -315,7 +306,6 @@ if sport == "⚾ MLB Baseball":
                                 a_sp_fip = pitcher_stats.get(away_sp, {}).get('FIP', a_ra_g)
                                 h_sp_fip = pitcher_stats.get(home_sp, {}).get('FIP', h_ra_g)
 
-                                # Weighted Run Prevention Model
                                 a_run_prevention = (a_sp_fip * 0.60) + (a_ra_g * 0.40)
                                 h_run_prevention = (h_sp_fip * 0.60) + (h_ra_g * 0.40)
                                 p_factor = PARK_FACTORS.get(home_t, 100) / 100
@@ -357,18 +347,19 @@ if sport == "⚾ MLB Baseball":
         st.caption("Standalone Engine: Calculates probability edges using native MLB API logic and visualizes Poisson distributions.")
         
         MLB_TEAMS = sorted(list(PARK_FACTORS.keys()))
-        all_pitcher_names = sorted(list(pitcher_stats.keys())) if 'pitcher_stats' in locals() else []
         
         col_a, col_b = st.columns(2)
         with col_a:
             away_t = st.selectbox("Away Team:", MLB_TEAMS, index=0)
-            away_sp = st.selectbox(f"{away_t} SP Override:", ["League Average SP"] + all_pitcher_names)
-            vegas_away = st.number_input("Away ML:", value=100)
+            # Filter pitchers for the Away Team only
+            away_pitchers = sorted([p for p, data in pitcher_stats.items() if data.get('Team') == away_t]) if 'pitcher_stats' in locals() else []
+            away_sp = st.selectbox(f"{away_t} SP Override:", ["League Average SP"] + away_pitchers)
         
         with col_b:
             home_t = st.selectbox("Home Team:", MLB_TEAMS, index=1)
-            home_sp = st.selectbox(f"{home_t} SP Override:", ["League Average SP"] + all_pitcher_names)
-            vegas_home = st.number_input("Home ML:", value=-110)
+            # Filter pitchers for the Home Team only
+            home_pitchers = sorted([p for p, data in pitcher_stats.items() if data.get('Team') == home_t]) if 'pitcher_stats' in locals() else []
+            home_sp = st.selectbox(f"{home_t} SP Override:", ["League Average SP"] + home_pitchers)
             
         location = st.selectbox("Location:", list(PARK_FACTORS.keys()), index=list(PARK_FACTORS.keys()).index(home_t) if home_t in PARK_FACTORS else 0)
         
@@ -399,43 +390,39 @@ if sport == "⚾ MLB Baseball":
                 st.write(f"Final Expected Runs: {away_t} **{away_lam:.2f}** | {home_t} **{home_lam:.2f}**")
                 
                 res_c1, res_c2 = st.columns(2)
-                v_a_prob = 100/(vegas_away+100) if vegas_away > 0 else abs(vegas_away)/(abs(vegas_away)+100)
-                v_h_prob = 100/(vegas_home+100) if vegas_home > 0 else abs(vegas_home)/(abs(vegas_home)+100)
 
                 with res_c1:
                     st.metric(f"{away_t} Win Prob", f"{model_away_prob:.1%}")
-                    if model_away_prob > v_a_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
         
                 with res_c2:
                     st.metric(f"{home_t} Win Prob", f"{model_home_prob:.1%}")
-                    if model_home_prob > v_h_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
 
                 # --- PLOTLY VISUALIZATION BLOCK ---
                 st.markdown("#### Simulation Distribution Analysis")
                 fig = go.Figure()
-                # Plot Away Team
+                
                 fig.add_trace(go.Histogram(
                     x=sim_a, 
                     name=away_t, 
-                    opacity=0.75, 
+                    opacity=0.85, 
                     histnorm='probability',
                     marker_color='#1f77b4'
                 ))
-                # Plot Home Team
                 fig.add_trace(go.Histogram(
                     x=sim_h, 
                     name=home_t, 
-                    opacity=0.75, 
+                    opacity=0.85, 
                     histnorm='probability',
                     marker_color='#d62728'
                 ))
                 
-                # Format the chart to be an overlapping probability bell curve
+                # Format to grouped bars and percentages
                 fig.update_layout(
-                    barmode='overlay',
+                    barmode='group',
                     title=f'10,000 Poisson Simulations: {away_t} vs {home_t}',
                     xaxis_title='Simulated Runs Scored',
                     yaxis_title='Probability of Occurrence',
+                    yaxis=dict(tickformat='.1%'),
                     legend_title="Team",
                     xaxis=dict(tickmode='linear', tick0=0, dtick=1, range=[0, 15]),
                     hovermode='x unified'
@@ -630,7 +617,6 @@ elif sport == "🥎 NCAA Softball":
                 worksheet.append_row(["Date", "Away Team", "Home Team", "Away SP ERA", "Home SP ERA", "Model Away %", "Model Home %", "Predicted Winner", "Result"])
                 values = [["Date", "Away Team", "Home Team"]]
                 
-            # --- DUPLICATE CATCHER ---
             target_date = row_data[0]
             target_away = row_data[1]
             target_home = row_data[2]
