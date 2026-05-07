@@ -8,6 +8,16 @@ import requests
 import gspread
 import os
 
+# --- CLOUDFLARE BYPASS: THE CLOAK ---
+# This intercepts all outgoing network requests and disguises your Render server 
+# as a human using Google Chrome. It bypasses 403 Forbidden blocks from FanGraphs & Sleeper.
+original_request = requests.Session.request
+def custom_request(self, method, url, **kwargs):
+    kwargs.setdefault('headers', {})
+    kwargs['headers']['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    return original_request(self, method, url, **kwargs)
+requests.Session.request = custom_request
+
 st.set_page_config(page_title="Apex Multi-Sport Analytics", layout="wide")
 
 # ==========================================================
@@ -91,7 +101,7 @@ if sport == "⚾ MLB Baseball":
         if not api_key: return {}
         url = f'https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/?apiKey={api_key}&regions=us&markets=h2h&oddsFormat=american&bookmakers=draftkings,fanduel'
         try:
-            response = requests.get(url)
+            response = requests.get(url, timeout=15)
             data = response.json()
             odds_dict = {}
             for game in data:
@@ -117,8 +127,7 @@ if sport == "⚾ MLB Baseball":
                 
             worksheet.append_row(row_data)
             return True
-        except Exception as e:
-            if "200" in str(e): return True
+        except Exception:
             return False
 
     def get_master_log_stats():
@@ -159,7 +168,7 @@ if sport == "⚾ MLB Baseball":
             score_dict = {}
             for d_str in pending_dates:
                 url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={d_str}"
-                resp = requests.get(url).json()
+                resp = requests.get(url, timeout=10).json()
                 if 'dates' in resp and len(resp['dates']) > 0:
                     for g in resp['dates'][0]['games']:
                         if g['status']['abstractGameState'] == 'Final':
@@ -184,15 +193,22 @@ if sport == "⚾ MLB Baseball":
 
     @st.cache_data(ttl=3600)
     def load_pitching_data():
-        season_df = pitching_stats(2026)
-        season_df['Name'] = season_df['Name'].apply(clean_name)
-        return season_df
+        try:
+            season_df = pitching_stats(2026)
+            if not season_df.empty and 'Name' in season_df.columns:
+                season_df['Name'] = season_df['Name'].apply(clean_name)
+            return season_df
+        except Exception:
+            return pd.DataFrame()
 
     @st.cache_data(ttl=3600)
     def get_team_data():
         try:
             bat_df = batting_stats(2026)
-            pitch_df = pitching_stats(2026)
+            pitch_df = load_pitching_data()
+            if bat_df is None or bat_df.empty or pitch_df is None or pitch_df.empty:
+                return pd.DataFrame(), pd.DataFrame()
+
             team_bat = bat_df.groupby('Team').agg(RS=('R', 'sum')).reset_index()
             team_pitch = pitch_df.groupby('Team').agg(RA=('R', 'sum'), Team_G=('GS', 'sum')).reset_index()
             pitch_df['is_reliever'] = pitch_df['GS'] <= (pitch_df['G'] * 0.25)
@@ -211,14 +227,19 @@ if sport == "⚾ MLB Baseball":
             today = datetime.now()
             two_weeks_ago = today - timedelta(days=14)
             recent_bat = batting_stats_range(two_weeks_ago.strftime('%Y-%m-%d'), today.strftime('%Y-%m-%d'))
-            tm_col = 'Tm' if 'Tm' in recent_bat.columns else 'Team'
-            recent_bat_agg = recent_bat.groupby(tm_col).agg(Recent_RS=('R', 'sum'), Recent_G=('G', 'max')).reset_index()
-            recent_bat_agg['Recent_G'] = recent_bat_agg['Recent_G'].replace(0, 1)
-            recent_bat_agg['Recent_RS_per_G'] = recent_bat_agg['Recent_RS'] / recent_bat_agg['Recent_G']
-            recent_bat_agg.rename(columns={tm_col: 'Team'}, inplace=True)
             
+            if not recent_bat.empty:
+                tm_col = 'Tm' if 'Tm' in recent_bat.columns else 'Team'
+                recent_bat_agg = recent_bat.groupby(tm_col).agg(Recent_RS=('R', 'sum'), Recent_G=('G', 'max')).reset_index()
+                recent_bat_agg['Recent_G'] = recent_bat_agg['Recent_G'].replace(0, 1)
+                recent_bat_agg['Recent_RS_per_G'] = recent_bat_agg['Recent_RS'] / recent_bat_agg['Recent_G']
+                recent_bat_agg.rename(columns={tm_col: 'Team'}, inplace=True)
+            else:
+                recent_bat_agg = pd.DataFrame()
+                
             return team_df.sort_values('Team'), recent_bat_agg
-        except Exception: return pd.DataFrame(), pd.DataFrame()
+        except Exception: 
+            return pd.DataFrame(), pd.DataFrame()
 
     if page == "🎲 Monte Carlo Simulation Engine":
         st.title("🎲 Monte Carlo Simulation Engine")
@@ -242,7 +263,9 @@ if sport == "⚾ MLB Baseball":
             pitcher_df = load_pitching_data()
             live_odds = get_live_odds()
             
-            if not team_df.empty and not pitcher_df.empty:
+            if team_df.empty or pitcher_df.empty:
+                st.warning("⚠️ **FanGraphs is currently blocking data requests (Cloudflare).** The Daily Slate runner is temporarily unavailable until the block expires.")
+            else:
                 st.subheader("⚡ Automated Daily Slate Runner")
                 if st.button("▶ Auto-Run & Log Entire Daily Slate"):
                     with st.spinner("Simulating full MLB Slate..."):
@@ -300,33 +323,34 @@ if sport == "⚾ MLB Baseball":
                         else:
                             st.info("No actionable edges found on today's MLB slate.")
 
-                st.markdown("---")
-                st.subheader("Manual Matchup Override")
-                MLB_TEAMS = sorted(list(TEAM_NAME_MAP.keys()))
-                away_t = st.sidebar.selectbox("Away Team:", MLB_TEAMS, index=0)
-                home_t = st.sidebar.selectbox("Home Team:", MLB_TEAMS, index=1)
-                matchup_key = f"{away_t} @ {home_t}"
-                default_away_ml = int(live_odds.get(matchup_key, [100, -110])[0])
-                default_home_ml = int(live_odds.get(matchup_key, [100, -110])[1])
+            st.markdown("---")
+            st.subheader("Manual Matchup Override")
+            MLB_TEAMS = sorted(list(TEAM_NAME_MAP.keys()))
+            away_t = st.sidebar.selectbox("Away Team:", MLB_TEAMS, index=0)
+            home_t = st.sidebar.selectbox("Home Team:", MLB_TEAMS, index=1)
+            matchup_key = f"{away_t} @ {home_t}"
+            default_away_ml = int(live_odds.get(matchup_key, [100, -110])[0])
+            default_home_ml = int(live_odds.get(matchup_key, [100, -110])[1])
+            
+            if not pitcher_df.empty and 'Team' in pitcher_df.columns:
+                a_stats_manual = get_team_row(team_df, away_t)
+                h_stats_manual = get_team_row(team_df, home_t)
+                a_team_code = a_stats_manual['Team'] if a_stats_manual is not None else ''
+                h_team_code = h_stats_manual['Team'] if h_stats_manual is not None else ''
+                away_pitchers = sorted(pitcher_df[pitcher_df['Team'] == a_team_code]['Name'].unique().tolist())
+                home_pitchers = sorted(pitcher_df[pitcher_df['Team'] == h_team_code]['Name'].unique().tolist())
+            else:
+                away_pitchers, home_pitchers = [], []
                 
-                if not pitcher_df.empty and 'Team' in pitcher_df.columns:
-                    a_stats_manual = get_team_row(team_df, away_t)
-                    h_stats_manual = get_team_row(team_df, home_t)
-                    a_team_code = a_stats_manual['Team'] if a_stats_manual is not None else ''
-                    h_team_code = h_stats_manual['Team'] if h_stats_manual is not None else ''
-                    away_pitchers = sorted(pitcher_df[pitcher_df['Team'] == a_team_code]['Name'].unique().tolist())
-                    home_pitchers = sorted(pitcher_df[pitcher_df['Team'] == h_team_code]['Name'].unique().tolist())
-                else:
-                    away_pitchers, home_pitchers = [], []
-                    
-                away_sp = st.sidebar.selectbox(f"{away_t} SP:", ["League Average SP"] + away_pitchers)
-                home_sp = st.sidebar.selectbox(f"{home_t} SP:", ["League Average SP"] + home_pitchers)
-                location = st.sidebar.selectbox("Location:", list(PARK_FACTORS.keys()), index=list(PARK_FACTORS.keys()).index(home_t) if home_t in PARK_FACTORS else 0)
-                p_factor = PARK_FACTORS.get(location, 100) / 100
-                st.sidebar.markdown("---")
-                vegas_away = st.sidebar.number_input("Away ML:", value=default_away_ml)
-                vegas_home = st.sidebar.number_input("Home ML:", value=default_home_ml)
-                
+            away_sp = st.sidebar.selectbox(f"{away_t} SP:", ["League Average SP"] + away_pitchers)
+            home_sp = st.sidebar.selectbox(f"{home_t} SP:", ["League Average SP"] + home_pitchers)
+            location = st.sidebar.selectbox("Location:", list(PARK_FACTORS.keys()), index=list(PARK_FACTORS.keys()).index(home_t) if home_t in PARK_FACTORS else 0)
+            p_factor = PARK_FACTORS.get(location, 100) / 100
+            st.sidebar.markdown("---")
+            vegas_away = st.sidebar.number_input("Away ML:", value=default_away_ml)
+            vegas_home = st.sidebar.number_input("Home ML:", value=default_home_ml)
+            
+            if not team_df.empty:
                 try:
                     a_stats = get_team_row(team_df, away_t)
                     h_stats = get_team_row(team_df, home_t)
@@ -383,70 +407,73 @@ if sport == "⚾ MLB Baseball":
                     bat_df = batting_stats(2026)
                     pitch_df = load_pitching_data()
                     
-                    bat_df['Name'] = bat_df['Name'].apply(clean_name)
-                    pitch_df['Name'] = pitch_df['Name'].apply(clean_name)
-                    
-                    for col in ['H', '2B', '3B', 'HR', 'BB', 'R', 'RBI', 'SB', 'SO', 'G']:
-                        if col not in bat_df.columns: bat_df[col] = 0
+                    if bat_df is None or bat_df.empty or pitch_df is None or pitch_df.empty:
+                        st.error("🚨 FanGraphs is blocking data access. Trade Analyzer unavailable until the Cloudflare block clears.")
+                    else:
+                        bat_df['Name'] = bat_df['Name'].apply(clean_name)
+                        pitch_df['Name'] = pitch_df['Name'].apply(clean_name)
                         
-                    if 'TB' not in bat_df.columns:
-                        bat_df['1B_calc'] = bat_df['H'] - bat_df['2B'] - bat_df['3B'] - bat_df['HR']
-                        bat_df['TB'] = bat_df['1B_calc'] + (2 * bat_df['2B']) + (3 * bat_df['3B']) + (4 * bat_df['HR'])
-                        
-                    bat_df['FPts'] = bat_df['TB'] + bat_df['BB'] + bat_df['R'] + bat_df['RBI'] + bat_df['SB'] - bat_df['SO']
-                    bat_df['G'] = pd.to_numeric(bat_df['G'], errors='coerce').fillna(1)
-                    bat_df['FPts_per_G'] = (bat_df['FPts'] / bat_df['G'].replace(0, 1)).round(2)
-                    bat_df['ROS_Proj'] = (bat_df['FPts_per_G'] * (162 - bat_df['G'])).clip(lower=0).round(1)
-                    bat_df['Position'] = 'Batter'
-                    
-                    for col in ['IP', 'SO', 'W', 'SV', 'L', 'ER', 'H', 'BB', 'G']:
-                        if col not in pitch_df.columns: pitch_df[col] = 0
-                        
-                    pitch_df['FPts'] = (pitch_df['IP'] * 3) + pitch_df['SO'] + (pitch_df['W'] * 5) + (pitch_df['SV'] * 5) - (pitch_df['L'] * 5) - (pitch_df['ER'] * 2) - pitch_df['H'] - pitch_df['BB']
-                    pitch_df['G'] = pd.to_numeric(pitch_df['G'], errors='coerce').fillna(1)
-                    pitch_df['FPts_per_G'] = (pitch_df['FPts'] / pitch_df['G'].replace(0, 1)).round(2)
-                    
-                    max_pitcher_g = pitch_df['G'].max() if not pitch_df.empty and pitch_df['G'].max() > 0 else 80
-                    pitch_df['ROS_Proj'] = (pitch_df['FPts_per_G'] * ((162 - (pitch_df['G'] * (162/max_pitcher_g)))) ).clip(lower=0).round(1)
-                    pitch_df['Position'] = 'Pitcher'
-                    
-                    fantasy_df = pd.concat([
-                        bat_df[['Name', 'Position', 'FPts', 'FPts_per_G', 'ROS_Proj']], 
-                        pitch_df[['Name', 'Position', 'FPts', 'FPts_per_G', 'ROS_Proj']]
-                    ]).dropna(subset=['Name', 'ROS_Proj']).sort_values('ROS_Proj', ascending=False)
-                    
-                    all_players = sorted(fantasy_df['Name'].astype(str).unique().tolist())
-                    
-                    col1, col2 = st.columns(2)
-                    with col1: team_a = st.multiselect("Team A Receives:", all_players, key="team_a")
-                    with col2: team_b = st.multiselect("Team B Receives:", all_players, key="team_b")
-                        
-                    if st.button("⚖️ Analyze Trade Edge"):
-                        if team_a or team_b:
-                            a_df = fantasy_df[fantasy_df['Name'].isin(team_a)]
-                            b_df = fantasy_df[fantasy_df['Name'].isin(team_b)]
+                        for col in ['H', '2B', '3B', 'HR', 'BB', 'R', 'RBI', 'SB', 'SO', 'G']:
+                            if col not in bat_df.columns: bat_df[col] = 0
                             
-                            a_proj = a_df['ROS_Proj'].sum()
-                            b_proj = b_df['ROS_Proj'].sum()
+                        if 'TB' not in bat_df.columns:
+                            bat_df['1B_calc'] = pd.to_numeric(bat_df['H'], errors='coerce').fillna(0) - pd.to_numeric(bat_df['2B'], errors='coerce').fillna(0) - pd.to_numeric(bat_df['3B'], errors='coerce').fillna(0) - pd.to_numeric(bat_df['HR'], errors='coerce').fillna(0)
+                            bat_df['TB'] = bat_df['1B_calc'] + (2 * pd.to_numeric(bat_df['2B'], errors='coerce').fillna(0)) + (3 * pd.to_numeric(bat_df['3B'], errors='coerce').fillna(0)) + (4 * pd.to_numeric(bat_df['HR'], errors='coerce').fillna(0))
                             
-                            c1, c2 = st.columns(2)
-                            with c1:
-                                st.metric("Team A Total ROS Projection", f"{a_proj:.1f} FPts")
-                                if not a_df.empty: st.dataframe(a_df[['Name', 'Position', 'FPts_per_G', 'ROS_Proj']], hide_index=True)
-                            with c2:
-                                st.metric("Team B Total ROS Projection", f"{b_proj:.1f} FPts")
-                                if not b_df.empty: st.dataframe(b_df[['Name', 'Position', 'FPts_per_G', 'ROS_Proj']], hide_index=True)
+                        bat_df['FPts'] = bat_df['TB'] + pd.to_numeric(bat_df['BB'], errors='coerce').fillna(0) + pd.to_numeric(bat_df['R'], errors='coerce').fillna(0) + pd.to_numeric(bat_df['RBI'], errors='coerce').fillna(0) + pd.to_numeric(bat_df['SB'], errors='coerce').fillna(0) - pd.to_numeric(bat_df['SO'], errors='coerce').fillna(0)
+                        bat_df['G'] = pd.to_numeric(bat_df['G'], errors='coerce').fillna(1)
+                        bat_df['FPts_per_G'] = (bat_df['FPts'] / bat_df['G'].replace(0, 1)).round(2)
+                        bat_df['ROS_Proj'] = (bat_df['FPts_per_G'] * (162 - bat_df['G'])).clip(lower=0).round(1)
+                        bat_df['Position'] = 'Batter'
+                        
+                        for col in ['IP', 'SO', 'W', 'SV', 'L', 'ER', 'H', 'BB', 'G']:
+                            if col not in pitch_df.columns: pitch_df[col] = 0
+                            
+                        pitch_df['FPts'] = (pd.to_numeric(pitch_df['IP'], errors='coerce').fillna(0) * 3) + pd.to_numeric(pitch_df['SO'], errors='coerce').fillna(0) + (pd.to_numeric(pitch_df['W'], errors='coerce').fillna(0) * 5) + (pd.to_numeric(pitch_df['SV'], errors='coerce').fillna(0) * 5) - (pd.to_numeric(pitch_df['L'], errors='coerce').fillna(0) * 5) - (pd.to_numeric(pitch_df['ER'], errors='coerce').fillna(0) * 2) - pd.to_numeric(pitch_df['H'], errors='coerce').fillna(0) - pd.to_numeric(pitch_df['BB'], errors='coerce').fillna(0)
+                        pitch_df['G'] = pd.to_numeric(pitch_df['G'], errors='coerce').fillna(1)
+                        pitch_df['FPts_per_G'] = (pitch_df['FPts'] / pitch_df['G'].replace(0, 1)).round(2)
+                        
+                        max_pitcher_g = pitch_df['G'].max() if not pitch_df.empty and pitch_df['G'].max() > 0 else 80
+                        pitch_df['ROS_Proj'] = (pitch_df['FPts_per_G'] * ((162 - (pitch_df['G'] * (162/max_pitcher_g)))) ).clip(lower=0).round(1)
+                        pitch_df['Position'] = 'Pitcher'
+                        
+                        fantasy_df = pd.concat([
+                            bat_df[['Name', 'Position', 'FPts', 'FPts_per_G', 'ROS_Proj']], 
+                            pitch_df[['Name', 'Position', 'FPts', 'FPts_per_G', 'ROS_Proj']]
+                        ]).dropna(subset=['Name', 'ROS_Proj']).sort_values('ROS_Proj', ascending=False)
+                        
+                        all_players = sorted(fantasy_df['Name'].astype(str).unique().tolist())
+                        
+                        col1, col2 = st.columns(2)
+                        with col1: team_a = st.multiselect("Team A Receives:", all_players, key="team_a")
+                        with col2: team_b = st.multiselect("Team B Receives:", all_players, key="team_b")
+                            
+                        if st.button("⚖️ Analyze Trade Edge"):
+                            if team_a or team_b:
+                                a_df = fantasy_df[fantasy_df['Name'].isin(team_a)]
+                                b_df = fantasy_df[fantasy_df['Name'].isin(team_b)]
                                 
-                            st.markdown("---")
-                            diff = abs(a_proj - b_proj)
-                            if a_proj > b_proj + 15:
-                                st.success(f"📈 **Team A** wins this trade by a projected **{diff:.1f}** Rest-of-Season points.")
-                            elif b_proj > a_proj + 15:
-                                st.success(f"📈 **Team B** wins this trade by a projected **{diff:.1f}** Rest-of-Season points.")
+                                a_proj = a_df['ROS_Proj'].sum()
+                                b_proj = b_df['ROS_Proj'].sum()
+                                
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    st.metric("Team A Total ROS Projection", f"{a_proj:.1f} FPts")
+                                    if not a_df.empty: st.dataframe(a_df[['Name', 'Position', 'FPts_per_G', 'ROS_Proj']], hide_index=True)
+                                with c2:
+                                    st.metric("Team B Total ROS Projection", f"{b_proj:.1f} FPts")
+                                    if not b_df.empty: st.dataframe(b_df[['Name', 'Position', 'FPts_per_G', 'ROS_Proj']], hide_index=True)
+                                    
+                                st.markdown("---")
+                                diff = abs(a_proj - b_proj)
+                                if a_proj > b_proj + 15:
+                                    st.success(f"📈 **Team A** wins this trade by a projected **{diff:.1f}** Rest-of-Season points.")
+                                elif b_proj > a_proj + 15:
+                                    st.success(f"📈 **Team B** wins this trade by a projected **{diff:.1f}** Rest-of-Season points.")
+                                else:
+                                    st.info(f"🤝 This trade is highly balanced. Only a **{diff:.1f}** point differential.")
                             else:
-                                st.info(f"🤝 This trade is highly balanced. Only a **{diff:.1f}** point differential.")
-                        else:
-                            st.warning("Add players to both sides to analyze a trade.")
+                                st.warning("Add players to both sides to analyze a trade.")
                             
                 except Exception as e:
                     st.error(f"Failed to compile fantasy metrics: {e}")
@@ -456,8 +483,7 @@ if sport == "⚾ MLB Baseball":
             def load_sleeper_players():
                 try:
                     url = "https://api.sleeper.app/v1/players/nfl"
-                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-                    resp = requests.get(url, headers=headers, timeout=30).json()
+                    resp = requests.get(url, timeout=15).json()
                     active_players = {}
                     for pid, pdata in resp.items():
                         if pdata.get('active'):
@@ -476,7 +502,7 @@ if sport == "⚾ MLB Baseball":
                 sleeper_players = load_sleeper_players()
                 
             if not sleeper_players:
-                st.warning("Could not sync with Sleeper API. Running in manual mode.")
+                st.warning("⚠️ Could not sync with Sleeper API (Cloudflare Block). Running in manual mode.")
                 player_list = ["Christian McCaffrey (RB - SF)", "CeeDee Lamb (WR - DAL)", "Josh Allen (QB - BUF)", "Justin Jefferson (WR - MIN)", "Tyreek Hill (WR - MIA)"]
             else:
                 player_list = [f"{data['Name']} ({data['Pos']} - {data['Team']})" for pid, data in sleeper_players.items() if data['Pos'] in ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']]
@@ -529,13 +555,12 @@ if sport == "⚾ MLB Baseball":
             if st.button("Sync Rosters"):
                 with st.spinner("Pinging Sleeper API..."):
                     try:
-                        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-                        user_resp = requests.get(f"https://api.sleeper.app/v1/user/{username}", headers=headers, timeout=15).json()
+                        user_resp = requests.get(f"https://api.sleeper.app/v1/user/{username}", timeout=15).json()
                         if user_resp and 'user_id' in user_resp:
                             user_id = user_resp['user_id']
-                            leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2026", headers=headers, timeout=15).json()
+                            leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2026", timeout=15).json()
                             if not leagues:
-                                leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2025", headers=headers, timeout=15).json()
+                                leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2025", timeout=15).json()
                             if leagues:
                                 st.success(f"✅ Synced {len(leagues)} leagues for {username}!")
                                 for league in leagues:
@@ -745,8 +770,7 @@ elif sport == "🥎 NCAA Softball":
     def scrape_ncaa_softball_standings():
         try:
             url = "https://www.warrennolan.com/softball/2026/rpi-clean"
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0'}
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(url, timeout=10)
             dfs = pd.read_html(response.text)
             
             df = None
@@ -793,8 +817,7 @@ elif sport == "🥎 NCAA Softball":
     def scrape_ncaa_softball_pitching():
         try:
             url = "https://www.warrennolan.com/softball/2026/stats-team-pitching"
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0'}
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(url, timeout=10)
             dfs = pd.read_html(response.text)
             
             df = None
