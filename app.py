@@ -351,13 +351,11 @@ if sport == "⚾ MLB Baseball":
         col_a, col_b = st.columns(2)
         with col_a:
             away_t = st.selectbox("Away Team:", MLB_TEAMS, index=0)
-            # Filter pitchers for the Away Team only
             away_pitchers = sorted([p for p, data in pitcher_stats.items() if data.get('Team') == away_t]) if 'pitcher_stats' in locals() else []
             away_sp = st.selectbox(f"{away_t} SP Override:", ["League Average SP"] + away_pitchers)
         
         with col_b:
             home_t = st.selectbox("Home Team:", MLB_TEAMS, index=1)
-            # Filter pitchers for the Home Team only
             home_pitchers = sorted([p for p, data in pitcher_stats.items() if data.get('Team') == home_t]) if 'pitcher_stats' in locals() else []
             home_sp = st.selectbox(f"{home_t} SP Override:", ["League Average SP"] + home_pitchers)
             
@@ -416,7 +414,6 @@ if sport == "⚾ MLB Baseball":
                     marker_color='#d62728'
                 ))
                 
-                # Format to grouped bars and percentages
                 fig.update_layout(
                     barmode='group',
                     title=f'10,000 Poisson Simulations: {away_t} vs {home_t}',
@@ -652,20 +649,27 @@ elif sport == "🥎 NCAA Softball":
 
     def get_daily_softball_games():
         try:
-            today = datetime.now()
-            year, month, day = today.strftime("%Y"), today.strftime("%m"), today.strftime("%d")
-            url = f"https://data.ncaa.com/casandbox/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json"
-            resp = requests.get(url, timeout=10).json()
+            date_str = get_local_date_str()
+            year, month, day = date_str.split('-')
+            
             games_list = []
-            if 'games' in resp:
-                for g in resp['games']:
-                    game_data = g.get('game', g)
-                    away_info = game_data.get('away', {})
-                    home_info = game_data.get('home', {})
-                    away_team_name = away_info.get('names', {}).get('short', away_info.get('teamName', ''))
-                    home_team_name = home_info.get('names', {}).get('short', home_info.get('teamName', ''))
-                    if away_team_name and home_team_name:
-                        games_list.append((away_team_name, home_team_name))
+            for endpoint in ['casablanca', 'casandbox']:
+                url = f"https://data.ncaa.com/{endpoint}/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json"
+                try:
+                    resp = requests.get(url, timeout=10)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if 'games' in data:
+                            for g in data['games']:
+                                game_data = g.get('game', g)
+                                away_info = game_data.get('away', {})
+                                home_info = game_data.get('home', {})
+                                away_team_name = away_info.get('names', {}).get('short', away_info.get('teamName', ''))
+                                home_team_name = home_info.get('names', {}).get('short', home_info.get('teamName', ''))
+                                if away_team_name and home_team_name:
+                                    games_list.append((away_team_name, home_team_name))
+                            if games_list: break
+                except: continue
             return games_list
         except Exception:
             return []
@@ -714,33 +718,39 @@ elif sport == "🥎 NCAA Softball":
                 try:
                     dt = datetime.strptime(d_str, "%Y-%m-%d")
                     year, month, day = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
-                    url = f"https://data.ncaa.com/casandbox/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json"
-                    resp = requests.get(url, timeout=10).json()
                     
-                    if 'games' in resp:
-                        for g in resp['games']:
-                            game_data = g.get('game', g)
-                            state = game_data.get('gameState', '').lower()
-                            
-                            if state == 'final':
-                                away_info = game_data.get('away', {})
-                                home_info = game_data.get('home', {})
-                                away_ncaa = away_info.get('names', {}).get('short', away_info.get('teamName', ''))
-                                home_ncaa = home_info.get('names', {}).get('short', home_info.get('teamName', ''))
-                                
-                                away_team_name = map_ncaa_to_warren_nolan(away_ncaa, valid_teams)
-                                home_team_name = map_ncaa_to_warren_nolan(home_ncaa, valid_teams)
-                                
-                                if away_team_name and home_team_name:
-                                    try:
-                                        away_score = int(away_info.get('score', 0))
-                                        home_score = int(home_info.get('score', 0))
-                                    except ValueError:
-                                        away_score, home_score = 0, 0
+                    for endpoint in ['casablanca', 'casandbox']:
+                        url = f"https://data.ncaa.com/{endpoint}/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json"
+                        try:
+                            resp = requests.get(url, timeout=10)
+                            if resp.status_code == 200:
+                                data = resp.json()
+                                if 'games' in data:
+                                    for g in data['games']:
+                                        game_data = g.get('game', g)
+                                        state = game_data.get('gameState', '').lower()
                                         
-                                    winner = away_team_name if away_score > home_score else home_team_name
-                                    score_dict[f"{d_str}_{away_team_name.lower()}"] = winner.lower()
-                                    score_dict[f"{d_str}_{home_team_name.lower()}"] = winner.lower()
+                                        if state == 'final':
+                                            away_info = game_data.get('away', {})
+                                            home_info = game_data.get('home', {})
+                                            away_ncaa = away_info.get('names', {}).get('short', away_info.get('teamName', ''))
+                                            home_ncaa = home_info.get('names', {}).get('short', home_info.get('teamName', ''))
+                                            
+                                            away_team_name = map_ncaa_to_warren_nolan(away_ncaa, valid_teams)
+                                            home_team_name = map_ncaa_to_warren_nolan(home_ncaa, valid_teams)
+                                            
+                                            if away_team_name and home_team_name:
+                                                try:
+                                                    away_score = int(away_info.get('score', 0))
+                                                    home_score = int(home_info.get('score', 0))
+                                                except ValueError:
+                                                    away_score, home_score = 0, 0
+                                                    
+                                                winner = away_team_name if away_score > home_score else home_team_name
+                                                score_dict[f"{d_str}_{away_team_name.lower()}"] = winner.lower()
+                                                score_dict[f"{d_str}_{home_team_name.lower()}"] = winner.lower()
+                                    break
+                        except: continue
                 except Exception: continue
                 
             updates = 0
