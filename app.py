@@ -10,10 +10,8 @@ import os
 import cloudscraper
 
 # --- CLOUDFLARE BYPASS V4: THE ANTI-RECURSION SCRAPER ---
-# 1. Purge the pybaseball cache to destroy any saved 403 errors
 cache.purge()
 
-# 2. Initialize Cloudscraper to mimic a real desktop browser's TLS fingerprint
 scraper = cloudscraper.create_scraper(
     browser={
         'browser': 'chrome',
@@ -22,17 +20,13 @@ scraper = cloudscraper.create_scraper(
     }
 )
 
-# 3. Intercept Session requests SAFELY to prevent infinite recursion
 original_request = requests.Session.request
 def custom_request(self, method, url, **kwargs):
-    # If the scraper itself is making the underlying request, let it pass normally
     if isinstance(self, cloudscraper.CloudScraper):
         return original_request(self, method, url, **kwargs)
-    # If pybaseball or standard requests creates a session, hijack it with the scraper
     return scraper.request(method, url, **kwargs)
 requests.Session.request = custom_request
 
-# 4. Intercept direct GET requests
 original_get = requests.get
 def custom_get(url, **kwargs):
     return scraper.get(url, **kwargs)
@@ -285,7 +279,7 @@ if sport == "⚾ MLB Baseball":
             live_odds = get_live_odds()
             
             if team_df.empty or pitcher_df.empty:
-                st.warning("⚠️ **FanGraphs is currently blocking data requests (Cloudflare).** The Daily Slate runner is temporarily unavailable until the block expires.")
+                st.warning("⚠️ **FanGraphs is currently blocking data requests (Cloudflare).** The Automated Daily Slate runner is temporarily unavailable.")
             else:
                 st.subheader("⚡ Automated Daily Slate Runner")
                 if st.button("▶ Auto-Run & Log Entire Daily Slate"):
@@ -345,75 +339,46 @@ if sport == "⚾ MLB Baseball":
                         else:
                             st.info("No actionable edges found on today's MLB slate.")
 
-            st.markdown("---")
-            st.subheader("Manual Matchup Override")
-            MLB_TEAMS = sorted(list(TEAM_NAME_MAP.keys()))
-            away_t = st.sidebar.selectbox("Away Team:", MLB_TEAMS, index=0)
-            home_t = st.sidebar.selectbox("Home Team:", MLB_TEAMS, index=1)
-            matchup_key = f"{away_t} @ {home_t}"
-            default_away_ml = int(live_odds.get(matchup_key, [100, -110])[0])
-            default_home_ml = int(live_odds.get(matchup_key, [100, -110])[1])
-            
-            if not pitcher_df.empty and 'Team' in pitcher_df.columns:
-                a_stats_manual = get_team_row(team_df, away_t)
-                h_stats_manual = get_team_row(team_df, home_t)
-                a_team_code = a_stats_manual['Team'] if a_stats_manual is not None else ''
-                h_team_code = h_stats_manual['Team'] if h_stats_manual is not None else ''
-                away_pitchers = sorted(pitcher_df[pitcher_df['Team'] == a_team_code]['Name'].unique().tolist())
-                home_pitchers = sorted(pitcher_df[pitcher_df['Team'] == h_team_code]['Name'].unique().tolist())
-            else:
-                away_pitchers, home_pitchers = [], []
-                
-            away_sp = st.sidebar.selectbox(f"{away_t} SP:", ["League Average SP"] + away_pitchers)
-            home_sp = st.sidebar.selectbox(f"{home_t} SP:", ["League Average SP"] + home_pitchers)
-            location = st.sidebar.selectbox("Location:", list(PARK_FACTORS.keys()), index=list(PARK_FACTORS.keys()).index(home_t) if home_t in PARK_FACTORS else 0)
-            p_factor = PARK_FACTORS.get(location, 100) / 100
-            st.sidebar.markdown("---")
-            vegas_away = st.sidebar.number_input("Away ML:", value=default_away_ml)
-            vegas_home = st.sidebar.number_input("Home ML:", value=default_home_ml)
-            
-            if not team_df.empty:
-                try:
-                    a_stats = get_team_row(team_df, away_t)
-                    h_stats = get_team_row(team_df, home_t)
-                    a_team_code = a_stats['Team']
-                    h_team_code = h_stats['Team']
-                    
-                    a_recent_offense = a_stats['RS_per_G']
-                    if not recent_bat_agg.empty and a_team_code in recent_bat_agg['Team'].values: 
-                        a_recent_offense = recent_bat_agg[recent_bat_agg['Team'] == a_team_code]['Recent_RS_per_G'].values[0]
-                    h_recent_offense = h_stats['RS_per_G']
-                    if not recent_bat_agg.empty and h_team_code in recent_bat_agg['Team'].values: 
-                        h_recent_offense = recent_bat_agg[recent_bat_agg['Team'] == h_team_code]['Recent_RS_per_G'].values[0]
-                        
-                    a_blended_rs = (a_stats['RS_per_G'] * 0.70) + (a_recent_offense * 0.30)
-                    h_blended_rs = (h_stats['RS_per_G'] * 0.70) + (h_recent_offense * 0.30)
-                    a_sp_fip = pitcher_df[pitcher_df['Name'] == away_sp]['FIP'].values[0] if away_sp != "League Average SP" else a_stats['RA_per_G']
-                    h_sp_fip = pitcher_df[pitcher_df['Name'] == home_sp]['FIP'].values[0] if home_sp != "League Average SP" else h_stats['RA_per_G']
-                    a_run_prevention = (a_sp_fip * 0.61) + (a_stats['BP_RA9'] * 0.39)
-                    h_run_prevention = (h_sp_fip * 0.61) + (h_stats['BP_RA9'] * 0.39)
-                    away_lam = ((a_blended_rs + h_run_prevention) / 2) * p_factor
-                    home_lam = ((h_blended_rs + a_run_prevention) / 2) * p_factor
-                    
-                    if st.button("▶ Run Manual Simulation"):
-                        sim_a = np.random.poisson(away_lam, 10000)
-                        sim_h = np.random.poisson(home_lam, 10000)
-                        a_wins = np.sum(sim_a > sim_h) + (np.sum(sim_a == sim_h) / 2)
-                        h_wins = 10000 - a_wins
-                        model_away_prob, model_home_prob = a_wins / 10000, h_wins / 10000
-                        st.write(f"Final Expected Runs: {away_t} **{away_lam:.2f}** | {home_t} **{home_lam:.2f}**")
-                        c1, c2 = st.columns(2)
-                        v_a_prob = 100/(vegas_away+100) if vegas_away > 0 else abs(vegas_away)/(abs(vegas_away)+100)
-                        v_h_prob = 100/(vegas_home+100) if vegas_home > 0 else abs(vegas_home)/(abs(vegas_home)+100)
+        # ==========================================
+        # DECOUPLED MANUAL OVERRIDE (ALWAYS RENDERS)
+        # ==========================================
+        st.markdown("---")
+        st.subheader("Manual Matchup Override")
+        st.caption("Standalone Engine: Enter projected parameters to run the Monte Carlo simulation manually.")
         
-                        with c1:
-                            st.metric(f"{away_t} Win Prob", f"{model_away_prob:.1%}")
-                            if model_away_prob > v_a_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
-                
-                        with c2:
-                            st.metric(f"{home_t} Win Prob", f"{model_home_prob:.1%}")
-                            if model_home_prob > v_h_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
-                except Exception: st.error("Engine failure mapping data.")
+        MLB_TEAMS = sorted(list(TEAM_NAME_MAP.keys()))
+        
+        col_a, col_b = st.columns(2)
+        with col_a:
+            away_t = st.selectbox("Away Team:", MLB_TEAMS, index=0)
+            vegas_away = st.number_input("Away ML:", value=100)
+            away_lam = st.number_input(f"Expected Runs ({away_t}):", min_value=0.0, max_value=15.0, value=4.5, step=0.1)
+        
+        with col_b:
+            home_t = st.selectbox("Home Team:", MLB_TEAMS, index=1)
+            vegas_home = st.number_input("Home ML:", value=-110)
+            home_lam = st.number_input(f"Expected Runs ({home_t}):", min_value=0.0, max_value=15.0, value=4.5, step=0.1)
+        
+        if st.button("▶ Run Manual Simulation"):
+            sim_a = np.random.poisson(away_lam, 10000)
+            sim_h = np.random.poisson(home_lam, 10000)
+            a_wins = np.sum(sim_a > sim_h) + (np.sum(sim_a == sim_h) / 2)
+            h_wins = 10000 - a_wins
+            model_away_prob, model_home_prob = a_wins / 10000, h_wins / 10000
+            
+            st.write(f"Final Expected Runs: {away_t} **{away_lam:.2f}** | {home_t} **{home_lam:.2f}**")
+            
+            res_c1, res_c2 = st.columns(2)
+            v_a_prob = 100/(vegas_away+100) if vegas_away > 0 else abs(vegas_away)/(abs(vegas_away)+100)
+            v_h_prob = 100/(vegas_home+100) if vegas_home > 0 else abs(vegas_home)/(abs(vegas_home)+100)
+
+            with res_c1:
+                st.metric(f"{away_t} Win Prob", f"{model_away_prob:.1%}")
+                if model_away_prob > v_a_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
+    
+            with res_c2:
+                st.metric(f"{home_t} Win Prob", f"{model_home_prob:.1%}")
+                if model_home_prob > v_h_prob + 0.03: st.success("🔥 ACTIONABLE EDGE")
 
     elif page == "🏆 Fantasy Sports Predictor":
         st.title("🏆 Season-Long Fantasy Hub")
