@@ -1,9 +1,6 @@
 streamlit
 pandas
-git+https://github.com/jldbc/pybaseball.git
-lxml
-html5lib
-plotly
+numpy
 requests
 gspread
 curl-cffi
