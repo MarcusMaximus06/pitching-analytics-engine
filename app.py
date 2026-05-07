@@ -5,32 +5,34 @@ from pybaseball import pitching_stats, batting_stats, pitching_stats_range, batt
 from datetime import datetime, timedelta
 import traceback
 import requests
+from curl_cffi import requests as cffi_requests
 import gspread
 import os
-import cloudscraper
 
-# --- CLOUDFLARE BYPASS V4: THE ANTI-RECURSION SCRAPER ---
+# --- CLOUDFLARE BYPASS V6: THE TLS SPOOFER ---
 cache.purge()
 
-scraper = cloudscraper.create_scraper(
-    browser={
-        'browser': 'chrome',
-        'platform': 'windows',
-        'desktop': True
-    }
-)
-
-original_request = requests.Session.request
-def custom_request(self, method, url, **kwargs):
-    if isinstance(self, cloudscraper.CloudScraper):
-        return original_request(self, method, url, **kwargs)
-    return scraper.request(method, url, **kwargs)
-requests.Session.request = custom_request
-
+# 1. Intercept direct GET requests
 original_get = requests.get
 def custom_get(url, **kwargs):
-    return scraper.get(url, **kwargs)
+    # Drop default Python headers so the spoofer can use pure Chrome headers
+    kwargs.pop('headers', None) 
+    try:
+        # Impersonate a modern Chrome browser perfectly
+        return cffi_requests.get(url, impersonate="chrome120", **kwargs)
+    except Exception:
+        return original_get(url, **kwargs)
 requests.get = custom_get
+
+# 2. Intercept Session requests (Used extensively by pybaseball)
+original_request = requests.Session.request
+def custom_request(self, method, url, **kwargs):
+    kwargs.pop('headers', None)
+    try:
+        return cffi_requests.request(method, url, impersonate="chrome120", **kwargs)
+    except Exception:
+        return original_request(self, method, url, **kwargs)
+requests.Session.request = custom_request
 # ---------------------------------------
 
 st.set_page_config(page_title="Apex Multi-Sport Analytics", layout="wide")
@@ -116,7 +118,7 @@ if sport == "⚾ MLB Baseball":
         if not api_key: return {}
         url = f'https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/?apiKey={api_key}&regions=us&markets=h2h&oddsFormat=american&bookmakers=draftkings,fanduel'
         try:
-            response = scraper.get(url, timeout=15)
+            response = requests.get(url, timeout=15)
             data = response.json()
             odds_dict = {}
             for game in data:
@@ -183,7 +185,7 @@ if sport == "⚾ MLB Baseball":
             score_dict = {}
             for d_str in pending_dates:
                 url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={d_str}"
-                resp = scraper.get(url, timeout=10).json()
+                resp = requests.get(url, timeout=10).json()
                 if 'dates' in resp and len(resp['dates']) > 0:
                     for g in resp['dates'][0]['games']:
                         if g['status']['abstractGameState'] == 'Final':
@@ -472,7 +474,7 @@ if sport == "⚾ MLB Baseball":
             def load_sleeper_players():
                 try:
                     url = "https://api.sleeper.app/v1/players/nfl"
-                    resp = scraper.get(url, timeout=15).json()
+                    resp = requests.get(url, timeout=15).json()
                     active_players = {}
                     for pid, pdata in resp.items():
                         if pdata.get('active'):
@@ -544,12 +546,12 @@ if sport == "⚾ MLB Baseball":
             if st.button("Sync Rosters"):
                 with st.spinner("Pinging Sleeper API..."):
                     try:
-                        user_resp = scraper.get(f"https://api.sleeper.app/v1/user/{username}", timeout=15).json()
+                        user_resp = requests.get(f"https://api.sleeper.app/v1/user/{username}", timeout=15).json()
                         if user_resp and 'user_id' in user_resp:
                             user_id = user_resp['user_id']
-                            leagues = scraper.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2026", timeout=15).json()
+                            leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2026", timeout=15).json()
                             if not leagues:
-                                leagues = scraper.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2025", timeout=15).json()
+                                leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2025", timeout=15).json()
                             if leagues:
                                 st.success(f"✅ Synced {len(leagues)} leagues for {username}!")
                                 for league in leagues:
@@ -612,7 +614,7 @@ elif sport == "🥎 NCAA Softball":
             today = datetime.now()
             year, month, day = today.strftime("%Y"), today.strftime("%m"), today.strftime("%d")
             url = f"https://data.ncaa.com/casandbox/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json"
-            resp = scraper.get(url, timeout=10).json()
+            resp = requests.get(url, timeout=10).json()
             games_list = []
             if 'games' in resp:
                 for g in resp['games']:
@@ -672,7 +674,7 @@ elif sport == "🥎 NCAA Softball":
                     dt = datetime.strptime(d_str, "%Y-%m-%d")
                     year, month, day = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
                     url = f"https://data.ncaa.com/casandbox/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json"
-                    resp = scraper.get(url, timeout=10).json()
+                    resp = requests.get(url, timeout=10).json()
                     
                     if 'games' in resp:
                         for g in resp['games']:
@@ -759,7 +761,7 @@ elif sport == "🥎 NCAA Softball":
     def scrape_ncaa_softball_standings():
         try:
             url = "https://www.warrennolan.com/softball/2026/rpi-clean"
-            response = scraper.get(url, timeout=10)
+            response = requests.get(url, timeout=10)
             dfs = pd.read_html(response.text)
             
             df = None
@@ -806,7 +808,7 @@ elif sport == "🥎 NCAA Softball":
     def scrape_ncaa_softball_pitching():
         try:
             url = "https://www.warrennolan.com/softball/2026/stats-team-pitching"
-            response = scraper.get(url, timeout=10)
+            response = requests.get(url, timeout=10)
             dfs = pd.read_html(response.text)
             
             df = None
