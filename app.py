@@ -653,6 +653,27 @@ elif sport == "🥎 NCAA Softball":
             year, month, day = date_str.split('-')
             
             games_list = []
+            
+            # 1. Primary Feed: ESPN API (Captures post-season & tournaments flawlessly)
+            espn_url = f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=1000"
+            try:
+                resp = requests.get(espn_url, timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if 'events' in data:
+                        for event in data['events']:
+                            comps = event.get('competitions', [])
+                            if comps:
+                                competitors = comps[0].get('competitors', [])
+                                if len(competitors) == 2:
+                                    c1_is_home = competitors[0].get('homeAway') == 'home'
+                                    home_t = competitors[0]['team'].get('location', '') if c1_is_home else competitors[1]['team'].get('location', '')
+                                    away_t = competitors[1]['team'].get('location', '') if c1_is_home else competitors[0]['team'].get('location', '')
+                                    if away_t and home_t:
+                                        games_list.append((away_t, home_t))
+            except Exception: pass
+
+            # 2. Secondary Fallback: NCAA Scoreboards
             for endpoint in ['casablanca', 'casandbox']:
                 url = f"https://data.ncaa.com/{endpoint}/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json"
                 try:
@@ -666,9 +687,8 @@ elif sport == "🥎 NCAA Softball":
                                 home_info = game_data.get('home', {})
                                 away_team_name = away_info.get('names', {}).get('short', away_info.get('teamName', ''))
                                 home_team_name = home_info.get('names', {}).get('short', home_info.get('teamName', ''))
-                                if away_team_name and home_team_name:
+                                if away_team_name and home_team_name and (away_team_name, home_team_name) not in games_list:
                                     games_list.append((away_team_name, home_team_name))
-                            if games_list: break
                 except: continue
             return games_list
         except Exception:
@@ -719,6 +739,39 @@ elif sport == "🥎 NCAA Softball":
                     dt = datetime.strptime(d_str, "%Y-%m-%d")
                     year, month, day = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
                     
+                    # 1. ESPN Primary Feed
+                    espn_url = f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=1000"
+                    try:
+                        resp = requests.get(espn_url, timeout=10)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            if 'events' in data and len(data['events']) > 0:
+                                for event in data['events']:
+                                    state = event.get('status', {}).get('type', {}).get('state', '').lower()
+                                    if state == 'post':
+                                        comps = event.get('competitions', [])
+                                        if comps:
+                                            competitors = comps[0].get('competitors', [])
+                                            if len(competitors) == 2:
+                                                c1 = competitors[0]
+                                                c2 = competitors[1]
+                                                
+                                                t1_name = map_ncaa_to_warren_nolan(c1['team'].get('location', ''), valid_teams)
+                                                t2_name = map_ncaa_to_warren_nolan(c2['team'].get('location', ''), valid_teams)
+                                                
+                                                if t1_name and t2_name:
+                                                    try:
+                                                        s1 = int(c1.get('score', 0))
+                                                        s2 = int(c2.get('score', 0))
+                                                    except ValueError:
+                                                        s1, s2 = 0, 0
+                                                        
+                                                    winner = t1_name if s1 > s2 else t2_name
+                                                    score_dict[f"{d_str}_{t1_name.lower()}"] = winner.lower()
+                                                    score_dict[f"{d_str}_{t2_name.lower()}"] = winner.lower()
+                    except Exception: pass
+
+                    # 2. NCAA Fallback Feed
                     for endpoint in ['casablanca', 'casandbox']:
                         url = f"https://data.ncaa.com/{endpoint}/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json"
                         try:
@@ -749,7 +802,6 @@ elif sport == "🥎 NCAA Softball":
                                                 winner = away_team_name if away_score > home_score else home_team_name
                                                 score_dict[f"{d_str}_{away_team_name.lower()}"] = winner.lower()
                                                 score_dict[f"{d_str}_{home_team_name.lower()}"] = winner.lower()
-                                    break
                         except: continue
                 except Exception: continue
                 
