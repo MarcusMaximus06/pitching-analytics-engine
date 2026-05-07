@@ -1,6 +1,6 @@
 streamlit
 pandas
-pybaseball
+git+https://github.com/jldbc/pybaseball.git
 lxml
 html5lib
 plotly
