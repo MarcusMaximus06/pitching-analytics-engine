@@ -675,7 +675,9 @@ elif sport == "🏈 NFL Football":
             now = datetime.now()
             target_year = now.year if now.month >= 9 else now.year - 1
             
-            pbp = nfl.import_pbp_data([target_year])
+            # MEMORY OPTIMIZATION: Only pull the exact 5 columns required for the engine
+            cols_needed = ['posteam', 'defteam', 'epa', 'season_type', 'play_type']
+            pbp = nfl.import_pbp_data([target_year], columns=cols_needed)
             
             # Filter to regular season passing/rushing plays only
             pbp = pbp[(pbp['season_type'] == 'REG') & (pbp['play_type'].isin(['pass', 'run']))]
