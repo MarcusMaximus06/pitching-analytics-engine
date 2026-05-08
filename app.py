@@ -613,7 +613,7 @@ elif sport == "🏈 NFL Football":
     def log_nfl_to_sheets(row_data):
         try:
             gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
-            sh = gc.open("NFL Prediction Model") # Update sheet name if needed
+            sh = gc.open("NFL Prediction Model")
             try:
                 worksheet = sh.worksheet("NFL Log")
             except gspread.exceptions.WorksheetNotFound:
@@ -636,6 +636,94 @@ elif sport == "🏈 NFL Football":
             return "SUCCESS"
         except Exception as e:
             return "ERROR"
+
+    def get_nfl_log_stats():
+        try:
+            gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
+            sh = gc.open("NFL Prediction Model")
+            worksheet = sh.worksheet("NFL Log")
+            data = worksheet.get_all_values()
+            if len(data) <= 1: return 0, 0.0, 0.0
+            total_games, model_wins, vegas_wins = 0, 0, 0
+            for row in data[1:]:
+                if len(row) >= 9:
+                    result, model_pick = row[8].strip().upper(), row[7].strip()
+                    try: away_ml = int(row[3])
+                    except: away_ml = 0
+                    try: home_ml = int(row[4])
+                    except: home_ml = 0
+                    
+                    away_t, home_t = row[1], row[2]
+                    vegas_pick = away_t if away_ml < home_ml else home_t
+                    
+                    if result in ["WIN", "LOSS"]:
+                        total_games += 1
+                        if result == "WIN": model_wins += 1
+                        actual_winner = model_pick if result == "WIN" else (away_t if model_pick == home_t else home_t)
+                        if actual_winner == vegas_pick: vegas_wins += 1
+            
+            mod_acc = (model_wins / total_games * 100) if total_games > 0 else 0.0
+            veg_acc = (vegas_wins / total_games * 100) if total_games > 0 else 0.0
+            return total_games, mod_acc, veg_acc
+        except Exception: return 0, 0.0, 0.0
+
+    def auto_grade_nfl_pending_bets():
+        try:
+            gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
+            sh = gc.open("NFL Prediction Model")
+            worksheet = sh.worksheet("NFL Log")
+            data = worksheet.get_all_values()
+            
+            pending_rows = [(i, row) for i, row in enumerate(data) if i > 0 and len(row) >= 9 and row[8] == "PENDING"]
+            if not pending_rows: return 0
+            
+            pending_dates = list(set([row[0] for i, row in pending_rows]))
+            score_dict = {}
+            
+            for d_str in pending_dates:
+                # Format date for ESPN API
+                dt = datetime.strptime(d_str, "%Y-%m-%d")
+                espn_date = dt.strftime("%Y%m%d")
+                
+                url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates={espn_date}"
+                try:
+                    resp = requests.get(url, timeout=10).json()
+                    if 'events' in resp:
+                        for event in resp['events']:
+                            if event['status']['type']['state'] == 'post':
+                                comp = event['competitions'][0]
+                                team1 = comp['competitors'][0]
+                                team2 = comp['competitors'][1]
+                                
+                                t1_name = team1['team']['displayName']
+                                t2_name = team2['team']['displayName']
+                                
+                                t1_score = int(team1.get('score', 0))
+                                t2_score = int(team2.get('score', 0))
+                                
+                                winner = t1_name if t1_score > t2_score else t2_name
+                                
+                                # Store loosely to handle slight string mismatches
+                                score_dict[f"{d_str}_{t1_name}"] = winner
+                                score_dict[f"{d_str}_{t2_name}"] = winner
+                except Exception: continue
+                
+            updates = 0
+            for i, row in pending_rows:
+                d_str, away_t, model_pick = row[0], row[1], row[7]
+                # ESPN sometimes has slightly different team names than Odds API, doing a loose match
+                match_key = next((k for k in score_dict.keys() if d_str in k and (away_t in k or k.split('_')[1] in away_t)), None)
+                
+                if match_key:
+                    actual_winner = score_dict[match_key]
+                    # Check if model pick is a substring of actual winner to prevent exact match errors
+                    new_status = "WIN" if (model_pick in actual_winner or actual_winner in model_pick) else "LOSS"
+                    worksheet.update_cell(i + 1, 9, new_status)
+                    updates += 1
+            return updates
+        except Exception as e:
+            st.error(f"NFL Auto-Grader Error: {e}")
+            return -1
 
     @st.cache_data(ttl=3600)
     def get_nfl_live_odds():
@@ -712,10 +800,101 @@ elif sport == "🏈 NFL Football":
                     
         return power_matrix
 
+    # --- TOP DASHBOARD BLOCK ---
+    st.markdown("### 📊 Live Model Log & Automation")
+    tot_games, mod_acc, veg_acc = get_nfl_log_stats()
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 3])
+    with col1: st.metric(label="Total Graded Games", value=tot_games)
+    with col2: st.metric(label="Model Accuracy", value=f"{mod_acc:.1f}%")
+    with col3: st.metric(label="Vegas Accuracy", value=f"{veg_acc:.1f}%")
+    with col4: 
+        st.write("")
+        if st.button("🔄 Auto-Grade Completed Games"):
+            with st.spinner("Pinging ESPN NFL Scoreboard..."):
+                updates = auto_grade_nfl_pending_bets()
+                if updates > 0: st.success(f"✅ Successfully graded {updates} games! Refresh.")
+                elif updates == 0: st.info("No games ready to be graded.")
+    st.markdown("---")
+
     power_matrix = generate_baseline_power_matrix()
     full_team_names = [data['Name'] for abbr, data in power_matrix.items()]
     name_to_abbr = {data['Name']: abbr for abbr, data in power_matrix.items()}
 
+    # --- AUTOMATED SLATE RUNNER ---
+    with st.spinner('Syncing active Odds API lines...'):
+        live_odds = get_nfl_live_odds()
+        
+        st.subheader("⚡ Automated Weekly Slate Runner")
+        st.caption("Pulls every active NFL matchup currently on the board, simulates win probabilities using base engine calibrations, and logs actionable edges.")
+        
+        if st.button("▶ Auto-Run & Log Active NFL Slate"):
+            with st.spinner("Processing live odds against Split-EPA matrix..."):
+                slate_logs = []
+                new_logs_count = 0
+                date_str = get_local_date_str()
+                
+                for game_key, odds in live_odds.items():
+                    try:
+                        away_team_name, home_team_name = game_key.split(" @ ")
+                        a_ml, h_ml = odds
+                        
+                        if away_team_name in name_to_abbr and home_team_name in name_to_abbr:
+                            away_abbr = name_to_abbr[away_team_name]
+                            home_abbr = name_to_abbr[home_team_name]
+                            
+                            # Standard API Pull Matrix
+                            a_off_pass, a_def_pass = power_matrix[away_abbr]['Off_Pass_EPA'], power_matrix[away_abbr]['Def_Pass_EPA']
+                            a_off_rush, a_def_rush = power_matrix[away_abbr]['Off_Rush_EPA'], power_matrix[away_abbr]['Def_Rush_EPA']
+                            h_off_pass, h_def_pass = power_matrix[home_abbr]['Off_Pass_EPA'], power_matrix[home_abbr]['Def_Pass_EPA']
+                            h_off_rush, h_def_rush = power_matrix[home_abbr]['Off_Rush_EPA'], power_matrix[home_abbr]['Def_Rush_EPA']
+
+                            away_pass_edge = a_off_pass - h_def_pass
+                            away_rush_edge = a_off_rush - h_def_rush
+                            home_pass_edge = h_off_pass - a_def_pass
+                            home_rush_edge = h_off_rush - a_def_rush
+
+                            away_net_epa = (0.65 * away_pass_edge) + (0.35 * away_rush_edge)
+                            home_net_epa = (0.65 * home_pass_edge) + (0.35 * home_rush_edge)
+                            
+                            # Baseline Engine Modifiers
+                            away_elo = power_matrix[away_abbr]['Elo']
+                            home_elo = power_matrix[home_abbr]['Elo']
+                            hfa = 45 # Standard HFA for automated run
+                            
+                            adj_power_away = away_elo + (away_net_epa * 400)
+                            adj_power_home = home_elo + hfa + (home_net_epa * 400)
+                            
+                            prob_away = 1 / (1 + 10 ** ((adj_power_home - adj_power_away) / 400))
+                            prob_home = 1.0 - prob_away
+                            
+                            v_prob_a = calculate_implied_prob(a_ml)
+                            v_prob_h = calculate_implied_prob(h_ml)
+                            
+                            # 3% Actionable Edge Threshold
+                            action_taken = "No Edge"
+                            if prob_away > v_prob_a + 0.03: action_taken = away_team_name
+                            if prob_home > v_prob_h + 0.03: action_taken = home_team_name
+                            
+                            if action_taken != "No Edge":
+                                row_data = [date_str, away_team_name, home_team_name, a_ml, h_ml, f"{prob_away:.1%}", f"{prob_home:.1%}", action_taken, "PENDING"]
+                                log_status = log_nfl_to_sheets(row_data)
+                                if log_status in ["SUCCESS", "DUPLICATE"]:
+                                    slate_logs.append(row_data)
+                                    if log_status == "SUCCESS":
+                                        new_logs_count += 1
+                    except Exception as e:
+                        continue
+                        
+                if slate_logs:
+                    st.success(f"✅ Successfully processed {len(slate_logs)} actionable edges! ({new_logs_count} new entries logged to Sheets)")
+                    df_display = pd.DataFrame(slate_logs, columns=["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Status"])
+                    st.dataframe(df_display, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No actionable edges found on the active NFL slate.")
+
+    st.markdown("---")
+    
+    # --- MANUAL MATCHUP OVERRIDE ---
     col1, col2 = st.columns([1, 1.2])
     with col1:
         st.subheader("Matchup Override & Situational Matrix")
