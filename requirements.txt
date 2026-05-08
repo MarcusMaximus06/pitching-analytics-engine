@@ -5,4 +5,5 @@ requests
 gspread
 curl-cffi
 plotly
+cfbd
 nfl_data_py
