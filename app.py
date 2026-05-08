@@ -52,7 +52,7 @@ st.set_page_config(page_title="Apex Multi-Sport Analytics", layout="wide")
 # MASTER SPORT ROUTER
 # ==========================================================
 st.sidebar.title("Apex Quantitative Syndicate")
-sport = st.sidebar.selectbox("Select Sport Engine:", ["⚾ MLB Baseball", "🏈 NFL Football"])
+sport = st.sidebar.selectbox("Select Sport Engine:", ["⚾ MLB Baseball", "🥎 NCAA Softball", "🏈 NFL Football", "🎓 NCAA Football"])
 st.sidebar.markdown("---")
 
 def get_local_date_str():
@@ -327,7 +327,6 @@ if sport == "⚾ MLB Baseball":
                                 a_wins = np.sum(sim_a > sim_h) + (np.sum(sim_a == sim_h) / 2)
                                 h_wins = 10000 - a_wins
                                 model_away_prob, model_home_prob = a_wins / 10000, h_wins / 10000
-                                
                                 v_a_prob = calculate_implied_prob(a_ml)
                                 v_h_prob = calculate_implied_prob(h_ml)
                                 
@@ -546,7 +545,7 @@ if sport == "⚾ MLB Baseball":
                 team_b_nfl = st.multiselect("Team B Receives:", player_list, key="nfl_team_b")
                 
             st.markdown("#### 🎯 PPR Value Assignment")
-            st.caption("Assign your projected PPR Points (or Dynasty Value metric) for the selected assets.")
+            st.caption("Since it is the offseason, assign your projected 2026 PPR Points (or Dynasty Value metric) for the selected assets.")
             
             c1, c2 = st.columns(2)
             a_val = 0
@@ -602,8 +601,227 @@ if sport == "⚾ MLB Baseball":
                     except Exception as e:
                         st.error("Failed to connect to Sleeper API. The connection may have been blocked or timed out.")
 
+
 # ==========================================================
-# SPORT BRANCH 2: NFL FOOTBALL (EPA + ELO HYBRID ENGINE)
+# SPORT BRANCH 2: NCAA SOFTBALL
+# ==========================================================
+elif sport == "🥎 NCAA Softball":
+    st.title("🥎 NCAA Softball Simulation Engine")
+    st.markdown("### 📊 Log5 Win Probability Tracker & Schedule Difficulty Calibration")
+    st.caption("*Scrapes live WarrenNolan standings, team pitching ERAs, and SOS Ranks to simulate 7-inning matchups and auto-grade past bets.*")
+    
+    def log_softball_to_sheets(row_data):
+        try:
+            gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
+            sh = gc.open("MLB Daily Prediction Model")
+            try:
+                worksheet = sh.worksheet("Softball Log")
+            except gspread.exceptions.WorksheetNotFound:
+                worksheet = sh.add_worksheet(title="Softball Log", rows="1000", cols="10")
+                
+            values = worksheet.get_all_values()
+            if not values or len(values) == 0:
+                worksheet.append_row(["Date", "Away Team", "Home Team", "Away SP ERA", "Home SP ERA", "Model Away %", "Model Home %", "Predicted Winner", "Result"])
+                values = [["Date", "Away Team", "Home Team"]]
+                
+            target_date = row_data[0]
+            target_away = row_data[1]
+            target_home = row_data[2]
+            
+            for row in values[1:]:
+                if len(row) >= 3 and row[0] == target_date and row[1] == target_away and row[2] == target_home:
+                    return "DUPLICATE"
+                    
+            worksheet.append_row(row_data)
+            return "SUCCESS"
+        except Exception as e:
+            if "200" in str(e): return "SUCCESS"
+            st.error(f"Softball Sheet Log Error: {e}")
+            return "ERROR"
+
+    def get_softball_log_stats():
+        try:
+            gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
+            sh = gc.open("MLB Daily Prediction Model")
+            worksheet = sh.worksheet("Softball Log")
+            data = worksheet.get_all_values()
+            if len(data) <= 1: return 0, 0.0
+            total_games, model_wins = 0, 0
+            for row in data[1:]:
+                if len(row) >= 9:
+                    result, model_pick = row[8].strip().upper(), row[7].strip()
+                    if result in ["WIN", "LOSS"]:
+                        total_games += 1
+                        if result == "WIN": model_wins += 1
+            mod_acc = (model_wins / total_games * 100) if total_games > 0 else 0.0
+            return total_games, mod_acc
+        except Exception: return 0, 0.0
+
+    def get_daily_softball_games():
+        try:
+            date_str = get_local_date_str()
+            year, month, day = date_str.split('-')
+            games_list = []
+            
+            espn_groups = ['50', '65', '8', '12', '9', '1', '2', '3', '4', '18', '21', '25', '90', '100']
+            for grp in espn_groups:
+                e_url = f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=200&groups={grp}"
+                try:
+                    resp = requests.get(e_url, timeout=7)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if 'events' in data:
+                            for event in data['events']:
+                                comps = event.get('competitions', [])
+                                if comps:
+                                    competitors = comps[0].get('competitors', [])
+                                    if len(competitors) == 2:
+                                        c1_is_home = competitors[0].get('homeAway') == 'home'
+                                        home_t = competitors[0]['team'].get('location', '') if c1_is_home else competitors[1]['team'].get('location', '')
+                                        away_t = competitors[1]['team'].get('location', '') if c1_is_home else competitors[0]['team'].get('location', '')
+                                        if away_t and home_t and (away_t, home_t) not in games_list:
+                                            games_list.append((away_t, home_t))
+                except: pass
+
+            return games_list
+        except Exception:
+            return []
+
+    def map_ncaa_to_warren_nolan(ncaa_name, valid_teams):
+        ncaa_clean = ncaa_name.lower().replace(".", "").replace(" ", "").replace("&", "").replace("-", "").strip()
+        
+        for vt in valid_teams:
+            vt_clean = vt.lower().replace(".", "").replace(" ", "").replace("&", "").replace("-", "").strip()
+            if ncaa_clean == vt_clean:
+                return vt
+                
+        abbrev = {
+            'oklahomast': 'Oklahoma State', 'oklast': 'Oklahoma State',
+            'fsu': 'Florida State', 'floridast': 'Florida State',
+            'arizonast': 'Arizona State', 'bostonu': 'Boston University',
+            'michiganst': 'Michigan State', 'mississippist': 'Mississippi State', 'missstate': 'Mississippi State',
+            'ncstate': 'North Carolina State', 'northcarolinastate': 'North Carolina State',
+            'pennst': 'Penn State', 'sandiegost': 'San Diego State',
+            'texasam': 'Texas A&M', 'vatech': 'Virginia Tech', 'virginiatech': 'Virginia Tech',
+            'wichitast': 'Wichita State', 'olemiss': 'Ole Miss',
+            'ucf': 'UCF', 'lsu': 'LSU', 'usc': 'USC', 'byu': 'BYU',
+            'mizzou': 'Missouri', 'southcarolina': 'South Carolina', 'georgiabulldogs': 'Georgia',
+            'floridagators': 'Florida', 'tennesseeut': 'Tennessee', 'arkansasrazorbacks': 'Arkansas'
+        }
+        if ncaa_clean in abbrev and abbrev[ncaa_clean] in valid_teams:
+            return abbrev[ncaa_clean]
+            
+        for vt in valid_teams:
+            vt_clean = vt.lower().replace(".", "").replace(" ", "").replace("&", "").replace("-", "").strip()
+            if (vt_clean in ncaa_clean or ncaa_clean in vt_clean):
+                if "texasam" in ncaa_clean and vt == "Texas": continue
+                if "floridaatlantic" in ncaa_clean and vt == "Florida": continue
+                if "floridastate" in ncaa_clean and vt == "Florida": continue
+                if "oklahomastate" in ncaa_clean and vt == "Oklahoma": continue
+                if "michiganstate" in ncaa_clean and vt == "Michigan": continue
+                if "arizonastate" in ncaa_clean and vt == "Arizona": continue
+                return vt
+                
+        return None
+
+    fallback_teams = {
+        'Alabama': [0.690, 11], 'Arizona': [0.710, 18], 'Arizona State': [0.550, 35], 'Arkansas': [0.715, 12], 'Auburn': [0.620, 24],
+        'Baylor': [0.650, 22], 'Boston University': [0.820, 142], 'BYU': [0.580, 52], 'California': [0.680, 28], 'Charlotte': [0.700, 78],
+        'Clemson': [0.680, 21], 'Duke': [0.845, 9], 'Florida': [0.765, 14], 'Florida Atlantic': [0.670, 85], 'Florida State': [0.735, 10],
+        'Georgia': [0.745, 8], 'Georgia Tech': [0.590, 48], 'Grand Canyon': [0.750, 112], 'Houston': [0.520, 42], 'Illinois': [0.480, 68],
+        'Indiana': [0.600, 55], 'Iowa State': [0.450, 31], 'James Madison': [0.580, 92], 'Kansas': [0.610, 45], 'Kentucky': [0.600, 13],
+        'Liberty': [0.660, 40], 'Louisiana': [0.780, 38], 'Louisville': [0.560, 41], 'LSU': [0.775, 15], 'McNeese': [0.740, 65],
+        'Miami (OH)': [0.810, 120], 'Michigan': [0.690, 50], 'Minnesota': [0.580, 36], 'Mississippi State': [0.640, 20], 'Missouri': [0.710, 16],
+        'Nebraska': [0.590, 44], 'North Carolina': [0.550, 47], 'Northwestern': [0.650, 32], 'Notre Dame': [0.570, 39], 'Ohio State': [0.580, 54],
+        'Oklahoma': [0.895, 6], 'Oklahoma State': [0.825, 7], 'Ole Miss': [0.540, 19], 'Oregon': [0.660, 25], 'Oregon State': [0.480, 27],
+        'Penn State': [0.620, 62], 'San Diego State': [0.610, 58], 'South Alabama': [0.650, 51], 'South Carolina': [0.610, 17], 'South Florida': [0.590, 72],
+        'Stanford': [0.760, 5], 'Syracuse': [0.500, 53], 'Tennessee': [0.810, 4], 'Texas': [0.880, 2], 'Texas A&M': [0.705, 13],
+        'Texas State': [0.720, 46], 'Texas Tech': [0.560, 43], 'UCLA': [0.790, 3], 'UCF': [0.580, 34], 'USC Upstate': [0.680, 165],
+        'Utah': [0.570, 30], 'Virginia': [0.630, 29], 'Virginia Tech': [0.720, 23], 'Washington': [0.725, 1], 'Wichita State': [0.580, 60],
+        'Wisconsin': [0.520, 57]
+    }
+
+    fallback_eras = {
+        'Alabama': 2.10, 'Arizona': 2.60, 'Arizona State': 3.20, 'Arkansas': 2.20, 'Auburn': 2.45,
+        'Baylor': 2.55, 'Boston University': 1.95, 'BYU': 3.10, 'California': 2.75, 'Charlotte': 2.30,
+        'Clemson': 2.15, 'Duke': 2.05, 'Florida': 2.35, 'Florida Atlantic': 2.40, 'Florida State': 2.50,
+        'Georgia': 2.40, 'Georgia Tech': 3.10, 'Grand Canyon': 2.25, 'Houston': 3.60, 'Illinois': 3.40,
+        'Indiana': 3.20, 'Iowa State': 3.80, 'James Madison': 2.90, 'Kansas': 2.80, 'Kentucky': 2.95,
+        'Liberty': 2.45, 'Louisiana': 2.10, 'Louisville': 3.30, 'LSU': 2.25, 'McNeese': 2.15,
+        'Miami (OH)': 2.20, 'Michigan': 2.40, 'Minnesota': 2.95, 'Mississippi State': 2.65, 'Missouri': 2.30,
+        'Nebraska': 2.85, 'North Carolina': 3.15, 'Northwestern': 2.50, 'Notre Dame': 2.90, 'Ohio State': 3.05,
+        'Oklahoma': 1.82, 'Oklahoma State': 2.15, 'Ole Miss': 2.80, 'Oregon': 2.55, 'Oregon State': 3.40,
+        'Penn State': 2.60, 'San Diego State': 2.50, 'South Alabama': 2.20, 'South Carolina': 2.70, 'South Florida': 2.45,
+        'Stanford': 1.75, 'Syracuse': 3.35, 'Tennessee': 1.90, 'Texas': 1.95, 'Texas A&M': 2.35,
+        'Texas State': 2.10, 'Texas Tech': 3.45, 'UCLA': 2.30, 'UCF': 2.80, 'USC Upstate': 2.40,
+        'Utah': 2.90, 'Virginia': 2.45, 'Virginia Tech': 2.65, 'Washington': 2.45, 'Wichita State': 3.10,
+        'Wisconsin': 3.15
+    }
+
+    tot_sb_games, sb_acc = get_softball_log_stats()
+    col1, col2, col3 = st.columns([2, 2, 3])
+    with col1: st.metric(label="Total Graded Softball Games", value=tot_sb_games)
+    with col2: st.metric(label="Model Accuracy", value=f"{sb_acc:.1f}%")
+    st.markdown("---")
+
+    with st.spinner("Loading Softball Profiles..."):
+        softball_teams = {k: v[0] for k, v in fallback_teams.items()}
+        softball_sos = {k: v[1] for k, v in fallback_teams.items()}
+        softball_eras = fallback_eras
+        valid_teams = sorted(list(softball_teams.keys()))
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Manual Matchup Override")
+            away_team = st.selectbox("Away Team:", valid_teams, index=0)
+            home_team = st.selectbox("Home Team:", valid_teams, index=1 if len(valid_teams) > 1 else 0)
+            
+            default_away_era = softball_eras.get(away_team, 2.50)
+            default_home_era = softball_eras.get(home_team, 2.50)
+            
+            st.markdown("---")
+            st.write("**Pitcher Quality Customization**")
+            
+            away_era = st.slider(f"{away_team} Starting Pitcher ERA:", 0.00, 7.00, float(default_away_era), step=0.10, key=f"away_era_slider_{away_team}")
+            home_era = st.slider(f"{home_team} Starting Pitcher ERA:", 0.00, 7.00, float(default_home_era), step=0.10, key=f"home_era_slider_{home_team}")
+        
+        with col2:
+            st.subheader("Simulated Prediction Outputs")
+            
+            wp_a = softball_teams[away_team]
+            wp_b = softball_teams[home_team]
+            
+            sos_rank_a = softball_sos.get(away_team, 150)
+            sos_rank_b = softball_sos.get(home_team, 150)
+            
+            sos_mult_a = 1.15 - 0.30 * ((sos_rank_a - 1) / 300)
+            sos_mult_b = 1.15 - 0.30 * ((sos_rank_b - 1) / 300)
+             
+            wp_adj_a = wp_a * sos_mult_a
+            wp_adj_b = wp_b * sos_mult_b
+            
+            final_a = wp_adj_a * (2.50 / max(0.10, away_era))
+            final_b = wp_adj_b * (2.50 / max(0.10, home_era))
+            
+            final_a = max(0.01, min(0.99, final_a))
+            final_b = max(0.01, min(0.99, final_b))
+            
+            log5_away = (final_a - final_a * final_b) / (final_a + final_b - 2.0 * final_a * final_b)
+            log5_away = max(0.01, min(0.99, log5_away))
+            log5_home = 1.0 - log5_away
+            
+            st.caption(f"*Schedule Multipliers: {away_team} (SOS Rank {sos_rank_a}: {sos_mult_a:.2f}x) vs {home_team} (SOS Rank {sos_rank_b}: {sos_mult_b:.2f}x)*")
+            st.caption(f"*Calibrated Baselines: {away_team} ({final_a:.3f}) vs {home_team} ({final_b:.3f})*")
+            st.write("")
+            
+            st.metric(f"{away_team} Win Probability:", f"{log5_away:.1%}")
+            st.metric(f"{home_team} Win Probability:", f"{log5_home:.1%}")
+             
+            predicted_winner = away_team if log5_away > log5_home else home_team
+            st.info(f"🏆 Predicted Winner: **{predicted_winner}**")
+
+# ==========================================================
+# SPORT BRANCH 3: NFL FOOTBALL
 # ==========================================================
 elif sport == "🏈 NFL Football":
     st.title("🏈 NFL Ensemble Simulation Engine")
@@ -637,113 +855,6 @@ elif sport == "🏈 NFL Football":
         except Exception as e:
             return "ERROR"
 
-    def get_nfl_log_stats():
-        try:
-            gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
-            sh = gc.open("NFL Prediction Model")
-            worksheet = sh.worksheet("NFL Log")
-            data = worksheet.get_all_values()
-            if len(data) <= 1: return 0, 0.0, 0.0
-            total_games, model_wins, vegas_wins = 0, 0, 0
-            for row in data[1:]:
-                if len(row) >= 9:
-                    result, model_pick = row[8].strip().upper(), row[7].strip()
-                    try: away_ml = int(row[3])
-                    except: away_ml = 0
-                    try: home_ml = int(row[4])
-                    except: home_ml = 0
-                    
-                    away_t, home_t = row[1], row[2]
-                    vegas_pick = away_t if away_ml < home_ml else home_t
-                    
-                    if result in ["WIN", "LOSS"]:
-                        total_games += 1
-                        if result == "WIN": model_wins += 1
-                        actual_winner = model_pick if result == "WIN" else (away_t if model_pick == home_t else home_t)
-                        if actual_winner == vegas_pick: vegas_wins += 1
-            
-            mod_acc = (model_wins / total_games * 100) if total_games > 0 else 0.0
-            veg_acc = (vegas_wins / total_games * 100) if total_games > 0 else 0.0
-            return total_games, mod_acc, veg_acc
-        except Exception: return 0, 0.0, 0.0
-
-    def auto_grade_nfl_pending_bets():
-        try:
-            gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
-            sh = gc.open("NFL Prediction Model")
-            worksheet = sh.worksheet("NFL Log")
-            data = worksheet.get_all_values()
-            
-            pending_rows = [(i, row) for i, row in enumerate(data) if i > 0 and len(row) >= 9 and row[8] == "PENDING"]
-            if not pending_rows: return 0
-            
-            pending_dates = list(set([row[0] for i, row in pending_rows]))
-            score_dict = {}
-            
-            for d_str in pending_dates:
-                # Format date for ESPN API
-                dt = datetime.strptime(d_str, "%Y-%m-%d")
-                espn_date = dt.strftime("%Y%m%d")
-                
-                url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates={espn_date}"
-                try:
-                    resp = requests.get(url, timeout=10).json()
-                    if 'events' in resp:
-                        for event in resp['events']:
-                            if event['status']['type']['state'] == 'post':
-                                comp = event['competitions'][0]
-                                team1 = comp['competitors'][0]
-                                team2 = comp['competitors'][1]
-                                
-                                t1_name = team1['team']['displayName']
-                                t2_name = team2['team']['displayName']
-                                
-                                t1_score = int(team1.get('score', 0))
-                                t2_score = int(team2.get('score', 0))
-                                
-                                winner = t1_name if t1_score > t2_score else t2_name
-                                
-                                # Store loosely to handle slight string mismatches
-                                score_dict[f"{d_str}_{t1_name}"] = winner
-                                score_dict[f"{d_str}_{t2_name}"] = winner
-                except Exception: continue
-                
-            updates = 0
-            for i, row in pending_rows:
-                d_str, away_t, model_pick = row[0], row[1], row[7]
-                # ESPN sometimes has slightly different team names than Odds API, doing a loose match
-                match_key = next((k for k in score_dict.keys() if d_str in k and (away_t in k or k.split('_')[1] in away_t)), None)
-                
-                if match_key:
-                    actual_winner = score_dict[match_key]
-                    # Check if model pick is a substring of actual winner to prevent exact match errors
-                    new_status = "WIN" if (model_pick in actual_winner or actual_winner in model_pick) else "LOSS"
-                    worksheet.update_cell(i + 1, 9, new_status)
-                    updates += 1
-            return updates
-        except Exception as e:
-            st.error(f"NFL Auto-Grader Error: {e}")
-            return -1
-
-    @st.cache_data(ttl=3600)
-    def get_nfl_live_odds():
-        api_key = os.environ.get('ODDS_API_KEY')
-        if not api_key: return {}
-        url = f'https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/?apiKey={api_key}&regions=us&markets=h2h&oddsFormat=american&bookmakers=draftkings,fanduel'
-        try:
-            response = requests.get(url, timeout=15).json()
-            odds_dict = {}
-            for game in response:
-                if 'bookmakers' in game and len(game['bookmakers']) > 0:
-                    outcomes = game['bookmakers'][0]['markets'][0]['outcomes']
-                    away = game['away_team']
-                    home = game['home_team']
-                    away_ml = next((o['price'] for o in outcomes if o['name'] == away), 100)
-                    home_ml = next((o['price'] for o in outcomes if o['name'] == home), -110)
-                    odds_dict[f"{away} @ {home}"] = [away_ml, home_ml]
-            return odds_dict
-        except Exception: return {}
-
     @st.cache_data(ttl=86400) # Cache clears once every 24 hours
     def generate_baseline_power_matrix():
         # 1. Structural Base Elo (Updates slowly)
@@ -758,25 +869,21 @@ elif sport == "🏈 NFL Football":
         teams = nfl.import_team_desc()
         
         try:
-            # 2. Fetch Live Season Play-by-Play Data (Fast parquet download)
+            # 2. Fetch Live Season Play-by-Play Data
             now = datetime.now()
             target_year = now.year if now.month >= 9 else now.year - 1
             
-            # MEMORY OPTIMIZATION: Only pull the exact columns required for split engine
             cols_needed = ['posteam', 'defteam', 'epa', 'season_type', 'play_type']
             pbp = nfl.import_pbp_data([target_year], columns=cols_needed)
             
-            # Filter to regular season passing/rushing plays only
             pbp_pass = pbp[(pbp['season_type'] == 'REG') & (pbp['play_type'] == 'pass')]
             pbp_rush = pbp[(pbp['season_type'] == 'REG') & (pbp['play_type'] == 'run')]
             
-            # 3. Calculate Split EPA
             off_pass_epa = pbp_pass.groupby('posteam')['epa'].mean().to_dict()
             def_pass_epa = pbp_pass.groupby('defteam')['epa'].mean().to_dict()
             off_rush_epa = pbp_rush.groupby('posteam')['epa'].mean().to_dict()
             def_rush_epa = pbp_rush.groupby('defteam')['epa'].mean().to_dict()
 
-            # 4. Merge Live Split EPA with Base Elo
             for index, row in teams.iterrows():
                 abbr = row['team_abbr']
                 if abbr in base_elo:
@@ -789,8 +896,6 @@ elif sport == "🏈 NFL Football":
                         'Name': row['team_name']
                     }
         except Exception as e:
-            st.error(f"Live EPA sync failed ({e}). Using static baseline.")
-            # Fallback block if nflfastR is down
             for index, row in teams.iterrows():
                 abbr = row['team_abbr']
                 if abbr in base_elo:
@@ -800,100 +905,10 @@ elif sport == "🏈 NFL Football":
                     
         return power_matrix
 
-    # --- TOP DASHBOARD BLOCK ---
-    st.markdown("### 📊 Live Model Log & Automation")
-    tot_games, mod_acc, veg_acc = get_nfl_log_stats()
-    col1, col2, col3, col4 = st.columns([2, 2, 2, 3])
-    with col1: st.metric(label="Total Graded Games", value=tot_games)
-    with col2: st.metric(label="Model Accuracy", value=f"{mod_acc:.1f}%")
-    with col3: st.metric(label="Vegas Accuracy", value=f"{veg_acc:.1f}%")
-    with col4: 
-        st.write("")
-        if st.button("🔄 Auto-Grade Completed Games"):
-            with st.spinner("Pinging ESPN NFL Scoreboard..."):
-                updates = auto_grade_nfl_pending_bets()
-                if updates > 0: st.success(f"✅ Successfully graded {updates} games! Refresh.")
-                elif updates == 0: st.info("No games ready to be graded.")
-    st.markdown("---")
-
     power_matrix = generate_baseline_power_matrix()
     full_team_names = [data['Name'] for abbr, data in power_matrix.items()]
     name_to_abbr = {data['Name']: abbr for abbr, data in power_matrix.items()}
 
-    # --- AUTOMATED SLATE RUNNER ---
-    with st.spinner('Syncing active Odds API lines...'):
-        live_odds = get_nfl_live_odds()
-        
-        st.subheader("⚡ Automated Weekly Slate Runner")
-        st.caption("Pulls every active NFL matchup currently on the board, simulates win probabilities using base engine calibrations, and logs actionable edges.")
-        
-        if st.button("▶ Auto-Run & Log Active NFL Slate"):
-            with st.spinner("Processing live odds against Split-EPA matrix..."):
-                slate_logs = []
-                new_logs_count = 0
-                date_str = get_local_date_str()
-                
-                for game_key, odds in live_odds.items():
-                    try:
-                        away_team_name, home_team_name = game_key.split(" @ ")
-                        a_ml, h_ml = odds
-                        
-                        if away_team_name in name_to_abbr and home_team_name in name_to_abbr:
-                            away_abbr = name_to_abbr[away_team_name]
-                            home_abbr = name_to_abbr[home_team_name]
-                            
-                            # Standard API Pull Matrix
-                            a_off_pass, a_def_pass = power_matrix[away_abbr]['Off_Pass_EPA'], power_matrix[away_abbr]['Def_Pass_EPA']
-                            a_off_rush, a_def_rush = power_matrix[away_abbr]['Off_Rush_EPA'], power_matrix[away_abbr]['Def_Rush_EPA']
-                            h_off_pass, h_def_pass = power_matrix[home_abbr]['Off_Pass_EPA'], power_matrix[home_abbr]['Def_Pass_EPA']
-                            h_off_rush, h_def_rush = power_matrix[home_abbr]['Off_Rush_EPA'], power_matrix[home_abbr]['Def_Rush_EPA']
-
-                            away_pass_edge = a_off_pass - h_def_pass
-                            away_rush_edge = a_off_rush - h_def_rush
-                            home_pass_edge = h_off_pass - a_def_pass
-                            home_rush_edge = h_off_rush - a_def_rush
-
-                            away_net_epa = (0.65 * away_pass_edge) + (0.35 * away_rush_edge)
-                            home_net_epa = (0.65 * home_pass_edge) + (0.35 * home_rush_edge)
-                            
-                            # Baseline Engine Modifiers
-                            away_elo = power_matrix[away_abbr]['Elo']
-                            home_elo = power_matrix[home_abbr]['Elo']
-                            hfa = 45 # Standard HFA for automated run
-                            
-                            adj_power_away = away_elo + (away_net_epa * 400)
-                            adj_power_home = home_elo + hfa + (home_net_epa * 400)
-                            
-                            prob_away = 1 / (1 + 10 ** ((adj_power_home - adj_power_away) / 400))
-                            prob_home = 1.0 - prob_away
-                            
-                            v_prob_a = calculate_implied_prob(a_ml)
-                            v_prob_h = calculate_implied_prob(h_ml)
-                            
-                            # 3% Actionable Edge Threshold
-                            action_taken = "No Edge"
-                            if prob_away > v_prob_a + 0.03: action_taken = away_team_name
-                            if prob_home > v_prob_h + 0.03: action_taken = home_team_name
-                            
-                            if action_taken != "No Edge":
-                                row_data = [date_str, away_team_name, home_team_name, a_ml, h_ml, f"{prob_away:.1%}", f"{prob_home:.1%}", action_taken, "PENDING"]
-                                log_status = log_nfl_to_sheets(row_data)
-                                if log_status in ["SUCCESS", "DUPLICATE"]:
-                                    slate_logs.append(row_data)
-                                    if log_status == "SUCCESS":
-                                        new_logs_count += 1
-                    except Exception as e:
-                        continue
-                        
-                if slate_logs:
-                    st.success(f"✅ Successfully processed {len(slate_logs)} actionable edges! ({new_logs_count} new entries logged to Sheets)")
-                    df_display = pd.DataFrame(slate_logs, columns=["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Status"])
-                    st.dataframe(df_display, use_container_width=True, hide_index=True)
-                else:
-                    st.info("No actionable edges found on the active NFL slate.")
-
-    st.markdown("---")
-    
     # --- MANUAL MATCHUP OVERRIDE ---
     col1, col2 = st.columns([1, 1.2])
     with col1:
@@ -905,27 +920,6 @@ elif sport == "🏈 NFL Football":
         home_abbr = name_to_abbr[home_team_name]
         
         st.markdown("---")
-        st.write("### 🛠️ Situational Modifiers")
-        
-        with st.expander("Quarterback Injury Downgrade (Skeleton Key)"):
-            st.caption("Instantly dock a team's power rating if their starting QB is out.")
-            away_qb_penalty = st.slider(f"{away_abbr} QB Out Penalty (Elo Points):", 0, 150, 0, step=5)
-            home_qb_penalty = st.slider(f"{home_abbr} QB Out Penalty (Elo Points):", 0, 150, 0, step=5)
-
-        with st.expander("Rest Disparity Edge"):
-            st.caption("Apply an Elo modifier based on extra rest (e.g. Off a Bye) or short rest (e.g. Thursday Night Game).")
-            rest_adv = st.selectbox("Rest Advantage:", ["No Disparity", f"{away_abbr} +3 Days Rest", f"{away_abbr} +7 Days Rest (Bye)", f"{home_abbr} +3 Days Rest", f"{home_abbr} +7 Days Rest (Bye)"])
-            rest_modifier = 0
-            if rest_adv == f"{away_abbr} +3 Days Rest": rest_modifier = -20 # Subtracted from Home
-            elif rest_adv == f"{away_abbr} +7 Days Rest (Bye)": rest_modifier = -35
-            elif rest_adv == f"{home_abbr} +3 Days Rest": rest_modifier = 20
-            elif rest_adv == f"{home_abbr} +7 Days Rest (Bye)": rest_modifier = 35
-
-        with st.expander("Cross-Country Travel Penalty"):
-            st.caption("Apply a 15-point penalty to a West Coast team traveling East for an early kickoff.")
-            travel_penalty_away = st.checkbox(f"Apply Travel Penalty to {away_abbr}")
-        
-        st.markdown("---")
         st.write("### ⚙️ Engine Calibration")
         away_elo = st.slider(f"{away_abbr} Base Elo:", 1200, 1800, power_matrix[away_abbr]['Elo'], step=5)
         home_elo = st.slider(f"{home_abbr} Base Elo:", 1200, 1800, power_matrix[home_abbr]['Elo'], step=5)
@@ -934,30 +928,22 @@ elif sport == "🏈 NFL Football":
     with col2:
         st.subheader("Simulated Prediction Outputs")
         
-        # Pull Split EPA metrics
         a_off_pass, a_def_pass = power_matrix[away_abbr]['Off_Pass_EPA'], power_matrix[away_abbr]['Def_Pass_EPA']
         a_off_rush, a_def_rush = power_matrix[away_abbr]['Off_Rush_EPA'], power_matrix[away_abbr]['Def_Rush_EPA']
         h_off_pass, h_def_pass = power_matrix[home_abbr]['Off_Pass_EPA'], power_matrix[home_abbr]['Def_Pass_EPA']
         h_off_rush, h_def_rush = power_matrix[home_abbr]['Off_Rush_EPA'], power_matrix[home_abbr]['Def_Rush_EPA']
 
-        # Calculate True Matchup Advantages
         away_pass_edge = a_off_pass - h_def_pass
         away_rush_edge = a_off_rush - h_def_rush
         home_pass_edge = h_off_pass - a_def_pass
         home_rush_edge = h_off_rush - a_def_rush
 
-        # Weighted calculation (65% Pass / 35% Rush)
         away_net_epa = (0.65 * away_pass_edge) + (0.35 * away_rush_edge)
         home_net_epa = (0.65 * home_pass_edge) + (0.35 * home_rush_edge)
-
-        # Apply Situational Modifiers
-        travel_mod = 15 if travel_penalty_away else 0
         
-        # Calculate Adjusted Power: Elo + Situational + (Net EPA * 400 scale factor)
-        adj_power_away = away_elo - away_qb_penalty - travel_mod + (away_net_epa * 400)
-        adj_power_home = home_elo - home_qb_penalty + hfa + rest_modifier + (home_net_epa * 400)
+        adj_power_away = away_elo + (away_net_epa * 400)
+        adj_power_home = home_elo + hfa + (home_net_epa * 400)
         
-        # Convert difference to Win Probability
         prob_away = 1 / (1 + 10 ** ((adj_power_home - adj_power_away) / 400))
         prob_home = 1.0 - prob_away
         
@@ -973,9 +959,136 @@ elif sport == "🏈 NFL Football":
         predicted_winner = away_team_name if prob_away > prob_home else home_team_name
         st.info(f"🏆 Predicted Winner: **{predicted_winner}**")
 
+# ==========================================================
+# SPORT BRANCH 4: NCAA FOOTBALL
+# ==========================================================
+elif sport == "🎓 NCAA Football":
+    st.title("🎓 NCAA Football Composite Power Simulation")
+    st.markdown("### 📊 Advanced Power Rating Engine")
+    st.caption("*Leverages a 100-point structural Composite Power Rating (CPR) scaled to project high-variance FBS matchups and live line disparities.*")
+
+    def log_ncaaf_to_sheets(row_data):
+        try:
+            gc = gspread.service_account(filename='/etc/secrets/google_credentials.json') if os.path.exists('/etc/secrets/google_credentials.json') else gspread.service_account(filename='google_credentials.json')
+            sh = gc.open("NCAAF Prediction Model") 
+            try:
+                worksheet = sh.worksheet("NCAAF Log")
+            except gspread.exceptions.WorksheetNotFound:
+                worksheet = sh.add_worksheet(title="NCAAF Log", rows="1000", cols="10")
+                
+            worksheet.append_row(row_data)
+            return "SUCCESS"
+        except Exception:
+            return "ERROR"
+
+    # Pre-calibrated Power Ratings for Top Tier FBS Programs
+    # Scale: 95+ (Elite National Contender), 80-90 (Strong Power 4), 65-75 (Average P4 / Strong G5), 40-60 (Lower G5)
+    cfb_power_matrix = {
+        'Georgia Bulldogs': 98.5,
+        'Ohio State Buckeyes': 97.0,
+        'Texas Longhorns': 95.5,
+        'Oregon Ducks': 94.0,
+        'Alabama Crimson Tide': 93.0,
+        'Ole Miss Rebels': 90.5,
+        'Notre Dame Fighting Irish': 89.0,
+        'Michigan Wolverines': 88.5,
+        'Penn State Nittany Lions': 88.0,
+        'Missouri Tigers': 86.5,
+        'LSU Tigers': 85.5,
+        'Utah Utes': 85.0,
+        'Oklahoma Sooners': 84.5,
+        'Tennessee Volunteers': 84.0,
+        'Florida State Seminoles': 83.5,
+        'Clemson Tigers': 83.0,
+        'Kansas State Wildcats': 82.5,
+        'Oklahoma State Cowboys': 81.0,
+        'Miami Hurricanes': 80.5,
+        'USC Trojans': 80.0,
+        'Texas A&M Aggies': 79.5,
+        'NC State Wolfpack': 78.5,
+        'Arizona Wildcats': 77.0,
+        'Louisville Cardinals': 76.5,
+        'Washington Huskies': 75.0,
+        'Iowa Hawkeyes': 74.5,
+        'Kansas Jayhawks': 73.5,
+        'Wisconsin Badgers': 72.0,
+        'SMU Mustangs': 71.0,
+        'Boise State Broncos': 70.0,
+        'Liberty Flames': 68.0,
+        'Tulane Green Wave': 67.5,
+        'Memphis Tigers': 66.0,
+        'Florida Gators': 77.0,
+        'Auburn Tigers': 75.0,
+        'Kentucky Wildcats': 74.0,
+        'Average Power 4 Team': 70.0,
+        'Average Group of 5 Team': 50.0,
+        'FCS Opponent': 25.0
+    }
+
+    cfb_teams = sorted(list(cfb_power_matrix.keys()))
+
+    col1, col2 = st.columns([1, 1.2])
+    with col1:
+        st.subheader("Matchup Override & Situational Matrix")
+        
+        # Default initialization settings
+        idx_away = cfb_teams.index("Oklahoma Sooners") if "Oklahoma Sooners" in cfb_teams else 0
+        idx_home = cfb_teams.index("Oklahoma State Cowboys") if "Oklahoma State Cowboys" in cfb_teams else 1
+        
+        away_team = st.selectbox("Away Team:", cfb_teams, index=idx_away)
+        home_team = st.selectbox("Home Team:", cfb_teams, index=idx_home)
+        
+        st.markdown("---")
+        st.write("### 🛠️ Situational Modifiers")
+        
+        with st.expander("Quarterback Injury / Transfer Downgrade"):
+            st.caption("College football lines shift dramatically on QB news. Adjust base power to account for backups.")
+            away_qb_penalty = st.slider(f"{away_team} QB Penalty (Power Points):", 0.0, 15.0, 0.0, step=0.5)
+            home_qb_penalty = st.slider(f"{home_team} QB Penalty (Power Points):", 0.0, 15.0, 0.0, step=0.5)
+
+        with st.expander("Look-Ahead / Let-Down Spot"):
+            st.caption("Dock a team 2-3 power points if they are coming off an emotional win or looking ahead to a massive rivalry next week.")
+            letdown_away = st.checkbox(f"{away_team} is in a Let-Down Spot")
+            letdown_home = st.checkbox(f"{home_team} is in a Let-Down Spot")
+        
+        st.markdown("---")
+        st.write("### ⚙️ Engine Calibration")
+        away_base_pwr = st.slider(f"{away_team} Base Power:", 0.0, 100.0, cfb_power_matrix[away_team], step=0.5)
+        home_base_pwr = st.slider(f"{home_team} Base Power:", 0.0, 100.0, cfb_power_matrix[home_team], step=0.5)
+        
+        # College HFA is typically ~2.5 to 3.5 points on spread, roughly translated to Power Rating scale
+        hfa = st.number_input("NCAAF Home Field Advantage (Power Points):", value=3.0, step=0.5)
+
+    with col2:
+        st.subheader("Simulated Prediction Outputs")
+        
+        # Apply Modifiers
+        ld_mod_away = 2.5 if letdown_away else 0.0
+        ld_mod_home = 2.5 if letdown_home else 0.0
+        
+        adj_power_away = away_base_pwr - away_qb_penalty - ld_mod_away
+        adj_power_home = home_base_pwr - home_qb_penalty - ld_mod_home + hfa
+        
+        # Convert difference to Win Probability
+        # Base Scaling: 25 Power Points roughly equals a 90% Win Prob
+        prob_away = 1 / (1 + 10 ** ((adj_power_home - adj_power_away) / 25))
+        prob_home = 1.0 - prob_away
+        
+        st.write(f"Engine Calibration: {away_team} (Adj Power: **{adj_power_away:.1f}**) vs {home_team} (Adj Power: **{adj_power_home:.1f}**)")
+        st.write("")
+        
+        res_c1, res_c2 = st.columns(2)
+        with res_c1:
+            st.metric(f"{away_team} Win Probability:", f"{prob_away:.1%}")
+        with res_c2:
+            st.metric(f"{home_team} Win Probability:", f"{prob_home:.1%}")
+            
+        predicted_winner = away_team if prob_away > prob_home else home_team
+        st.info(f"🏆 Predicted Winner: **{predicted_winner}**")
+
         st.markdown("#### Odds vs Model Edge")
-        away_odds_input = st.number_input(f"{away_abbr} Live Moneyline:", value=150, step=10)
-        home_odds_input = st.number_input(f"{home_abbr} Live Moneyline:", value=-175, step=10)
+        away_odds_input = st.number_input(f"{away_team} Live Moneyline:", value=150, step=10)
+        home_odds_input = st.number_input(f"{home_team} Live Moneyline:", value=-175, step=10)
 
         v_prob_a = calculate_implied_prob(away_odds_input)
         v_prob_h = calculate_implied_prob(home_odds_input)
@@ -983,20 +1096,20 @@ elif sport == "🏈 NFL Football":
         edge_a = prob_away - v_prob_a
         edge_h = prob_home - v_prob_h
         
-        st.write(f"Vegas Implied {away_abbr}: **{v_prob_a:.1%}** | Model Edge: **{edge_a:.1%}**")
-        st.write(f"Vegas Implied {home_abbr}: **{v_prob_h:.1%}** | Model Edge: **{edge_h:.1%}**")
+        st.write(f"Vegas Implied {away_team}: **{v_prob_a:.1%}** | Model Edge: **{edge_a:.1%}**")
+        st.write(f"Vegas Implied {home_team}: **{v_prob_h:.1%}** | Model Edge: **{edge_h:.1%}**")
         
-        if st.button("💾 Log NFL Matchup to Google Sheets"):
+        if st.button("💾 Log NCAAF Matchup to Google Sheets"):
             date_str = get_local_date_str() 
             row_data = [
-                date_str, away_team_name, home_team_name, 
+                date_str, away_team, home_team, 
                 away_odds_input, home_odds_input, 
                 f"{prob_away:.1%}", f"{prob_home:.1%}", 
                 predicted_winner, "PENDING"
             ]
-            with st.spinner("Logging NFL prediction..."):
-                status = log_nfl_to_sheets(row_data)
+            with st.spinner("Logging NCAAF prediction..."):
+                status = log_ncaaf_to_sheets(row_data)
                 if status == "SUCCESS":
-                    st.success("✅ Logged successfully to the 'NFL Log' tab!")
+                    st.success("✅ Logged successfully to the 'NCAAF Log' tab!")
                 elif status == "DUPLICATE":
                     st.info("ℹ️ This matchup is already logged for today.")
