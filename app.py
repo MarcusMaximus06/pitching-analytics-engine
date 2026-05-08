@@ -11,12 +11,12 @@ import plotly.graph_objects as go
 import nfl_data_py as nfl
 import re
 
-# --- CLOUDFLARE BYPASS V8: THE SMART TLS SPOOFER ---
+# --- CLOUDFLARE BYPASS V9: THE SMART TLS SPOOFER ---
 original_get = requests.get
 def custom_get(url, **kwargs):
     if "googleapis.com" in str(url) or "googleusercontent.com" in str(url):
         return original_get(url, **kwargs)
-    kwargs.pop('headers', None) 
+    # BUGFIX: Removed kwargs.pop('headers', None) to allow API keys to pass through
     try:
         return cffi_requests.get(url, impersonate="chrome120", **kwargs)
     except Exception:
@@ -27,7 +27,6 @@ original_post = requests.post
 def custom_post(url, **kwargs):
     if "googleapis.com" in str(url) or "googleusercontent.com" in str(url):
         return original_post(url, **kwargs)
-    kwargs.pop('headers', None) 
     try:
         return cffi_requests.post(url, impersonate="chrome120", **kwargs)
     except Exception:
@@ -38,7 +37,6 @@ original_request = requests.Session.request
 def custom_request(self, method, url, **kwargs):
     if "googleapis.com" in str(url) or "googleusercontent.com" in str(url):
         return original_request(self, method, url, **kwargs)
-    kwargs.pop('headers', None)
     try:
         return cffi_requests.request(method, url, impersonate="chrome120", **kwargs)
     except Exception:
@@ -545,7 +543,7 @@ if sport == "⚾ MLB Baseball":
                 team_b_nfl = st.multiselect("Team B Receives:", player_list, key="nfl_team_b")
                 
             st.markdown("#### 🎯 PPR Value Assignment")
-            st.caption("Since it is the offseason, assign your projected 2026 PPR Points (or Dynasty Value metric) for the selected assets.")
+            st.caption("Assign your projected PPR Points (or Dynasty Value metric) for the selected assets.")
             
             c1, c2 = st.columns(2)
             a_val = 0
@@ -1325,16 +1323,19 @@ elif sport == "🎓 NCAA Football":
             'Average Power 4 Team': 70.0, 'Average Group of 5 Team': 50.0, 'FCS Opponent': 25.0
         }
         
-        api_key = os.environ.get('CFBD_API_KEY')
+        api_key = os.environ.get('CFBD_API_KEY', '').strip()
+        
+        # Failsafe: Remove "Bearer " if accidentally pasted into Render environment variable
+        if api_key.lower().startswith('bearer '):
+            api_key = api_key[7:].strip()
+            
         if not api_key:
             return fallback_matrix, False, "No API key found in environment."
 
         try:
             now = datetime.now()
-            # If it's before August kickoff, use last year's final data to establish baseline
             target_year = now.year if now.month >= 8 else now.year - 1
 
-            # Fetch Real-Time Elo Ratings directly using raw requests for maximum stability
             url = f"https://api.collegefootballdata.com/ratings/elo?year={target_year}"
             headers = {
                 "Authorization": f"Bearer {api_key}",
@@ -1354,15 +1355,11 @@ elif sport == "🎓 NCAA Football":
                 elo = team.get('elo')
                 
                 if team_name and elo:
-                    # Formula: Map historical Elo scale (roughly 1000 to 2200) down to the 0-100 CPR Scale
-                    # 2100 Elo -> ~100 CPR. 1100 Elo -> ~45 CPR.
                     cpr = (elo - 1000) / 10
-                    cpr = max(20.0, min(100.0, cpr)) # Bound it to the UI Scale
-                    
+                    cpr = max(20.0, min(100.0, cpr)) 
                     dynamic_matrix[team_name] = round(cpr, 1)
 
             if len(dynamic_matrix) > 10:
-                # Retain the generalized buckets for FCS matchups
                 dynamic_matrix['Average Power 4 Team'] = 70.0
                 dynamic_matrix['Average Group of 5 Team'] = 50.0
                 dynamic_matrix['FCS Opponent'] = 25.0
@@ -1390,7 +1387,6 @@ elif sport == "🎓 NCAA Football":
     with col1:
         st.subheader("Matchup Override & Situational Matrix")
         
-        # Default initialization settings
         idx_away = cfb_teams.index("Oklahoma") if "Oklahoma" in cfb_teams else 0
         idx_home = cfb_teams.index("Oklahoma State") if "Oklahoma State" in cfb_teams else 1
         
@@ -1415,21 +1411,17 @@ elif sport == "🎓 NCAA Football":
         away_base_pwr = st.slider(f"{away_team} Base CPR:", 0.0, 100.0, float(cfb_power_matrix[away_team]), step=0.5)
         home_base_pwr = st.slider(f"{home_team} Base CPR:", 0.0, 100.0, float(cfb_power_matrix[home_team]), step=0.5)
         
-        # College HFA is typically ~2.5 to 3.5 points on spread, roughly translated to Power Rating scale
         hfa = st.number_input("NCAAF Home Field Advantage (Power Points):", value=3.0, step=0.5)
 
     with col2:
         st.subheader("Simulated Prediction Outputs")
         
-        # Apply Modifiers
         ld_mod_away = 2.5 if letdown_away else 0.0
         ld_mod_home = 2.5 if letdown_home else 0.0
         
         adj_power_away = away_base_pwr - away_qb_penalty - ld_mod_away
         adj_power_home = home_base_pwr - home_qb_penalty - ld_mod_home + hfa
         
-        # Convert difference to Win Probability
-        # Base Scaling: 25 Power Points roughly equals a 90% Win Prob
         prob_away = 1 / (1 + 10 ** ((adj_power_home - adj_power_away) / 25))
         prob_home = 1.0 - prob_away
         
