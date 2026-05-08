@@ -9,7 +9,6 @@ import gspread
 import os
 import plotly.graph_objects as go
 import nfl_data_py as nfl
-import cfbd
 import re
 
 # --- CLOUDFLARE BYPASS V8: THE SMART TLS SPOOFER ---
@@ -663,6 +662,7 @@ elif sport == "🥎 NCAA Softball":
             year, month, day = date_str.split('-')
             games_list = []
             
+            # Layer 1: ESPN Carpet Bomb (Hits all major conference Group IDs)
             espn_groups = ['50', '65', '8', '12', '9', '1', '2', '3', '4', '18', '21', '25', '90', '100']
             for grp in espn_groups:
                 e_url = f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=200&groups={grp}"
@@ -683,6 +683,7 @@ elif sport == "🥎 NCAA Softball":
                                             games_list.append((away_t, home_t))
                 except: pass
 
+            # Layer 2: NCAA Recursive Fallback
             ncaa_urls = [
                 f"https://data.ncaa.com/casablanca/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json",
                 f"https://data.ncaa.com/casandbox/scoreboard/softball/d1/{year}/{month}/{day}/scoreboard.json",
@@ -718,11 +719,13 @@ elif sport == "🥎 NCAA Softball":
     def map_ncaa_to_warren_nolan(ncaa_name, valid_teams):
         ncaa_clean = ncaa_name.lower().replace(".", "").replace(" ", "").replace("&", "").replace("-", "").strip()
         
+        # 1. Exact Match
         for vt in valid_teams:
             vt_clean = vt.lower().replace(".", "").replace(" ", "").replace("&", "").replace("-", "").strip()
             if ncaa_clean == vt_clean:
                 return vt
                 
+        # 2. Known Abbreviations
         abbrev = {
             'oklahomast': 'Oklahoma State', 'oklast': 'Oklahoma State',
             'fsu': 'Florida State', 'floridast': 'Florida State',
@@ -739,9 +742,11 @@ elif sport == "🥎 NCAA Softball":
         if ncaa_clean in abbrev and abbrev[ncaa_clean] in valid_teams:
             return abbrev[ncaa_clean]
             
+        # 3. Safeguarded Contains Match
         for vt in valid_teams:
             vt_clean = vt.lower().replace(".", "").replace(" ", "").replace("&", "").replace("-", "").strip()
             if (vt_clean in ncaa_clean or ncaa_clean in vt_clean):
+                # Hardcode guardrails to prevent substring cross-contamination
                 if "texasam" in ncaa_clean and vt == "Texas": continue
                 if "floridaatlantic" in ncaa_clean and vt == "Florida": continue
                 if "floridastate" in ncaa_clean and vt == "Florida": continue
@@ -770,6 +775,7 @@ elif sport == "🥎 NCAA Softball":
                     dt = datetime.strptime(d_str, "%Y-%m-%d")
                     year, month, day = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
                     
+                    # 1. ESPN Carpet Bomb Search
                     espn_groups = ['50', '65', '8', '12', '9', '1', '2', '3', '4', '18', '21', '25', '90', '100']
                     for grp in espn_groups:
                         e_url = f"https://site.api.espn.com/apis/site/v2/sports/softball/college-softball/scoreboard?dates={year}{month}{day}&limit=200&groups={grp}"
@@ -802,6 +808,7 @@ elif sport == "🥎 NCAA Softball":
                                                         score_dict[f"{d_str}_{t2_name.lower()}"] = winner.lower()
                         except Exception: pass
 
+                    # 2. NCAA Recursive Fallback
                     def extract_ncaa_scores(data):
                         if isinstance(data, dict):
                             away_data = data.get('away', {})
@@ -1318,56 +1325,64 @@ elif sport == "🎓 NCAA Football":
             'Average Power 4 Team': 70.0, 'Average Group of 5 Team': 50.0, 'FCS Opponent': 25.0
         }
         
-        api_key = "Vr3Re2aE24dbpcoaHu7x9YB2EEmBUJ+0FvfY+B8LCotPPbv9uD46hrBFvx0vZKVG"
+        api_key = os.environ.get('CFBD_API_KEY')
         if not api_key:
-            return fallback_matrix, False
+            return fallback_matrix, False, "No API key found in environment."
 
         try:
-            # Configure CFBD API
-            configuration = cfbd.Configuration()
-            configuration.api_key['Authorization'] = api_key
-            configuration.api_key_prefix['Authorization'] = 'Bearer'
-            api_client = cfbd.ApiClient(configuration)
-            ratings_api = cfbd.RatingsApi(api_client)
-
             now = datetime.now()
             # If it's before August kickoff, use last year's final data to establish baseline
             target_year = now.year if now.month >= 8 else now.year - 1
 
-            # Fetch Real-Time Elo Ratings for all FBS/FCS teams
-            elo_data = ratings_api.get_elo_ratings(year=target_year)
+            # Fetch Real-Time Elo Ratings directly using raw requests for maximum stability
+            url = f"https://api.collegefootballdata.com/ratings/elo?year={target_year}"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "accept": "application/json"
+            }
+            
+            response = requests.get(url, headers=headers, timeout=15)
+            
+            if response.status_code != 200:
+                return fallback_matrix, False, f"API returned status {response.status_code}: {response.text}"
+                
+            elo_data = response.json()
             
             dynamic_matrix = {}
             for team in elo_data:
-                team_name = team.team
-                elo = team.elo
+                team_name = team.get('team')
+                elo = team.get('elo')
                 
-                # Formula: Map historical Elo scale (roughly 1000 to 2200) down to the 0-100 CPR Scale
-                # 2100 Elo -> ~100 CPR. 1100 Elo -> ~45 CPR.
-                cpr = (elo - 1000) / 10
-                cpr = max(20.0, min(100.0, cpr)) # Bound it to the UI Scale
-                
-                dynamic_matrix[team_name] = round(cpr, 1)
+                if team_name and elo:
+                    # Formula: Map historical Elo scale (roughly 1000 to 2200) down to the 0-100 CPR Scale
+                    # 2100 Elo -> ~100 CPR. 1100 Elo -> ~45 CPR.
+                    cpr = (elo - 1000) / 10
+                    cpr = max(20.0, min(100.0, cpr)) # Bound it to the UI Scale
+                    
+                    dynamic_matrix[team_name] = round(cpr, 1)
 
             if len(dynamic_matrix) > 10:
                 # Retain the generalized buckets for FCS matchups
                 dynamic_matrix['Average Power 4 Team'] = 70.0
                 dynamic_matrix['Average Group of 5 Team'] = 50.0
                 dynamic_matrix['FCS Opponent'] = 25.0
-                return dynamic_matrix, True
+                return dynamic_matrix, True, ""
             else:
-                return fallback_matrix, False
+                return fallback_matrix, False, "API returned empty or insufficient data."
 
         except Exception as e:
-            return fallback_matrix, False
+            return fallback_matrix, False, str(e)
 
     with st.spinner("Syncing CFBD Data Engine..."):
-        cfb_power_matrix, api_success = generate_dynamic_cfb_power_matrix()
+        cfb_power_matrix, api_success, err_msg = generate_dynamic_cfb_power_matrix()
         
     cfb_teams = sorted(list(cfb_power_matrix.keys()))
 
     if not api_success:
-        st.warning("⚠️ CFBD API Key missing or connection failed. Using static offseason baseline matrix. Add your key to `os.environ` to enable live sync.")
+        if err_msg:
+            st.warning(f"⚠️ CFBD API Error: {err_msg}. Using static offseason baseline matrix.")
+        else:
+            st.warning("⚠️ CFBD API Key missing. Using static offseason baseline matrix.")
     else:
         st.success("✅ CFBD API Synchronized. Live CPR matrix populated for 130+ teams.")
 
