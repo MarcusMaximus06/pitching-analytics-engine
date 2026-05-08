@@ -708,43 +708,6 @@ elif sport == "🏈 NFL Football":
                     }
                     
         return power_matrix
-        
-        # Simulated Baseline Metrics (will be overridden by live API data during season)
-        power_matrix = {
-            'ARI': {'Elo': 1480, 'Off_EPA': 0.02, 'Def_EPA': 0.05, 'Name': 'Arizona Cardinals'},
-            'ATL': {'Elo': 1495, 'Off_EPA': -0.01, 'Def_EPA': 0.02, 'Name': 'Atlanta Falcons'},
-            'BAL': {'Elo': 1650, 'Off_EPA': 0.12, 'Def_EPA': -0.08, 'Name': 'Baltimore Ravens'},
-            'BUF': {'Elo': 1640, 'Off_EPA': 0.14, 'Def_EPA': -0.05, 'Name': 'Buffalo Bills'},
-            'CAR': {'Elo': 1350, 'Off_EPA': -0.15, 'Def_EPA': 0.08, 'Name': 'Carolina Panthers'},
-            'CHI': {'Elo': 1490, 'Off_EPA': 0.01, 'Def_EPA': 0.01, 'Name': 'Chicago Bears'},
-            'CIN': {'Elo': 1560, 'Off_EPA': 0.08, 'Def_EPA': 0.04, 'Name': 'Cincinnati Bengals'},
-            'CLE': {'Elo': 1540, 'Off_EPA': -0.02, 'Def_EPA': -0.09, 'Name': 'Cleveland Browns'},
-            'DAL': {'Elo': 1600, 'Off_EPA': 0.10, 'Def_EPA': -0.03, 'Name': 'Dallas Cowboys'},
-            'DEN': {'Elo': 1460, 'Off_EPA': -0.04, 'Def_EPA': 0.03, 'Name': 'Denver Broncos'},
-            'DET': {'Elo': 1620, 'Off_EPA': 0.11, 'Def_EPA': -0.02, 'Name': 'Detroit Lions'},
-            'GB':  {'Elo': 1580, 'Off_EPA': 0.09, 'Def_EPA': 0.01, 'Name': 'Green Bay Packers'},
-            'HOU': {'Elo': 1570, 'Off_EPA': 0.07, 'Def_EPA': -0.01, 'Name': 'Houston Texans'},
-            'IND': {'Elo': 1510, 'Off_EPA': 0.03, 'Def_EPA': 0.02, 'Name': 'Indianapolis Colts'},
-            'JAX': {'Elo': 1500, 'Off_EPA': 0.02, 'Def_EPA': 0.05, 'Name': 'Jacksonville Jaguars'},
-            'KC':  {'Elo': 1680, 'Off_EPA': 0.15, 'Def_EPA': -0.06, 'Name': 'Kansas City Chiefs'},
-            'LV':  {'Elo': 1470, 'Off_EPA': -0.05, 'Def_EPA': -0.01, 'Name': 'Las Vegas Raiders'},
-            'LAC': {'Elo': 1520, 'Off_EPA': 0.04, 'Def_EPA': 0.03, 'Name': 'Los Angeles Chargers'},
-            'LAR': {'Elo': 1550, 'Off_EPA': 0.08, 'Def_EPA': 0.02, 'Name': 'Los Angeles Rams'},
-            'MIA': {'Elo': 1590, 'Off_EPA': 0.10, 'Def_EPA': 0.04, 'Name': 'Miami Dolphins'},
-            'MIN': {'Elo': 1510, 'Off_EPA': 0.04, 'Def_EPA': 0.01, 'Name': 'Minnesota Vikings'},
-            'NE':  {'Elo': 1420, 'Off_EPA': -0.10, 'Def_EPA': -0.02, 'Name': 'New England Patriots'},
-            'NO':  {'Elo': 1500, 'Off_EPA': 0.02, 'Def_EPA': 0.01, 'Name': 'New Orleans Saints'},
-            'NYG': {'Elo': 1430, 'Off_EPA': -0.08, 'Def_EPA': 0.06, 'Name': 'New York Giants'},
-            'NYJ': {'Elo': 1510, 'Off_EPA': -0.02, 'Def_EPA': -0.07, 'Name': 'New York Jets'},
-            'PHI': {'Elo': 1610, 'Off_EPA': 0.09, 'Def_EPA': -0.01, 'Name': 'Philadelphia Eagles'},
-            'PIT': {'Elo': 1550, 'Off_EPA': -0.01, 'Def_EPA': -0.05, 'Name': 'Pittsburgh Steelers'},
-            'SF':  {'Elo': 1660, 'Off_EPA': 0.13, 'Def_EPA': -0.04, 'Name': 'San Francisco 49ers'},
-            'SEA': {'Elo': 1520, 'Off_EPA': 0.05, 'Def_EPA': 0.05, 'Name': 'Seattle Seahawks'},
-            'TB':  {'Elo': 1540, 'Off_EPA': 0.06, 'Def_EPA': 0.02, 'Name': 'Tampa Bay Buccaneers'},
-            'TEN': {'Elo': 1450, 'Off_EPA': -0.06, 'Def_EPA': 0.04, 'Name': 'Tennessee Titans'},
-            'WAS': {'Elo': 1440, 'Off_EPA': -0.05, 'Def_EPA': 0.08, 'Name': 'Washington Commanders'}
-        }
-        return power_matrix
 
     power_matrix = generate_baseline_power_matrix()
     full_team_names = [data['Name'] for abbr, data in power_matrix.items()]
