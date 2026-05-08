@@ -656,11 +656,52 @@ elif sport == "🏈 NFL Football":
             return odds_dict
         except Exception: return {}
 
-    @st.cache_data(ttl=86400)
+    @st.cache_data(ttl=86400) # Cache clears once every 24 hours
     def generate_baseline_power_matrix():
-        # This is a robust baseline structure. In production, nfl_data_py will map real-time weekly EPA into this matrix.
+        # 1. Structural Base Elo (Updates slowly)
+        base_elo = {
+            'ARI': 1480, 'ATL': 1495, 'BAL': 1650, 'BUF': 1640, 'CAR': 1350, 'CHI': 1490, 'CIN': 1560, 'CLE': 1540,
+            'DAL': 1600, 'DEN': 1460, 'DET': 1620, 'GB':  1580, 'HOU': 1570, 'IND': 1510, 'JAX': 1500, 'KC':  1680,
+            'LV':  1470, 'LAC': 1520, 'LAR': 1550, 'MIA': 1590, 'MIN': 1510, 'NE':  1420, 'NO':  1500, 'NYG': 1430,
+            'NYJ': 1510, 'PHI': 1610, 'PIT': 1550, 'SF':  1660, 'SEA': 1520, 'TB':  1540, 'TEN': 1450, 'WAS': 1440
+        }
+        
+        power_matrix = {}
         teams = nfl.import_team_desc()
-        team_abbr = teams['team_abbr'].tolist()
+        
+        try:
+            # 2. Fetch Live Season Play-by-Play Data (Fast parquet download)
+            current_year = 2026
+            pbp = nfl.import_pbp_data([current_year])
+            
+            # Filter to regular season passing/rushing plays only
+            pbp = pbp[(pbp['season_type'] == 'REG') & (pbp['play_type'].isin(['pass', 'run']))]
+            
+            # 3. Calculate Aggregate EPA
+            off_epa = pbp.groupby('posteam')['epa'].mean().to_dict()
+            def_epa = pbp.groupby('defteam')['epa'].mean().to_dict()
+
+            # 4. Merge Live EPA with Base Elo
+            for index, row in teams.iterrows():
+                abbr = row['team_abbr']
+                if abbr in base_elo:
+                    power_matrix[abbr] = {
+                        'Elo': base_elo[abbr],
+                        'Off_EPA': round(off_epa.get(abbr, 0.0), 3),
+                        'Def_EPA': round(def_epa.get(abbr, 0.0), 3),
+                        'Name': row['team_name']
+                    }
+        except Exception as e:
+            st.error("Live EPA sync failed. Using static baseline.")
+            # Fallback block if nflfastR is down
+            for index, row in teams.iterrows():
+                abbr = row['team_abbr']
+                if abbr in base_elo:
+                    power_matrix[abbr] = {
+                        'Elo': base_elo[abbr], 'Off_EPA': 0.0, 'Def_EPA': 0.0, 'Name': row['team_name']
+                    }
+                    
+        return power_matrix
         
         # Simulated Baseline Metrics (will be overridden by live API data during season)
         power_matrix = {
