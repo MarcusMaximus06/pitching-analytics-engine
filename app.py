@@ -607,8 +607,8 @@ if sport == "⚾ MLB Baseball":
 # ==========================================================
 elif sport == "🏈 NFL Football":
     st.title("🏈 NFL Ensemble Simulation Engine")
-    st.markdown("### 📊 Elo + EPA/Play Hybrid Power Ratings")
-    st.caption("*Fuses structural base Elo ratings with high-variance Expected Points Added (EPA) per play for ultimate predictive accuracy.*")
+    st.markdown("### 📊 Elo + Split EPA Power Ratings")
+    st.caption("*Fuses structural base Elo ratings with weighted Pass/Rush Expected Points Added (EPA) per play. Includes situational edges.*")
     
     def log_nfl_to_sheets(row_data):
         try:
@@ -671,40 +671,43 @@ elif sport == "🏈 NFL Football":
         
         try:
             # 2. Fetch Live Season Play-by-Play Data (Fast parquet download)
-            # Logic: If it's before September, use last year's data as the baseline.
             now = datetime.now()
             target_year = now.year if now.month >= 9 else now.year - 1
             
-            # MEMORY OPTIMIZATION: Only pull the exact 5 columns required for the engine
+            # MEMORY OPTIMIZATION: Only pull the exact columns required for split engine
             cols_needed = ['posteam', 'defteam', 'epa', 'season_type', 'play_type']
             pbp = nfl.import_pbp_data([target_year], columns=cols_needed)
             
             # Filter to regular season passing/rushing plays only
-            pbp = pbp[(pbp['season_type'] == 'REG') & (pbp['play_type'].isin(['pass', 'run']))]
+            pbp_pass = pbp[(pbp['season_type'] == 'REG') & (pbp['play_type'] == 'pass')]
+            pbp_rush = pbp[(pbp['season_type'] == 'REG') & (pbp['play_type'] == 'run')]
             
-            # 3. Calculate Aggregate EPA
-            off_epa = pbp.groupby('posteam')['epa'].mean().to_dict()
-            def_epa = pbp.groupby('defteam')['epa'].mean().to_dict()
+            # 3. Calculate Split EPA
+            off_pass_epa = pbp_pass.groupby('posteam')['epa'].mean().to_dict()
+            def_pass_epa = pbp_pass.groupby('defteam')['epa'].mean().to_dict()
+            off_rush_epa = pbp_rush.groupby('posteam')['epa'].mean().to_dict()
+            def_rush_epa = pbp_rush.groupby('defteam')['epa'].mean().to_dict()
 
-            # 4. Merge Live EPA with Base Elo
+            # 4. Merge Live Split EPA with Base Elo
             for index, row in teams.iterrows():
                 abbr = row['team_abbr']
                 if abbr in base_elo:
                     power_matrix[abbr] = {
                         'Elo': base_elo[abbr],
-                        'Off_EPA': round(off_epa.get(abbr, 0.0), 3),
-                        'Def_EPA': round(def_epa.get(abbr, 0.0), 3),
+                        'Off_Pass_EPA': round(off_pass_epa.get(abbr, 0.0), 3),
+                        'Def_Pass_EPA': round(def_pass_epa.get(abbr, 0.0), 3),
+                        'Off_Rush_EPA': round(off_rush_epa.get(abbr, 0.0), 3),
+                        'Def_Rush_EPA': round(def_rush_epa.get(abbr, 0.0), 3),
                         'Name': row['team_name']
                     }
         except Exception as e:
-            # Added the exact error message to the UI so we can diagnose future issues
             st.error(f"Live EPA sync failed ({e}). Using static baseline.")
             # Fallback block if nflfastR is down
             for index, row in teams.iterrows():
                 abbr = row['team_abbr']
                 if abbr in base_elo:
                     power_matrix[abbr] = {
-                        'Elo': base_elo[abbr], 'Off_EPA': 0.0, 'Def_EPA': 0.0, 'Name': row['team_name']
+                        'Elo': base_elo[abbr], 'Off_Pass_EPA': 0.0, 'Def_Pass_EPA': 0.0, 'Off_Rush_EPA': 0.0, 'Def_Rush_EPA': 0.0, 'Name': row['team_name']
                     }
                     
         return power_matrix
@@ -713,9 +716,9 @@ elif sport == "🏈 NFL Football":
     full_team_names = [data['Name'] for abbr, data in power_matrix.items()]
     name_to_abbr = {data['Name']: abbr for abbr, data in power_matrix.items()}
 
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([1, 1.2])
     with col1:
-        st.subheader("Manual Matchup Override")
+        st.subheader("Matchup Override & Situational Matrix")
         away_team_name = st.selectbox("Away Team:", sorted(full_team_names), index=3)
         home_team_name = st.selectbox("Home Team:", sorted(full_team_names), index=15)
         
@@ -723,29 +726,63 @@ elif sport == "🏈 NFL Football":
         home_abbr = name_to_abbr[home_team_name]
         
         st.markdown("---")
-        st.write("**Real-Time Rating Calibration**")
+        st.write("### 🛠️ Situational Modifiers")
         
+        with st.expander("Quarterback Injury Downgrade (Skeleton Key)"):
+            st.caption("Instantly dock a team's power rating if their starting QB is out.")
+            away_qb_penalty = st.slider(f"{away_abbr} QB Out Penalty (Elo Points):", 0, 150, 0, step=5)
+            home_qb_penalty = st.slider(f"{home_abbr} QB Out Penalty (Elo Points):", 0, 150, 0, step=5)
+
+        with st.expander("Rest Disparity Edge"):
+            st.caption("Apply an Elo modifier based on extra rest (e.g. Off a Bye) or short rest (e.g. Thursday Night Game).")
+            rest_adv = st.selectbox("Rest Advantage:", ["No Disparity", f"{away_abbr} +3 Days Rest", f"{away_abbr} +7 Days Rest (Bye)", f"{home_abbr} +3 Days Rest", f"{home_abbr} +7 Days Rest (Bye)"])
+            rest_modifier = 0
+            if rest_adv == f"{away_abbr} +3 Days Rest": rest_modifier = -20 # Subtracted from Home
+            elif rest_adv == f"{away_abbr} +7 Days Rest (Bye)": rest_modifier = -35
+            elif rest_adv == f"{home_abbr} +3 Days Rest": rest_modifier = 20
+            elif rest_adv == f"{home_abbr} +7 Days Rest (Bye)": rest_modifier = 35
+
+        with st.expander("Cross-Country Travel Penalty"):
+            st.caption("Apply a 15-point penalty to a West Coast team traveling East for an early kickoff.")
+            travel_penalty_away = st.checkbox(f"Apply Travel Penalty to {away_abbr}")
+        
+        st.markdown("---")
+        st.write("### ⚙️ Engine Calibration")
         away_elo = st.slider(f"{away_abbr} Base Elo:", 1200, 1800, power_matrix[away_abbr]['Elo'], step=5)
-        away_epa = st.slider(f"{away_abbr} Net EPA/Play (Offense - Defense):", -0.50, 0.50, float(power_matrix[away_abbr]['Off_EPA'] - power_matrix[away_abbr]['Def_EPA']), step=0.01)
-        
         home_elo = st.slider(f"{home_abbr} Base Elo:", 1200, 1800, power_matrix[home_abbr]['Elo'], step=5)
-        home_epa = st.slider(f"{home_abbr} Net EPA/Play (Offense - Defense):", -0.50, 0.50, float(power_matrix[home_abbr]['Off_EPA'] - power_matrix[home_abbr]['Def_EPA']), step=0.01)
-        
         hfa = st.number_input("Home Field Advantage (Elo Points):", value=45, step=5)
 
     with col2:
         st.subheader("Simulated Prediction Outputs")
         
-        # Calculate Adjusted Power: Elo + (Net EPA * 400 scale factor)
-        adj_power_away = away_elo + (away_epa * 400)
-        adj_power_home = home_elo + (home_epa * 400) + hfa
+        # Pull Split EPA metrics
+        a_off_pass, a_def_pass = power_matrix[away_abbr]['Off_Pass_EPA'], power_matrix[away_abbr]['Def_Pass_EPA']
+        a_off_rush, a_def_rush = power_matrix[away_abbr]['Off_Rush_EPA'], power_matrix[away_abbr]['Def_Rush_EPA']
+        h_off_pass, h_def_pass = power_matrix[home_abbr]['Off_Pass_EPA'], power_matrix[home_abbr]['Def_Pass_EPA']
+        h_off_rush, h_def_rush = power_matrix[home_abbr]['Off_Rush_EPA'], power_matrix[home_abbr]['Def_Rush_EPA']
+
+        # Calculate True Matchup Advantages
+        away_pass_edge = a_off_pass - h_def_pass
+        away_rush_edge = a_off_rush - h_def_rush
+        home_pass_edge = h_off_pass - a_def_pass
+        home_rush_edge = h_off_rush - a_def_rush
+
+        # Weighted calculation (65% Pass / 35% Rush)
+        away_net_epa = (0.65 * away_pass_edge) + (0.35 * away_rush_edge)
+        home_net_epa = (0.65 * home_pass_edge) + (0.35 * home_rush_edge)
+
+        # Apply Situational Modifiers
+        travel_mod = 15 if travel_penalty_away else 0
+        
+        # Calculate Adjusted Power: Elo + Situational + (Net EPA * 400 scale factor)
+        adj_power_away = away_elo - away_qb_penalty - travel_mod + (away_net_epa * 400)
+        adj_power_home = home_elo - home_qb_penalty + hfa + rest_modifier + (home_net_epa * 400)
         
         # Convert difference to Win Probability
-        # P(Win) = 1 / (1 + 10^((Opp_Power - Team_Power)/400))
         prob_away = 1 / (1 + 10 ** ((adj_power_home - adj_power_away) / 400))
         prob_home = 1.0 - prob_away
         
-        st.caption(f"*Engine Calibration: {away_abbr} (Adj Power: {adj_power_away:.1f}) vs {home_abbr} (Adj Power: {adj_power_home:.1f})*")
+        st.write(f"Engine Calibration: {away_abbr} (Adj Power: **{adj_power_away:.1f}**) vs {home_abbr} (Adj Power: **{adj_power_home:.1f}**)")
         st.write("")
         
         res_c1, res_c2 = st.columns(2)
@@ -764,8 +801,11 @@ elif sport == "🏈 NFL Football":
         v_prob_a = calculate_implied_prob(away_odds_input)
         v_prob_h = calculate_implied_prob(home_odds_input)
         
-        st.write(f"Vegas Implied {away_abbr}: **{v_prob_a:.1%}** | Model Edge: **{(prob_away - v_prob_a):.1%}**")
-        st.write(f"Vegas Implied {home_abbr}: **{v_prob_h:.1%}** | Model Edge: **{(prob_home - v_prob_h):.1%}**")
+        edge_a = prob_away - v_prob_a
+        edge_h = prob_home - v_prob_h
+        
+        st.write(f"Vegas Implied {away_abbr}: **{v_prob_a:.1%}** | Model Edge: **{edge_a:.1%}**")
+        st.write(f"Vegas Implied {home_abbr}: **{v_prob_h:.1%}** | Model Edge: **{edge_h:.1%}**")
         
         if st.button("💾 Log NFL Matchup to Google Sheets"):
             date_str = get_local_date_str() 
