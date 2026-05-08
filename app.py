@@ -1318,7 +1318,7 @@ elif sport == "🎓 NCAA Football":
             'Average Power 4 Team': 70.0, 'Average Group of 5 Team': 50.0, 'FCS Opponent': 25.0
         }
         
-        api_key = os.environ.get('CFBD_API_KEY')
+        api_key = "Vr3Re2aE24dbpcoaHu7x9YB2EEmBUJ+0FvfY+B8LCotPPbv9uD46hrBFvx0vZKVG"
         if not api_key:
             return fallback_matrix, False
 
