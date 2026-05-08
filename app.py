@@ -671,8 +671,11 @@ elif sport == "🏈 NFL Football":
         
         try:
             # 2. Fetch Live Season Play-by-Play Data (Fast parquet download)
-            current_year = 2026
-            pbp = nfl.import_pbp_data([current_year])
+            # Logic: If it's before September, use last year's data as the baseline.
+            now = datetime.now()
+            target_year = now.year if now.month >= 9 else now.year - 1
+            
+            pbp = nfl.import_pbp_data([target_year])
             
             # Filter to regular season passing/rushing plays only
             pbp = pbp[(pbp['season_type'] == 'REG') & (pbp['play_type'].isin(['pass', 'run']))]
@@ -692,7 +695,8 @@ elif sport == "🏈 NFL Football":
                         'Name': row['team_name']
                     }
         except Exception as e:
-            st.error("Live EPA sync failed. Using static baseline.")
+            # Added the exact error message to the UI so we can diagnose future issues
+            st.error(f"Live EPA sync failed ({e}). Using static baseline.")
             # Fallback block if nflfastR is down
             for index, row in teams.iterrows():
                 abbr = row['team_abbr']
