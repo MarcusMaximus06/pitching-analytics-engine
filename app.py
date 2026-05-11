@@ -10,7 +10,7 @@ import os
 import plotly.graph_objects as go
 import nfl_data_py as nfl
 import re
-from utils import get_local_date_str, clean_name, calculate_implied_prob
+from utils import get_local_date_str, clean_name, calculate_implied_prob, get_confidence_tier
 from google_sheets import get_google_client, get_google_worksheet
 from config import APP_TITLE, APP_PAGE_TITLE, CACHE_TTL_SHORT, CACHE_TTL_ODDS, CACHE_TTL_STATS, CACHE_TTL_DAILY, DEFAULT_SIMULATION_SIZE
 from constants import MLB_PARK_FACTORS
