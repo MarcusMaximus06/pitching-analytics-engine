@@ -114,7 +114,7 @@ if sport == "⚾ MLB Baseball":
         'Toronto Blue Jays': 101, 'Washington Nationals': 101
     }
 
-    @st.cache_data(ttl=3600)
+    @st.cache_data(ttl=900)
     def get_live_odds():
         api_key = os.environ.get('ODDS_API_KEY')
         if not api_key: return {}
@@ -1276,7 +1276,7 @@ elif sport == "🏈 NFL Football":
             st.error(f"NFL Auto-Grader Error: {e}")
             return -1
 
-    @st.cache_data(ttl=3600)
+    @st.cache_data(ttl=900)
     def get_nfl_live_odds():
         api_key = os.environ.get('ODDS_API_KEY')
         if not api_key: return {}
@@ -1599,7 +1599,7 @@ elif sport == "🎓 NCAA Football":
             st.error(f"NCAAF Auto-Grader Error: {e}")
             return -1
 
-    @st.cache_data(ttl=3600)
+    @st.cache_data(ttl=900)
     def get_ncaaf_live_odds():
         api_key = os.environ.get('ODDS_API_KEY')
         if not api_key: return {}
