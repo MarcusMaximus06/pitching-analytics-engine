@@ -367,6 +367,20 @@ if sport == "⚾ MLB Baseball":
                 model_away_prob, model_home_prob = a_wins / 10000, h_wins / 10000
                 
                 st.write(f"Final Expected Runs: {away_t} **{away_lam:.2f}** | {home_t} **{home_lam:.2f}**")
+
+                recent_form_data = calculate_recent_form_adjustment(
+                    a_rs_g,
+                    a_rs_g,
+                    a_ra_g,
+                    a_ra_g
+                )
+                
+                st.caption(
+                    f"Recent Form Blend Active | "
+                    f"Offense: {recent_form_data['offense']:.2f} | "
+                    f"Defense: {recent_form_data['defense']:.2f}"
+                )
+                    
                 
                 res_c1, res_c2 = st.columns(2)
 
