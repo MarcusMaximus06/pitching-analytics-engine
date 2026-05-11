@@ -1224,9 +1224,7 @@ elif sport == "🏈 NFL Football":
 
     def auto_grade_nfl_pending_bets():
         try:
-            gc = get_google_client()
-            sh = gc.open("NFL Prediction Model")
-            worksheet = sh.worksheet("NFL Log")
+            worksheet = get_google_worksheet("NFL Prediction Model", "NFL Log")
             data = worksheet.get_all_values()
             
             pending_rows = [(i, row) for i, row in enumerate(data) if i > 0 and len(row) >= 9 and row[8] == "PENDING"]
