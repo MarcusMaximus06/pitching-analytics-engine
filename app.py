@@ -621,20 +621,15 @@ elif sport == "🥎 NCAA Softball":
     st.markdown("### 📊 Log5 Win Probability Tracker & Schedule Difficulty Calibration")
     st.caption("*Scrapes live WarrenNolan standings, team pitching ERAs, and SOS Ranks to simulate 7-inning matchups and auto-grade past bets.*")
     
-   def log_softball_to_sheets(row_data):
-    try:
-        worksheet = get_google_worksheet("MLB Daily Prediction Model", "Softball Log")
-
-    except gspread.exceptions.WorksheetNotFound:
-        gc = get_google_client()
-        sh = gc.open("MLB Daily Prediction Model")
-        worksheet = sh.add_worksheet(title="Softball Log", rows="1000", cols="10")
-                
+       def log_softball_to_sheets(row_data):
+        try:
+            worksheet = get_google_worksheet("MLB Daily Prediction Model", "Softball Log")
+            
             values = worksheet.get_all_values()
             if not values or len(values) == 0:
                 worksheet.append_row(["Date", "Away Team", "Home Team", "Away SP ERA", "Home SP ERA", "Model Away %", "Model Home %", "Predicted Winner", "Result"])
                 values = [["Date", "Away Team", "Home Team"]]
-                
+            
             target_date = row_data[0]
             target_away = row_data[1]
             target_home = row_data[2]
@@ -642,11 +637,23 @@ elif sport == "🥎 NCAA Softball":
             for row in values[1:]:
                 if len(row) >= 3 and row[0] == target_date and row[1] == target_away and row[2] == target_home:
                     return "DUPLICATE"
-                    
+            
             worksheet.append_row(row_data)
             return "SUCCESS"
+            
+        except gspread.exceptions.WorksheetNotFound:
+            try:
+                gc = get_google_client()
+                sh = gc.open("MLB Daily Prediction Model")
+                worksheet = sh.add_worksheet(title="Softball Log", rows="1000", cols="10")
+                return "SUCCESS"
+            except Exception as e:
+                st.error(f"Softball Sheet Log Error: {e}")
+                return "ERROR"
+                
         except Exception as e:
-            if "200" in str(e): return "SUCCESS"
+            if "200" in str(e):
+                return "SUCCESS"
             st.error(f"Softball Sheet Log Error: {e}")
             return "ERROR"
 
