@@ -12,7 +12,7 @@ import nfl_data_py as nfl
 import re
 from utils import get_local_date_str, clean_name, calculate_implied_prob
 from google_sheets import get_google_client, get_google_worksheet
-from config import APP_TITLE, APP_PAGE_TITLE
+from config import APP_TITLE, APP_PAGE_TITLE, CACHE_TTL_SHORT, CACHE_TTL_ODDS, CACHE_TTL_STATS, CACHE_TTL_DAILY
 
 # --- CLOUDFLARE BYPASS V9: THE SMART TLS SPOOFER ---
 original_get = requests.get
@@ -73,7 +73,7 @@ if sport == "⚾ MLB Baseball":
         'Toronto Blue Jays': 101, 'Washington Nationals': 101
     }
 
-    @st.cache_data(ttl=900)
+    @st.cache_data(ttl=CACHE_TTL_ODDS)
     def get_live_odds():
         api_key = os.environ.get('ODDS_API_KEY')
         if not api_key: return {}
@@ -92,7 +92,7 @@ if sport == "⚾ MLB Baseball":
             return odds_dict
         except Exception: return {}
 
-    @st.cache_data(ttl=7200)
+    @st.cache_data(ttl=CACHE_TTL_STATS)
     def fetch_mlb_api_data():
         team_data = {}
         pitcher_data = {}
@@ -170,7 +170,7 @@ if sport == "⚾ MLB Baseball":
             return "SUCCESS"
         except Exception: 
             return "ERROR"
-    @st.cache_data(ttl=300)
+    @st.cache_data(ttl=CACHE_TTL_SHORT)
     def get_master_log_stats():
         try:
             worksheet = get_google_worksheet("MLB Daily Prediction Model", "Master Log")
@@ -485,7 +485,7 @@ if sport == "⚾ MLB Baseball":
                             st.warning("Add players to both sides to analyze a trade.")
 
         elif fantasy_sport == "🏈 NFL Sleeper PPR Trade Engine":
-            @st.cache_data(ttl=86400)
+            @st.cache_data(ttl=CACHE_TTL_DAILY)
             def load_sleeper_players():
                 try:
                     url = "https://api.sleeper.app/v1/players/nfl"
@@ -621,7 +621,7 @@ elif sport == "🥎 NCAA Softball":
                 return "SUCCESS"
             st.error(f"Softball Sheet Log Error: {e}")
             return "ERROR"
-    @st.cache_data(ttl=300)
+    @st.cache_data(ttl=CACHE_TTL_SHORT)
     def get_softball_log_stats():
         try:
             worksheet = get_google_worksheet("MLB Daily Prediction Model", "Softball Log")
@@ -1238,7 +1238,7 @@ elif sport == "🏈 NFL Football":
             st.error(f"NFL Auto-Grader Error: {e}")
             return -1
 
-    @st.cache_data(ttl=900)
+    @st.cache_data(ttl=CACHE_TTL_ODDS)
     def get_nfl_live_odds():
         api_key = os.environ.get('ODDS_API_KEY')
         if not api_key: return {}
@@ -1257,7 +1257,7 @@ elif sport == "🏈 NFL Football":
             return odds_dict
         except Exception: return {}
 
-    @st.cache_data(ttl=86400) 
+    @st.cache_data(ttl=CACHE_TTL_DAILY) 
     def generate_baseline_power_matrix():
         base_elo = {
             'ARI': 1480, 'ATL': 1495, 'BAL': 1650, 'BUF': 1640, 'CAR': 1350, 'CHI': 1490, 'CIN': 1560, 'CLE': 1540,
@@ -1561,7 +1561,7 @@ elif sport == "🎓 NCAA Football":
             st.error(f"NCAAF Auto-Grader Error: {e}")
             return -1
 
-    @st.cache_data(ttl=900)
+    @st.cache_data(ttl=CACHE_TTL_ODDS)
     def get_ncaaf_live_odds():
         api_key = os.environ.get('ODDS_API_KEY')
         if not api_key: return {}
