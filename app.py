@@ -12,6 +12,7 @@ import nfl_data_py as nfl
 import re
 from utils import get_local_date_str, clean_name, calculate_implied_prob
 from google_sheets import get_google_client, get_google_worksheet
+from config import APP_TITLE, APP_PAGE_TITLE
 
 # --- CLOUDFLARE BYPASS V9: THE SMART TLS SPOOFER ---
 original_get = requests.get
@@ -45,12 +46,12 @@ def custom_request(self, method, url, **kwargs):
 requests.Session.request = custom_request
 # ---------------------------------------
 
-st.set_page_config(page_title="Apex Multi-Sport Analytics", layout="wide")
+st.set_page_config(page_title=APP_PAGE_TITLE, layout="wide")
 
 # ==========================================================
 # MASTER SPORT ROUTER
 # ==========================================================
-st.sidebar.title("Apex Quantitative Syndicate")
+st.sidebar.title(APP_TITLE)
 sport = st.sidebar.selectbox("Select Sport Engine:", ["⚾ MLB Baseball", "🥎 NCAA Softball", "🏈 NFL Football", "🎓 NCAA Football"])
 st.sidebar.markdown("---")
 
