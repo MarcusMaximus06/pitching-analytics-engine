@@ -368,17 +368,24 @@ if sport == "⚾ MLB Baseball":
                 
                 st.write(f"Final Expected Runs: {away_t} **{away_lam:.2f}** | {home_t} **{home_lam:.2f}**")
 
-                recent_form_data = calculate_recent_form_adjustment(
+                away_recent_form = calculate_recent_form_adjustment(
                     a_rs_g,
                     a_rs_g,
                     a_ra_g,
                     a_ra_g
                 )
                 
+                home_recent_form = calculate_recent_form_adjustment(
+                    h_rs_g,
+                    h_rs_g,
+                    h_ra_g,
+                    h_ra_g
+                )
+                
                 st.caption(
                     f"Recent Form Blend Active | "
-                    f"Offense: {recent_form_data['offense']:.2f} | "
-                    f"Defense: {recent_form_data['defense']:.2f}"
+                    f"{away_t}: Off {away_recent_form['offense']:.2f}, Def {away_recent_form['defense']:.2f} | "
+                    f"{home_t}: Off {home_recent_form['offense']:.2f}, Def {home_recent_form['defense']:.2f}"
                 )
                     
                 
