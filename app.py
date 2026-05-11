@@ -324,6 +324,7 @@ if sport == "⚾ MLB Baseball":
         st.subheader("Manual Matchup Override")
         st.caption("Standalone Engine: Calculates probability edges using native MLB API logic and visualizes Poisson distributions.")
         st.caption(f"Simulation Size: {DEFAULT_SIMULATION_SIZE:,} runs per team")
+        st.caption(f"Minimum Actionable Edge: {MIN_ACTIONABLE_EDGE:.1%}")
         
         MLB_TEAMS = sorted(list(PARK_FACTORS.keys()))
         
