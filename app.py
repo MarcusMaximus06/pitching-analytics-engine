@@ -1196,9 +1196,7 @@ elif sport == "🏈 NFL Football":
 
     def get_nfl_log_stats():
         try:
-            gc = get_google_client()
-            sh = gc.open("NFL Prediction Model")
-            worksheet = sh.worksheet("NFL Log")
+            worksheet = get_google_worksheet("NFL Prediction Model", "NFL Log")
             data = worksheet.get_all_values()
             if len(data) <= 1: return 0, 0.0, 0.0
             total_games, model_wins, vegas_wins = 0, 0, 0
