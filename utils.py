@@ -34,3 +34,13 @@ def calculate_implied_prob(american_odds):
         return 100 / (american_odds + 100)
     else:
         return abs(american_odds) / (abs(american_odds) + 100)
+
+def get_confidence_tier(model_prob, implied_prob):
+    edge = model_prob - implied_prob
+
+    if edge >= 0.07:
+        return "High"
+    elif edge >= 0.03:
+        return "Medium"
+    else:
+        return "Low"
