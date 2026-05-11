@@ -274,8 +274,8 @@ if sport == "⚾ MLB Baseball":
     if page == "🎲 Monte Carlo Simulation Engine":
         st.title("🎲 Monte Carlo Simulation Engine")
         st.markdown("### 📊 Live Model Log & Automation")
-        st.caption(f"Last Updated: {last_updated}")
         tot_games, mod_acc, veg_acc, last_updated = get_master_log_stats()
+        st.caption(f"Last Updated: {last_updated}")
         col1, col2, col3, col4 = st.columns([2, 2, 2, 3])
         with col1: st.metric(label="Total Graded Games", value=tot_games)
         with col2: st.metric(label="Model Accuracy", value=f"{mod_acc:.1f}%")
