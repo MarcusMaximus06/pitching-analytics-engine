@@ -659,9 +659,7 @@ elif sport == "🥎 NCAA Softball":
 
     def get_softball_log_stats():
         try:
-            gc = get_google_client()
-            sh = gc.open("MLB Daily Prediction Model")
-            worksheet = sh.worksheet("Softball Log")
+            worksheet = get_google_worksheet("MLB Daily Prediction Model", "Softball Log")
             data = worksheet.get_all_values()
             if len(data) <= 1: return 0, 0.0
             total_games, model_wins = 0, 0
