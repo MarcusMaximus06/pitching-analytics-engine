@@ -216,9 +216,7 @@ if sport == "⚾ MLB Baseball":
 
     def get_master_log_stats():
         try:
-            gc = get_google_client()
-            sh = gc.open("MLB Daily Prediction Model")
-            worksheet = sh.worksheet("Master Log")
+            worksheet = get_google_worksheet("MLB Daily Prediction Model", "Master Log")
             data = worksheet.get_all_values()
             if len(data) <= 1: return 0, 0.0, 0.0
             total_games, model_wins, vegas_wins = 0, 0, 0
