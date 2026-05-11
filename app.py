@@ -291,7 +291,7 @@ if sport == "⚾ MLB Baseball":
                                 away_lam = ((a_rs_g + h_run_prevention) / 2) * p_factor
                                 home_lam = ((h_rs_g + a_run_prevention) / 2) * p_factor
                                 
-                                sim_a = np.random.poisson(away_lam, 10000)
+                                sim_a = np.random.poisson(away_lam, 5000)
                                 sim_h = np.random.poisson(home_lam, 10000)
                                 a_wins = np.sum(sim_a > sim_h) + (np.sum(sim_a == sim_h) / 2)
                                 h_wins = 10000 - a_wins
@@ -357,7 +357,7 @@ if sport == "⚾ MLB Baseball":
                 away_lam = ((a_rs_g + h_run_prevention) / 2) * p_factor
                 home_lam = ((h_rs_g + a_run_prevention) / 2) * p_factor
 
-                sim_a = np.random.poisson(away_lam, 10000)
+                sim_a = np.random.poisson(away_lam, 5000)
                 sim_h = np.random.poisson(home_lam, 10000)
                 a_wins = np.sum(sim_a > sim_h) + (np.sum(sim_a == sim_h) / 2)
                 h_wins = 10000 - a_wins
