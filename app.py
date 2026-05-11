@@ -192,7 +192,7 @@ if sport == "⚾ MLB Baseball":
 
     def log_to_google_sheets(row_data):
         try:
-            worksheet = get_google_worksheet("MLB Daily Prediction Model", sheet_name)
+            worksheet = get_google_worksheet("MLB Daily Prediction Model", "Master Log")
             values = worksheet.get_all_values()
             
             if not values or len(values) == 0:
