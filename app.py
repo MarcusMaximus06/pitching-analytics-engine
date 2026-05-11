@@ -216,6 +216,7 @@ if sport == "⚾ MLB Baseball":
         try:
             worksheet = get_google_worksheet("MLB Daily Prediction Model", "Master Log")
             data = worksheet.get_all_values()
+            last_updated = datetime.now().strftime("%Y-%m-%d %I:%M %p")
             if len(data) <= 1: return 0, 0.0, 0.0
             total_games, model_wins, vegas_wins = 0, 0, 0
             for row in data[1:]:
@@ -232,8 +233,9 @@ if sport == "⚾ MLB Baseball":
                         if actual_winner == vegas_pick: vegas_wins += 1
             mod_acc = (model_wins / total_games * 100) if total_games > 0 else 0.0
             veg_acc = (vegas_wins / total_games * 100) if total_games > 0 else 0.0
-            return total_games, mod_acc, veg_acc
-        except Exception: return 0, 0.0, 0.0
+            return total_games, mod_acc, veg_acc, last_updated
+        except Exception:
+            return 0, 0.0, 0.0, "Unavailable"
 
     def auto_grade_pending_bets():
         try:
@@ -272,7 +274,8 @@ if sport == "⚾ MLB Baseball":
     if page == "🎲 Monte Carlo Simulation Engine":
         st.title("🎲 Monte Carlo Simulation Engine")
         st.markdown("### 📊 Live Model Log & Automation")
-        tot_games, mod_acc, veg_acc = get_master_log_stats()
+        st.caption(f"Last Updated: {last_updated}")
+        tot_games, mod_acc, veg_acc, last_updated = get_master_log_stats()
         col1, col2, col3, col4 = st.columns([2, 2, 2, 3])
         with col1: st.metric(label="Total Graded Games", value=tot_games)
         with col2: st.metric(label="Model Accuracy", value=f"{mod_acc:.1f}%")
