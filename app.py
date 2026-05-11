@@ -373,6 +373,7 @@ if sport == "⚾ MLB Baseball":
         
                 with res_c2:
                     st.metric(f"{home_t} Win Prob", f"{model_home_prob:.1%}")
+                    st.caption("Confidence tiers appear in the automated slate table when actionable edges are found.")
 
                 # --- PLOTLY VISUALIZATION BLOCK ---
                 st.markdown("#### Simulation Distribution Analysis")
