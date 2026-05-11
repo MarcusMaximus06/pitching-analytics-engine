@@ -12,7 +12,7 @@ import nfl_data_py as nfl
 import re
 from utils import get_local_date_str, clean_name, calculate_implied_prob
 from google_sheets import get_google_client, get_google_worksheet
-from config import APP_TITLE, APP_PAGE_TITLE, CACHE_TTL_SHORT, CACHE_TTL_ODDS, CACHE_TTL_STATS, CACHE_TTL_DAILY
+from config import APP_TITLE, APP_PAGE_TITLE, CACHE_TTL_SHORT, CACHE_TTL_ODDS, CACHE_TTL_STATS, CACHE_TTL_DAILY, DEFAULT_SIMULATION_SIZE
 from constants import MLB_PARK_FACTORS
 
 # --- CLOUDFLARE BYPASS V9: THE SMART TLS SPOOFER ---
@@ -291,8 +291,8 @@ if sport == "⚾ MLB Baseball":
                                 away_lam = ((a_rs_g + h_run_prevention) / 2) * p_factor
                                 home_lam = ((h_rs_g + a_run_prevention) / 2) * p_factor
                                 
-                                sim_a = np.random.poisson(away_lam, 5000)
-                                sim_h = np.random.poisson(home_lam, 5000)
+                                sim_a = np.random.poisson(away_lam, DEFAULT_SIMULATION_SIZE)
+                                sim_h = np.random.poisson(home_lam, DEFAULT_SIMULATION_SIZE)
                                 a_wins = np.sum(sim_a > sim_h) + (np.sum(sim_a == sim_h) / 2)
                                 h_wins = 10000 - a_wins
                                 model_away_prob, model_home_prob = a_wins / 10000, h_wins / 10000
@@ -357,8 +357,8 @@ if sport == "⚾ MLB Baseball":
                 away_lam = ((a_rs_g + h_run_prevention) / 2) * p_factor
                 home_lam = ((h_rs_g + a_run_prevention) / 2) * p_factor
 
-                sim_a = np.random.poisson(away_lam, 5000)
-                sim_h = np.random.poisson(home_lam, 5000)
+                sim_a = np.random.poisson(away_lam, DEFAULT_SIMULATION_SIZE)
+                sim_h = np.random.poisson(home_lam, DEFAULT_SIMULATION_SIZE)
                 a_wins = np.sum(sim_a > sim_h) + (np.sum(sim_a == sim_h) / 2)
                 h_wins = 10000 - a_wins
                 model_away_prob, model_home_prob = a_wins / 10000, h_wins / 10000
