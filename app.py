@@ -12,7 +12,7 @@ import nfl_data_py as nfl
 import re
 from utils import get_local_date_str, clean_name, calculate_implied_prob, get_confidence_tier
 from google_sheets import get_google_client, get_google_worksheet
-from config import APP_TITLE, APP_PAGE_TITLE, CACHE_TTL_SHORT, CACHE_TTL_ODDS, CACHE_TTL_STATS, CACHE_TTL_DAILY, DEFAULT_SIMULATION_SIZE
+from config import APP_TITLE, APP_PAGE_TITLE, CACHE_TTL_SHORT, CACHE_TTL_ODDS, CACHE_TTL_STATS, CACHE_TTL_DAILY, DEFAULT_SIMULATION_SIZE, MIN_ACTIONABLE_EDGE
 from constants import MLB_PARK_FACTORS
 
 # --- CLOUDFLARE BYPASS V9: THE SMART TLS SPOOFER ---
@@ -300,8 +300,8 @@ if sport == "⚾ MLB Baseball":
                                 v_h_prob = calculate_implied_prob(h_ml)
                                 
                                 action_taken = "No Edge"
-                                if model_away_prob > v_a_prob + 0.03: action_taken = away_t
-                                if model_home_prob > v_h_prob + 0.03: action_taken = home_t
+                                if model_away_prob > v_a_prob + MIN_ACTIONABLE_EDGE: action_taken = away_t
+                                if model_home_prob > v_h_prob + MIN_ACTIONABLE_EDGE: action_taken = home_t
                                 
                                 if action_taken != "No Edge":
                                     row_data = [date_str, away_t, home_t, a_ml, h_ml, f"{model_away_prob:.1%}", f"{model_home_prob:.1%}", action_taken, confidence_tier, "PENDING"]
