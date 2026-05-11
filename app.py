@@ -63,7 +63,7 @@ if sport == "⚾ MLB Baseball":
     page = st.sidebar.radio("Select Engine:", ["🎲 Monte Carlo Simulation Engine", "🏆 Fantasy Sports Predictor"])
     st.sidebar.markdown("---")
 
-    park_factors = MLB_PARK_FACTORS
+    PARK_FACTORS = MLB_PARK_FACTORS
 
     @st.cache_data(ttl=CACHE_TTL_ODDS)
     def get_live_odds():
