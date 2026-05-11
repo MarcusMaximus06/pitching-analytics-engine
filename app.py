@@ -304,7 +304,7 @@ if sport == "⚾ MLB Baseball":
                                 if model_home_prob > v_h_prob + 0.03: action_taken = home_t
                                 
                                 if action_taken != "No Edge":
-                                    row_data = [date_str, away_t, home_t, a_ml, h_ml, f"{model_away_prob:.1%}", f"{model_home_prob:.1%}", action_taken, "PENDING"]
+                                    row_data = [date_str, away_t, home_t, a_ml, h_ml, f"{model_away_prob:.1%}", f"{model_home_prob:.1%}", action_taken, confidence_tier, "PENDING"]
                                     log_status = log_to_google_sheets(row_data)
                                     if log_status in ["SUCCESS", "DUPLICATE"]:
                                         slate_logs.append(row_data)
@@ -315,7 +315,7 @@ if sport == "⚾ MLB Baseball":
                         if slate_logs:
                             st.success(f"✅ Successfully processed {len(slate_logs)} actionable edges! ({new_logs_count} new entries logged to Sheets)")
                             st.markdown("#### 📅 Today's MLB Actionable Edges")
-                            df_display = pd.DataFrame(slate_logs, columns=["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Status"])
+                            df_display = pd.DataFrame(slate_logs, columns=["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Confidence", "Status"])
                             st.dataframe(df_display, use_container_width=True, hide_index=True)
                         else:
                             st.info("No actionable edges found on today's MLB slate.")
@@ -1380,7 +1380,7 @@ elif sport == "🏈 NFL Football":
                         
                 if slate_logs:
                     st.success(f"✅ Successfully processed {len(slate_logs)} actionable edges! ({new_logs_count} new entries logged to Sheets)")
-                    df_display = pd.DataFrame(slate_logs, columns=["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Status"])
+                    df_display = pd.DataFrame(slate_logs, columns=["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Confidence", "Status"])
                     st.dataframe(df_display, use_container_width=True, hide_index=True)
                 else:
                     st.info("No actionable edges found on the active NFL slate.")
@@ -1736,7 +1736,7 @@ elif sport == "🎓 NCAA Football":
                         
                 if slate_logs:
                     st.success(f"✅ Successfully processed {len(slate_logs)} actionable edges! ({new_logs_count} new entries logged to Sheets)")
-                    df_display = pd.DataFrame(slate_logs, columns=["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Status"])
+                    df_display = pd.DataFrame(slate_logs, columns=["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Confidence", "Status"])
                     st.dataframe(df_display, use_container_width=True, hide_index=True)
                 else:
                     st.info("No actionable edges found on the active NCAAF slate.")
