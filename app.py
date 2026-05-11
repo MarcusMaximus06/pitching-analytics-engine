@@ -12,15 +12,7 @@ import nfl_data_py as nfl
 import re
 from utils import get_local_date_str, clean_name, calculate_implied_prob
 from google_sheets import get_google_client, get_google_worksheet
-# ========================================
-# GLOBAL CONFIG
-# ========================================
 
-GOOGLE_CREDS_PATH = (
-    '/etc/secrets/google_credentials.json'
-    if os.path.exists('/etc/secrets/google_credentials.json')
-    else 'google_credentials.json'
-)
 # --- CLOUDFLARE BYPASS V9: THE SMART TLS SPOOFER ---
 original_get = requests.get
 def custom_get(url, **kwargs):
@@ -52,19 +44,6 @@ def custom_request(self, method, url, **kwargs):
         return original_request(self, method, url, **kwargs)
 requests.Session.request = custom_request
 # ---------------------------------------
-
-# ========================================
-# GOOGLE SHEETS CONNECTION
-# ========================================
-
-@st.cache_resource
-def get_google_client():
-    return gspread.service_account(filename=GOOGLE_CREDS_PATH)
-
-def get_google_worksheet(spreadsheet_name, worksheet_name):
-    gc = get_google_client()
-    sh = gc.open(spreadsheet_name)
-    return sh.worksheet(worksheet_name)
 
 st.set_page_config(page_title="Apex Multi-Sport Analytics", layout="wide")
 
