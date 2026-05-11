@@ -13,6 +13,7 @@ import re
 from utils import get_local_date_str, clean_name, calculate_implied_prob
 from google_sheets import get_google_client, get_google_worksheet
 from config import APP_TITLE, APP_PAGE_TITLE, CACHE_TTL_SHORT, CACHE_TTL_ODDS, CACHE_TTL_STATS, CACHE_TTL_DAILY
+from constants import MLB_PARK_FACTORS
 
 # --- CLOUDFLARE BYPASS V9: THE SMART TLS SPOOFER ---
 original_get = requests.get
@@ -62,16 +63,7 @@ if sport == "⚾ MLB Baseball":
     page = st.sidebar.radio("Select Engine:", ["🎲 Monte Carlo Simulation Engine", "🏆 Fantasy Sports Predictor"])
     st.sidebar.markdown("---")
 
-    PARK_FACTORS = {
-        'Arizona Diamondbacks': 102, 'Atlanta Braves': 100, 'Baltimore Orioles': 98, 'Boston Red Sox': 107, 
-        'Chicago Cubs': 102, 'Chicago White Sox': 102, 'Cincinnati Reds': 111, 'Cleveland Guardians': 101, 
-        'Colorado Rockies': 114, 'Detroit Tigers': 98, 'Houston Astros': 96, 'Kansas City Royals': 101, 
-        'Los Angeles Angels': 97, 'Los Angeles Dodgers': 97, 'Miami Marlins': 95, 'Milwaukee Brewers': 101, 
-        'Minnesota Twins': 99, 'New York Mets': 99, 'New York Yankees': 99, 'Oakland Athletics': 94, 
-        'Philadelphia Phillies': 102, 'Pittsburgh Pirates': 98, 'San Diego Padres': 94, 'San Francisco Giants': 95, 
-        'Seattle Mariners': 92, 'St. Louis Cardinals': 97, 'Tampa Bay Rays': 93, 'Texas Rangers': 103, 
-        'Toronto Blue Jays': 101, 'Washington Nationals': 101
-    }
+    park_factors = MLB_PARK_FACTORS
 
     @st.cache_data(ttl=CACHE_TTL_ODDS)
     def get_live_odds():
