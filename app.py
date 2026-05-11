@@ -211,7 +211,7 @@ if sport == "⚾ MLB Baseball":
             return "SUCCESS"
         except Exception: 
             return "ERROR"
-
+    @st.cache_data(ttl=300)
     def get_master_log_stats():
         try:
             worksheet = get_google_worksheet("MLB Daily Prediction Model", "Master Log")
@@ -656,7 +656,7 @@ elif sport == "🥎 NCAA Softball":
                 return "SUCCESS"
             st.error(f"Softball Sheet Log Error: {e}")
             return "ERROR"
-
+    @st.cache_data(ttl=300)
     def get_softball_log_stats():
         try:
             worksheet = get_google_worksheet("MLB Daily Prediction Model", "Softball Log")
