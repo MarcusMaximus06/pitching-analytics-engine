@@ -621,7 +621,7 @@ elif sport == "🥎 NCAA Softball":
     st.markdown("### 📊 Log5 Win Probability Tracker & Schedule Difficulty Calibration")
     st.caption("*Scrapes live WarrenNolan standings, team pitching ERAs, and SOS Ranks to simulate 7-inning matchups and auto-grade past bets.*")
     
-       def log_softball_to_sheets(row_data):
+    def log_softball_to_sheets(row_data):
         try:
             worksheet = get_google_worksheet("MLB Daily Prediction Model", "Softball Log")
             
