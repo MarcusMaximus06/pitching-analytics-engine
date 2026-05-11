@@ -327,7 +327,7 @@ if sport == "⚾ MLB Baseball":
         st.caption(f"Simulation Size: {DEFAULT_SIMULATION_SIZE:,} runs per team")
         st.caption(f"Minimum Actionable Edge: {MIN_ACTIONABLE_EDGE:.1%}")
         if st.checkbox("Show MLB Team Stats Debug"):
-    st.write(team_stats)
+        st.write(team_stats)
     
         MLB_TEAMS = sorted(list(PARK_FACTORS.keys()))
         
