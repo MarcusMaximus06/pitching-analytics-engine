@@ -1,0 +1,14 @@
+APP_TITLE = "Hag Labs"
+APP_PAGE_TITLE = "Hag Labs Sports Analytics"
+
+MLB_SPREADSHEET_NAME = "MLB Daily Prediction Model"
+MLB_MASTER_LOG_TAB = "Master Log"
+SOFTBALL_LOG_TAB = "Softball Log"
+
+NFL_SPREADSHEET_NAME = "NFL Prediction Model"
+NFL_LOG_TAB = "NFL Log"
+
+CACHE_TTL_SHORT = 300
+CACHE_TTL_ODDS = 900
+CACHE_TTL_STATS = 7200
+CACHE_TTL_DAILY = 86400
