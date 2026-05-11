@@ -624,9 +624,8 @@ elif sport == "🥎 NCAA Softball":
     def log_softball_to_sheets(row_data):
         try:
             gc = get_google_client()
-            sh = gc.open("MLB Daily Prediction Model")
-            try:
-                worksheet = sh.worksheet("Softball Log")
+try:
+    worksheet = get_google_worksheet("MLB Daily Prediction Model", "Softball Log")
             except gspread.exceptions.WorksheetNotFound:
                 worksheet = sh.add_worksheet(title="Softball Log", rows="1000", cols="10")
                 
