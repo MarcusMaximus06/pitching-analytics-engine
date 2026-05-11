@@ -775,9 +775,7 @@ elif sport == "🥎 NCAA Softball":
 
     def auto_grade_softball_pending_bets(valid_teams):
         try:
-            gc = get_google_client()
-            sh = gc.open("MLB Daily Prediction Model")
-            worksheet = sh.worksheet("Softball Log")
+            worksheet = get_google_worksheet("MLB Daily Prediction Model", "Softball Log")
             data = worksheet.get_all_values()
             
             pending_rows = [(i, row) for i, row in enumerate(data) if i > 0 and len(row) >= 9 and row[8] == "PENDING"]
