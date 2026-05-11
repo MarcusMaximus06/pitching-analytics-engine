@@ -51,6 +51,13 @@ def custom_request(self, method, url, **kwargs):
 requests.Session.request = custom_request
 # ---------------------------------------
 
+# ========================================
+# GOOGLE SHEETS CONNECTION
+# ========================================
+
+@st.cache_resource
+def get_google_client():
+    return gspread.service_account(filename=GOOGLE_CREDS_PATH)
 st.set_page_config(page_title="Apex Multi-Sport Analytics", layout="wide")
 
 # ==========================================================
@@ -179,7 +186,7 @@ if sport == "⚾ MLB Baseball":
 
     def log_to_google_sheets(row_data):
         try:
-            gc = gspread.service_account(filename=GOOGLE_CREDS_PATH)
+            gc = get_google_client()
             sh = gc.open("MLB Daily Prediction Model")
             worksheet = sh.worksheet("Master Log")
             values = worksheet.get_all_values()
@@ -203,7 +210,7 @@ if sport == "⚾ MLB Baseball":
 
     def get_master_log_stats():
         try:
-            gc = gspread.service_account(filename=GOOGLE_CREDS_PATH)
+            gc = get_google_client()
             sh = gc.open("MLB Daily Prediction Model")
             worksheet = sh.worksheet("Master Log")
             data = worksheet.get_all_values()
@@ -228,7 +235,7 @@ if sport == "⚾ MLB Baseball":
 
     def auto_grade_pending_bets():
         try:
-            gc = gspread.service_account(filename=GOOGLE_CREDS_PATH)
+            gc = get_google_client()
             sh = gc.open("MLB Daily Prediction Model")
             worksheet = sh.worksheet("Master Log")
             data = worksheet.get_all_values()
@@ -616,7 +623,7 @@ elif sport == "🥎 NCAA Softball":
     
     def log_softball_to_sheets(row_data):
         try:
-            gc = gspread.service_account(filename=GOOGLE_CREDS_PATH)
+            gc = get_google_client()
             sh = gc.open("MLB Daily Prediction Model")
             try:
                 worksheet = sh.worksheet("Softball Log")
@@ -645,7 +652,7 @@ elif sport == "🥎 NCAA Softball":
 
     def get_softball_log_stats():
         try:
-            gc = gspread.service_account(filename=GOOGLE_CREDS_PATH)
+            gc = get_google_client()
             sh = gc.open("MLB Daily Prediction Model")
             worksheet = sh.worksheet("Softball Log")
             data = worksheet.get_all_values()
@@ -763,7 +770,7 @@ elif sport == "🥎 NCAA Softball":
 
     def auto_grade_softball_pending_bets(valid_teams):
         try:
-            gc = gspread.service_account(filename=GOOGLE_CREDS_PATH)
+            gc = get_google_client()
             sh = gc.open("MLB Daily Prediction Model")
             worksheet = sh.worksheet("Softball Log")
             data = worksheet.get_all_values()
@@ -1159,7 +1166,7 @@ elif sport == "🏈 NFL Football":
     
     def log_nfl_to_sheets(row_data):
         try:
-            gc = gspread.service_account(filename=GOOGLE_CREDS_PATH)
+            gc = get_google_client()
             sh = gc.open("NFL Prediction Model")
             try:
                 worksheet = sh.worksheet("NFL Log")
@@ -1186,7 +1193,7 @@ elif sport == "🏈 NFL Football":
 
     def get_nfl_log_stats():
         try:
-            gc = gspread.service_account(filename=GOOGLE_CREDS_PATH)
+            gc = get_google_client()
             sh = gc.open("NFL Prediction Model")
             worksheet = sh.worksheet("NFL Log")
             data = worksheet.get_all_values()
@@ -1216,7 +1223,7 @@ elif sport == "🏈 NFL Football":
 
     def auto_grade_nfl_pending_bets():
         try:
-            gc = gspread.service_account(filename=GOOGLE_CREDS_PATH)
+            gc = get_google_client()
             sh = gc.open("NFL Prediction Model")
             worksheet = sh.worksheet("NFL Log")
             data = worksheet.get_all_values()
@@ -1482,7 +1489,7 @@ elif sport == "🎓 NCAA Football":
 
     def log_ncaaf_to_sheets(row_data):
         try:
-            gc = gspread.service_account(filename=GOOGLE_CREDS_PATH)
+            gc = get_google_client()
             sh = gc.open("NCAAF Prediction Model") 
             try:
                 worksheet = sh.worksheet("NCAAF Log")
@@ -1509,7 +1516,7 @@ elif sport == "🎓 NCAA Football":
 
     def get_ncaaf_log_stats():
         try:
-            gc = gspread.service_account(filename=GOOGLE_CREDS_PATH)
+            gc = get_google_client()
             sh = gc.open("NCAAF Prediction Model")
             worksheet = sh.worksheet("NCAAF Log")
             data = worksheet.get_all_values()
@@ -1539,7 +1546,7 @@ elif sport == "🎓 NCAA Football":
 
     def auto_grade_ncaaf_pending_bets():
         try:
-            gc = gspread.service_account(filename=GOOGLE_CREDS_PATH)
+            gc = get_google_client()
             sh = gc.open("NCAAF Prediction Model")
             worksheet = sh.worksheet("NCAAF Log")
             data = worksheet.get_all_values()
