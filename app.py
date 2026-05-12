@@ -299,6 +299,15 @@ if sport == "⚾ MLB Baseball":
                                 a_sp_fip = pitcher_stats.get(away_sp, {}).get('FIP', a_ra_g)
                                 h_sp_fip = pitcher_stats.get(home_sp, {}).get('FIP', h_ra_g)
 
+                                away_pitcher_id = pitcher_stats.get(away_sp, {}).get("ID")
+                                home_pitcher_id = pitcher_stats.get(home_sp, {}).get("ID")
+                                
+                                a_recent_era = fetch_pitcher_recent_era(away_pitcher_id) or a_sp_fip
+                                h_recent_era = fetch_pitcher_recent_era(home_pitcher_id) or h_sp_fip
+                                
+                                a_sp_fip = blend_pitcher_form(a_sp_fip, a_recent_era)
+                                h_sp_fip = blend_pitcher_form(h_sp_fip, h_recent_era)
+                                
                                 a_run_prevention = (a_sp_fip * 0.60) + (a_ra_g * 0.40)
                                 h_run_prevention = (h_sp_fip * 0.60) + (h_ra_g * 0.40)
                                 p_factor = PARK_FACTORS.get(home_t, 100) / 100
