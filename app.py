@@ -381,6 +381,7 @@ if sport == "⚾ MLB Baseball":
                                 if action_taken != "No Edge":
                                     row_data = [date_str, away_t, home_t, a_ml, h_ml, f"{model_away_prob:.1%}", f"{model_home_prob:.1%}", action_taken, confidence_tier, "PENDING"]
                                     log_status = log_to_google_sheets(row_data)
+                                    st.write("DEBUG LOG STATUS:", log_status, row_data)
                                     if log_status in ["SUCCESS", "DUPLICATE"]:
                                         slate_logs.append(row_data)
                                         if log_status == "SUCCESS":
