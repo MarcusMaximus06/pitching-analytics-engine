@@ -357,6 +357,10 @@ if sport == "⚾ MLB Baseball":
 
                                 away_edge = model_away_prob - v_a_prob
                                 home_edge = model_home_prob - v_h_prob
+
+                                st.write(
+                                f"DEBUG EDGE: {away_t} {away_edge:.2%} | {home_t} {home_edge:.2%}"
+                            )
                                 
                                 if away_edge > home_edge and away_edge > MIN_ACTIONABLE_EDGE:
                                     action_taken = away_t
