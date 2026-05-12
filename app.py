@@ -160,7 +160,6 @@ if sport == "⚾ MLB Baseball":
         try:
             gc = get_google_client()
             sh = gc.open("MLB Daily Prediction Model")
-            st.write("DEBUG SHEET TABS:", [ws.title for ws in sh.worksheets()])
             worksheet = sh.worksheet("MLB Log V2")
             values = worksheet.get_all_values()
             
@@ -359,17 +358,11 @@ if sport == "⚾ MLB Baseball":
                                 away_edge = model_away_prob - v_a_prob
                                 home_edge = model_home_prob - v_h_prob
                                 
-                                st.write(
-                                    f"DEBUG EDGE: {away_t} {away_edge:.2%} | {home_t} {home_edge:.2%}"
-                                )
-                                
                                 if away_edge > MIN_ACTIONABLE_EDGE and away_edge > home_edge:
                                     action_taken = away_t
                                 
                                 elif home_edge > MIN_ACTIONABLE_EDGE and home_edge > away_edge:
                                     action_taken = home_t
-                                
-                                st.write("DEBUG ACTION:", action_taken)
                                 
                                 confidence_tier = "Low"
 
@@ -382,7 +375,6 @@ if sport == "⚾ MLB Baseball":
                                 if action_taken != "No Edge":
                                     row_data = [date_str, away_t, home_t, a_ml, h_ml, f"{model_away_prob:.1%}", f"{model_home_prob:.1%}", action_taken, confidence_tier, "PENDING"]
                                     log_status = log_to_google_sheets(row_data)
-                                    st.write("DEBUG LOG STATUS:", log_status, row_data)
                                     if log_status in ["SUCCESS", "DUPLICATE"]:
                                         slate_logs.append(row_data)
                                         if log_status == "SUCCESS":
