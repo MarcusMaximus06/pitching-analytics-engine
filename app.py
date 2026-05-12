@@ -261,6 +261,9 @@ if sport == "⚾ MLB Baseball":
         with st.spinner('Syncing native MLB API data and live odds...'):
             team_stats, pitcher_stats, _ = fetch_mlb_api_data()
             live_odds = get_live_odds()
+
+            st.write("DEBUG LIVE ODDS COUNT:", len(live_odds))
+            st.write("DEBUG LIVE ODDS DATA:", live_odds)
             
             if not team_stats:
                 st.warning("⚠️ Could not establish connection to MLB Stats API.")
