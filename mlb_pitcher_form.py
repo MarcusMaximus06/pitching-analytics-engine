@@ -2,20 +2,16 @@ import requests
 
 
 def blend_pitcher_form(season_fip, recent_era, recent_weight=0.35):
-    """
-    Blend season-long pitcher skill with recent performance.
-    Lower is better.
-    """
-
-    return (
-        (season_fip * (1 - recent_weight)) +
-        (recent_era * recent_weight)
-    )
+    return (season_fip * (1 - recent_weight)) + (recent_era * recent_weight)
 
 
 def fetch_pitcher_recent_era(pitcher_name):
     """
-    Placeholder for future pitcher recent-form API integration.
+    Attempts to estimate recent pitcher form.
+    Current safe version returns None unless future ID mapping is added.
     """
+
+    if not pitcher_name or pitcher_name == "League Average SP" or pitcher_name == "Unknown":
+        return None
 
     return None
