@@ -356,7 +356,10 @@ if sport == "⚾ MLB Baseball":
             debug_recent = fetch_recent_mlb_team_form("Los Angeles Dodgers")
 
             st.write(debug_recent)
-    
+
+        if st.checkbox("Show Pitcher ID Debug"):
+            st.write(pitcher_stats.get("Shohei Ohtani"))
+            
         MLB_TEAMS = sorted(list(PARK_FACTORS.keys()))
         
         col_a, col_b = st.columns(2)
