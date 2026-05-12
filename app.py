@@ -337,6 +337,11 @@ if sport == "⚾ MLB Baseball":
         st.caption(f"Minimum Actionable Edge: {MIN_ACTIONABLE_EDGE:.1%}")
         if st.checkbox("Show MLB Team Stats Debug"):
             st.write(team_stats)
+
+        if st.checkbox("Show Recent Form Debug"):
+            debug_recent = fetch_recent_mlb_team_form("Los Angeles Dodgers")
+
+            st.write(debug_recent)
     
         MLB_TEAMS = sorted(list(PARK_FACTORS.keys()))
         
