@@ -357,16 +357,18 @@ if sport == "⚾ MLB Baseball":
 
                                 away_edge = model_away_prob - v_a_prob
                                 home_edge = model_home_prob - v_h_prob
-
-                                st.write(
-                                f"DEBUG EDGE: {away_t} {away_edge:.2%} | {home_t} {home_edge:.2%}"
-                            )
                                 
-                                if away_edge > home_edge and away_edge > MIN_ACTIONABLE_EDGE:
+                                st.write(
+                                    f"DEBUG EDGE: {away_t} {away_edge:.2%} | {home_t} {home_edge:.2%}"
+                                )
+                                
+                                if away_edge > MIN_ACTIONABLE_EDGE and away_edge > home_edge:
                                     action_taken = away_t
                                 
-                                elif home_edge > away_edge and home_edge > MIN_ACTIONABLE_EDGE:
+                                elif home_edge > MIN_ACTIONABLE_EDGE and home_edge > away_edge:
                                     action_taken = home_t
+                                
+                                st.write("DEBUG ACTION:", action_taken)
                                 
                                 confidence_tier = "Low"
 
