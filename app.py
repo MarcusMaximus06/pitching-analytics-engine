@@ -305,6 +305,14 @@ if sport == "⚾ MLB Baseball":
                                 if model_away_prob > v_a_prob + MIN_ACTIONABLE_EDGE: action_taken = away_t
                                 if model_home_prob > v_h_prob + MIN_ACTIONABLE_EDGE: action_taken = home_t
                                 
+                                confidence_tier = "Low"
+
+                                if action_taken == away_t:
+                                    confidence_tier = get_confidence_tier(model_away_prob, v_a_prob)
+                                
+                                elif action_taken == home_t:
+                                    confidence_tier = get_confidence_tier(model_home_prob, v_h_prob)
+                                
                                 if action_taken != "No Edge":
                                     row_data = [date_str, away_t, home_t, a_ml, h_ml, f"{model_away_prob:.1%}", f"{model_home_prob:.1%}", action_taken, confidence_tier, "PENDING"]
                                     log_status = log_to_google_sheets(row_data)
@@ -1395,6 +1403,15 @@ elif sport == "🏈 NFL Football":
                             action_taken = "No Edge"
                             if prob_away > v_prob_a + 0.03: action_taken = away_team_name
                             if prob_home > v_prob_h + 0.03: action_taken = home_team_name
+
+                            confidence_tier = "Low"
+
+                            if action_taken == away_t:
+                                confidence_tier = get_confidence_tier(model_away_prob, v_a_prob)
+                            
+                            elif action_taken == home_t:
+                                confidence_tier = get_confidence_tier(model_home_prob, v_h_prob)
+                        
                             
                             if action_taken != "No Edge":
                                 row_data = [date_str, away_team_name, home_team_name, a_ml, h_ml, f"{prob_away:.1%}", f"{prob_home:.1%}", action_taken, "PENDING"]
