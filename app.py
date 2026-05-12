@@ -280,6 +280,40 @@ if sport == "⚾ MLB Baseball":
         
             with d4:
                 st.metric("Accuracy", f"{v2_acc:.1f}%")
+
+        st.markdown("#### Accuracy by Confidence Tier")
+
+        tier_stats = {
+            "High": {"wins": 0, "losses": 0},
+            "Medium": {"wins": 0, "losses": 0},
+            "Low": {"wins": 0, "losses": 0}
+        }
+        
+        for row in data[1:]:
+            if len(row) >= 10:
+                confidence = row[8].strip()
+                result = row[9].strip().upper()
+        
+                if confidence in tier_stats and result in ["WIN", "LOSS"]:
+                    if result == "WIN":
+                        tier_stats[confidence]["wins"] += 1
+                    else:
+                        tier_stats[confidence]["losses"] += 1
+        
+        tier_cols = st.columns(3)
+        
+        for idx, tier in enumerate(["High", "Medium", "Low"]):
+            wins = tier_stats[tier]["wins"]
+            losses = tier_stats[tier]["losses"]
+            total = wins + losses
+            acc = (wins / total * 100) if total > 0 else 0
+        
+            with tier_cols[idx]:
+                st.metric(
+                    f"{tier} Confidence",
+                    f"{acc:.1f}%",
+                    f"{wins}-{losses}"
+                )
         
         except Exception as e:
             st.warning(f"Dashboard unavailable: {e}")
