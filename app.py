@@ -372,9 +372,6 @@ if sport == "⚾ MLB Baseball":
 
                 a_run_prevention = (a_sp_fip * 0.60) + (a_ra_g * 0.40)
                 h_run_prevention = (h_sp_fip * 0.60) + (h_ra_g * 0.40)
-                
-                away_lam = ((away_recent_form["offense"] + home_recent_form["defense"]) / 2) * p_factor
-                home_lam = ((home_recent_form["offense"] + away_recent_form["defense"]) / 2) * p_factor
 
                 sim_a = np.random.poisson(away_lam, DEFAULT_SIMULATION_SIZE)
                 sim_h = np.random.poisson(home_lam, DEFAULT_SIMULATION_SIZE)
@@ -417,6 +414,8 @@ if sport == "⚾ MLB Baseball":
                     f"{home_t}: Off {home_recent_form['offense']:.2f}, Def {home_recent_form['defense']:.2f}"
                 )
                     
+                    away_lam = ((away_recent_form["offense"] + home_recent_form["defense"]) / 2) * p_factor
+                    home_lam = ((home_recent_form["offense"] + away_recent_form["defense"]) / 2) * p_factor
                 
                 res_c1, res_c2 = st.columns(2)
 
