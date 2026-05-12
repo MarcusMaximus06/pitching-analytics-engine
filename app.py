@@ -160,6 +160,7 @@ if sport == "⚾ MLB Baseball":
         try:
             gc = get_google_client()
             sh = gc.open("MLB Daily Prediction Model")
+            st.write("DEBUG SHEET TABS:", [ws.title for ws in sh.worksheets()])
             worksheet = sh.worksheet("MLB Log V2")
             values = worksheet.get_all_values()
             
