@@ -14,6 +14,7 @@ from utils import get_local_date_str, clean_name, calculate_implied_prob, get_co
 from google_sheets import get_google_client, get_google_worksheet
 from config import APP_TITLE, APP_PAGE_TITLE, CACHE_TTL_SHORT, CACHE_TTL_ODDS, CACHE_TTL_STATS, CACHE_TTL_DAILY, DEFAULT_SIMULATION_SIZE, MIN_ACTIONABLE_EDGE
 from constants import MLB_PARK_FACTORS
+from mlb_recent_form import calculate_recent_form_adjustment, fetch_recent_mlb_team_form
 from mlb_pitcher_form import blend_pitcher_form, fetch_pitcher_recent_era
 
 # --- CLOUDFLARE BYPASS V9: THE SMART TLS SPOOFER ---
