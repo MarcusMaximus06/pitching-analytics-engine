@@ -243,6 +243,46 @@ if sport == "⚾ MLB Baseball":
     if page == "🎲 Monte Carlo Simulation Engine":
         st.title("🎲 Monte Carlo Simulation Engine")
         st.markdown("### 📊 Live Model Log & Automation")
+        st.subheader("📈 MLB V2 Performance Dashboard")
+
+        v2_total = 0
+        v2_wins = 0
+        v2_losses = 0
+        
+        try:
+            worksheet = get_google_worksheet("MLB Daily Prediction Model", "MLB Log V2")
+            data = worksheet.get_all_values()
+        
+            for row in data[1:]:
+                if len(row) >= 10:
+                    result = row[9].strip().upper()
+        
+                    if result in ["WIN", "LOSS"]:
+                        v2_total += 1
+        
+                        if result == "WIN":
+                            v2_wins += 1
+                        else:
+                            v2_losses += 1
+        
+            v2_acc = (v2_wins / v2_total * 100) if v2_total > 0 else 0
+        
+            d1, d2, d3, d4 = st.columns(4)
+        
+            with d1:
+                st.metric("Graded Games", v2_total)
+        
+            with d2:
+                st.metric("Wins", v2_wins)
+        
+            with d3:
+                st.metric("Losses", v2_losses)
+        
+            with d4:
+                st.metric("Accuracy", f"{v2_acc:.1f}%")
+        
+        except Exception as e:
+            st.warning(f"Dashboard unavailable: {e}")
         tot_games, mod_acc, veg_acc, last_updated = get_master_log_stats()
         st.caption(f"Last Updated: {last_updated}")
         if st.button("🔄 Refresh MLB Cached Data"):
