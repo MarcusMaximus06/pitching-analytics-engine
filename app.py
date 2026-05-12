@@ -125,7 +125,7 @@ if sport == "⚾ MLB Baseball":
                 else:
                     fip = 4.20 
                 
-                pitcher_data[p_name] = {'FIP': fip, 'Team': t_name, 'Ipitcher_data[p_name] = {
+                pitcher_data[p_name] = {
                     'ID': p['player'].get('id'),
                     'FIP': fip,
                     'Team': t_name,
