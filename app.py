@@ -387,8 +387,11 @@ if sport == "⚾ MLB Baseball":
                 a_sp_fip = pitcher_stats.get(away_sp, {}).get('FIP', a_ra_g) if away_sp != "League Average SP" else a_ra_g
                 h_sp_fip = pitcher_stats.get(home_sp, {}).get('FIP', h_ra_g) if home_sp != "League Average SP" else h_ra_g
 
-                a_recent_era = fetch_pitcher_recent_era(away_sp) or a_sp_fip
-                h_recent_era = fetch_pitcher_recent_era(home_sp) or h_sp_fip
+                away_pitcher_id = pitcher_stats.get(away_sp, {}).get("ID")
+                home_pitcher_id = pitcher_stats.get(home_sp, {}).get("ID")
+                
+                a_recent_era = fetch_pitcher_recent_era(away_pitcher_id) or a_sp_fip
+                h_recent_era = fetch_pitcher_recent_era(home_pitcher_id) or h_sp_fip
                 
                 a_sp_fip = blend_pitcher_form(a_sp_fip, a_recent_era)
                 h_sp_fip = blend_pitcher_form(h_sp_fip, h_recent_era)
