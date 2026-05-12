@@ -354,8 +354,15 @@ if sport == "⚾ MLB Baseball":
                                 v_h_prob = calculate_implied_prob(h_ml)
                                 
                                 action_taken = "No Edge"
-                                if model_away_prob > v_a_prob + MIN_ACTIONABLE_EDGE: action_taken = away_t
-                                if model_home_prob > v_h_prob + MIN_ACTIONABLE_EDGE: action_taken = home_t
+
+                                away_edge = model_away_prob - v_a_prob
+                                home_edge = model_home_prob - v_h_prob
+                                
+                                if away_edge > home_edge and away_edge > MIN_ACTIONABLE_EDGE:
+                                    action_taken = away_t
+                                
+                                elif home_edge > away_edge and home_edge > MIN_ACTIONABLE_EDGE:
+                                    action_taken = home_t
                                 
                                 confidence_tier = "Low"
 
