@@ -175,7 +175,8 @@ if sport == "⚾ MLB Baseball":
                     
             worksheet.append_row(row_data)
             return "SUCCESS"
-        except Exception: 
+        except Exception as e:
+            st.error(f"Google Sheets Log Error: {e}")
             return "ERROR"
     @st.cache_data(ttl=CACHE_TTL_SHORT)
     def get_master_log_stats():
@@ -261,9 +262,6 @@ if sport == "⚾ MLB Baseball":
         with st.spinner('Syncing native MLB API data and live odds...'):
             team_stats, pitcher_stats, _ = fetch_mlb_api_data()
             live_odds = get_live_odds()
-
-            st.write("DEBUG LIVE ODDS COUNT:", len(live_odds))
-            st.write("DEBUG LIVE ODDS DATA:", live_odds)
             
             if not team_stats:
                 st.warning("⚠️ Could not establish connection to MLB Stats API.")
