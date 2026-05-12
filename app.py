@@ -385,18 +385,30 @@ if sport == "⚾ MLB Baseball":
                 
                 st.write(f"Final Expected Runs: {away_t} **{away_lam:.2f}** | {home_t} **{home_lam:.2f}**")
 
+                away_recent_raw = fetch_recent_mlb_team_form(away_t) or {
+                    "recent_rs_per_g": a_rs_g,
+                    "recent_ra_per_g": a_ra_g,
+                    "recent_games": 0
+                }
+                
+                home_recent_raw = fetch_recent_mlb_team_form(home_t) or {
+                    "recent_rs_per_g": h_rs_g,
+                    "recent_ra_per_g": h_ra_g,
+                    "recent_games": 0
+                }
+                
                 away_recent_form = calculate_recent_form_adjustment(
                     a_rs_g,
-                    a_rs_g,
+                    away_recent_raw["recent_rs_per_g"],
                     a_ra_g,
-                    a_ra_g
+                    away_recent_raw["recent_ra_per_g"]
                 )
                 
                 home_recent_form = calculate_recent_form_adjustment(
                     h_rs_g,
-                    h_rs_g,
+                    home_recent_raw["recent_rs_per_g"],
                     h_ra_g,
-                    h_ra_g
+                    home_recent_raw["recent_ra_per_g"]
                 )
                 
                 st.caption(
