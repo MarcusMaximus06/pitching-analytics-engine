@@ -396,6 +396,12 @@ if sport == "⚾ MLB Baseball":
                 a_sp_fip = blend_pitcher_form(a_sp_fip, a_recent_era)
                 h_sp_fip = blend_pitcher_form(h_sp_fip, h_recent_era)
 
+                st.caption(
+                    f"Pitcher Form Blend | "
+                    f"{away_sp}: Recent ERA {a_recent_era:.2f} | "
+                    f"{home_sp}: Recent ERA {h_recent_era:.2f}"
+                )
+                
                 a_run_prevention = (a_sp_fip * 0.60) + (a_ra_g * 0.40)
                 h_run_prevention = (h_sp_fip * 0.60) + (h_ra_g * 0.40)
                 
