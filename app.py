@@ -1849,6 +1849,8 @@ elif sport == "🎓 NCAA Football":
                 new_logs_count = 0
                 date_str = get_local_date_str()
                 
+                st.write(f"Debug: Found {len(live_odds)} games with live odds.")
+                
                 for game_key, odds in live_odds.items():
                     try:
                         away_odds_name, home_odds_name = game_key.split(" @ ")
