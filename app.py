@@ -295,8 +295,9 @@ if sport == "⚾ MLB Baseball":
                                 sim_a = np.random.poisson(away_lam, DEFAULT_SIMULATION_SIZE)
                                 sim_h = np.random.poisson(home_lam, DEFAULT_SIMULATION_SIZE)
                                 a_wins = np.sum(sim_a > sim_h) + (np.sum(sim_a == sim_h) / 2)
-                                h_wins = 10000 - a_wins
-                                model_away_prob, model_home_prob = a_wins / 10000, h_wins / 10000
+                                h_wins = DEFAULT_SIMULATION_SIZE - a_wins
+                                model_away_prob = a_wins / DEFAULT_SIMULATION_SIZE
+                                model_home_prob = h_wins / DEFAULT_SIMULATION_SIZE
                                 v_a_prob = calculate_implied_prob(a_ml)
                                 v_h_prob = calculate_implied_prob(h_ml)
                                 
@@ -365,8 +366,9 @@ if sport == "⚾ MLB Baseball":
                 sim_a = np.random.poisson(away_lam, DEFAULT_SIMULATION_SIZE)
                 sim_h = np.random.poisson(home_lam, DEFAULT_SIMULATION_SIZE)
                 a_wins = np.sum(sim_a > sim_h) + (np.sum(sim_a == sim_h) / 2)
-                h_wins = 10000 - a_wins
-                model_away_prob, model_home_prob = a_wins / 10000, h_wins / 10000
+                h_wins = DEFAULT_SIMULATION_SIZE - a_wins
+                model_away_prob = a_wins / DEFAULT_SIMULATION_SIZE
+                model_home_prob = h_wins / DEFAULT_SIMULATION_SIZE
                 
                 st.write(f"Final Expected Runs: {away_t} **{away_lam:.2f}** | {home_t} **{home_lam:.2f}**")
 
