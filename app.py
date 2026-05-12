@@ -148,7 +148,7 @@ if sport == "⚾ MLB Baseball":
             values = worksheet.get_all_values()
             
             if not values or len(values) == 0:
-                worksheet.append_row(["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Result"])
+                worksheet.append_row(["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Confidence", "Result"])
                 values = [["Date", "Away Team", "Home Team"]]
             
             target_date = row_data[0]
