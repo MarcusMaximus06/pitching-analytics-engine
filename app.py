@@ -125,7 +125,20 @@ if sport == "⚾ MLB Baseball":
                 else:
                     fip = 4.20 
                 
-                pitcher_data[p_name] = {'FIP': fip, 'Team': t_name, 'IP': ip, 'K': s.get('strikeOuts', 0), 'W': s.get('wins',0), 'SV': s.get('saves',0), 'L': s.get('losses',0), 'ER': s.get('earnedRuns',0), 'H': s.get('hits',0), 'BB': s.get('baseOnBalls',0), 'G': s.get('gamesPlayed', 1) or 1}
+                pitcher_data[p_name] = {'FIP': fip, 'Team': t_name, 'Ipitcher_data[p_name] = {
+                    'ID': p['player'].get('id'),
+                    'FIP': fip,
+                    'Team': t_name,
+                    'IP': ip,
+                    'K': s.get('strikeOuts', 0),
+                    'W': s.get('wins', 0),
+                    'SV': s.get('saves', 0),
+                    'L': s.get('losses', 0),
+                    'ER': s.get('earnedRuns', 0),
+                    'H': s.get('hits', 0),
+                    'BB': s.get('baseOnBalls', 0),
+                    'G': s.get('gamesPlayed', 1) or 1
+                }
 
             h_url = "https://statsapi.mlb.com/api/v1/stats?stats=season&group=hitting&playerPool=ALL&season=2026&limit=1500"
             h_resp = requests.get(h_url, timeout=15).json()
