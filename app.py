@@ -983,16 +983,21 @@ if sport == "⚾ MLB Baseball":
                 with pc4:
                     st.metric("BB/9", f"{p_bb9:.1f}")
     
-                st.markdown("### 📊 Pitching Snapshot")
-    
-                st.caption("Strikeout Ability")
-                st.progress(min(1.0, p_k9 / 12))
-    
-                st.caption("Run Prevention")
-                st.progress(max(0.0, 1 - (p_fip / 6)))
-    
-                st.caption("Control")
-                st.progress(max(0.0, 1 - (p_bb9 / 5)))
+                st.markdown("### 📊 Savant-Style Pitching Percentiles")
+
+                strikeout_pct = min(99, max(1, int((p_k9 / 12) * 100)))
+                run_prev_pct = min(99, max(1, int((1 - (p_fip / 6)) * 100)))
+                control_pct = min(99, max(1, int((1 - (p_bb9 / 5)) * 100)))
+                workload_pct = min(99, max(1, int((p_ip / 180) * 100)))
+                
+                def percentile_bar(label, pct):
+                    st.markdown(f"**{label}: {pct}th percentile**")
+                    st.progress(pct / 100)
+                
+                percentile_bar("Strikeout Ability", strikeout_pct)
+                percentile_bar("Run Prevention", run_prev_pct)
+                percentile_bar("Control", control_pct)
+                percentile_bar("Workload", workload_pct)
     
                 st.markdown("### 🧾 Season Stats")
                 st.dataframe(pd.DataFrame([p_data]), use_container_width=True)
