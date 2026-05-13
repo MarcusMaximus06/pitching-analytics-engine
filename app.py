@@ -248,6 +248,8 @@ if sport == "⚾ MLB Baseball":
         v2_total = 0
         v2_wins = 0
         v2_losses = 0
+        vegas_wins = 0
+        vegas_losses = 0
         
         try:
             worksheet = get_google_worksheet("MLB Daily Prediction Model", "MLB Log V2")
@@ -259,27 +261,52 @@ if sport == "⚾ MLB Baseball":
         
                     if result in ["WIN", "LOSS"]:
                         v2_total += 1
-        
+                    
                         if result == "WIN":
                             v2_wins += 1
                         else:
                             v2_losses += 1
+                    
+                        away_team = row[1]
+                        home_team = row[2]
+                        away_ml = int(row[3])
+                        home_ml = int(row[4])
+                        model_pick = row[7]
+
+                        vegas_pick = away_team if away_ml < home_ml else home_team
+                        actual_winner = model_pick if result == "WIN" else (away_team if model_pick == home_team else home_team)
+                    
+                        if vegas_pick == actual_winner:
+                            vegas_wins += 1
+                        else:
+                            vegas_losses += 1
+
+    vegas_pick = away_team if away_ml < home_ml else home_team
+    actual_winner = model_pick if result == "WIN" else (away_team if model_pick == home_team else home_team)
+
+    if vegas_pick == actual_winner:
+        vegas_wins += 1
+    else:
+        vegas_losses += 1
         
             v2_acc = (v2_wins / v2_total * 100) if v2_total > 0 else 0
+            vegas_total = vegas_wins + vegas_losses
+            vegas_acc = (vegas_wins / vegas_total * 100) if vegas_total > 0 else 0
+            hag_advantage = v2_acc - vegas_acc
         
             d1, d2, d3, d4 = st.columns(4)
-        
+
             with d1:
                 st.metric("Graded Games", v2_total)
-        
+            
             with d2:
-                st.metric("Wins", v2_wins)
-        
+                st.metric("Hag Labs Accuracy", f"{v2_acc:.1f}%")
+            
             with d3:
-                st.metric("Losses", v2_losses)
-        
+                st.metric("Vegas Accuracy", f"{vegas_acc:.1f}%")
+            
             with d4:
-                st.metric("Accuracy", f"{v2_acc:.1f}%")
+                st.metric("Hag Labs Advantage", f"{hag_advantage:+.1f}%")
 
             st.markdown("#### Accuracy by Confidence Tier")
     
