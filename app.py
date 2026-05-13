@@ -910,7 +910,7 @@ if sport == "⚾ MLB Baseball":
             if p_data:
                 
                 player_id = p_data.get("ID")
-                headshot_url = f"https://img.mlbstatic.com/mlb-photos/image/upload/w_180,q_100/v1/people/{player_id}/headshot/current.png" if player_id else None
+                headshot_url = f"https://midfield.mlbstatic.com/v1/people/{player_id}/spots/180" if player_id else None
             
                 if headshot_url:
                     st.image(headshot_url, width=140)
@@ -959,7 +959,7 @@ if sport == "⚾ MLB Baseball":
             if h_data:
 
                 player_id = h_data.get("ID")
-                headshot_url = f"https://img.mlbstatic.com/mlb-photos/image/upload/w_180,q_100/v1/people/{player_id}/headshot/current.png" if player_id else None
+                headshot_url = f"https://midfield.mlbstatic.com/v1/people/{player_id}/spots/180" if player_id else None
             
                 if headshot_url:
                     st.image(headshot_url, width=140)
