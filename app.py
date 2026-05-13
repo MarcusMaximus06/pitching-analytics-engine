@@ -155,6 +155,7 @@ if sport == "⚾ MLB Baseball":
                 s = h['stat']
                 hitter_data[h_name] = {
                     'ID': h['player'].get('id'),
+                    'Team': h.get('team', {}).get('name', 'Free Agent'),
                     'H': s.get('hits',0), '2B': s.get('doubles',0), '3B': s.get('triples',0), 'HR': s.get('homeRuns',0),
                     'BB': s.get('baseOnBalls',0), 'R': s.get('runs',0), 'RBI': s.get('rbi',0), 'SB': s.get('stolenBases',0),
                     'SO': s.get('strikeOuts',0), 'G': s.get('gamesPlayed', 1) or 1
@@ -915,6 +916,9 @@ if sport == "⚾ MLB Baseball":
                 if headshot_url:
                     st.image(headshot_url, width=140)
                     
+                st.markdown(f"### {selected_player}")
+                st.caption(p_data.get("Team", "N/A"))
+                
                 p_fip = p_data.get("FIP", 0)
                 p_ip = p_data.get("IP", 0)
                 p_k = p_data.get("K", 0)
@@ -963,34 +967,37 @@ if sport == "⚾ MLB Baseball":
             
                 if headshot_url:
                     st.image(headshot_url, width=140)
-        
-                st.markdown("## 🧢 Batter Profile")
-        
-                hc1, hc2, hc3, hc4 = st.columns(4)
-        
-                with hc1:
-                    st.metric("Hits", h_data.get("H", 0))
-                with hc2:
-                    st.metric("HR", h_data.get("HR", 0))
-                with hc3:
-                    st.metric("RBI", h_data.get("RBI", 0))
-                with hc4:
-                    st.metric("SB", h_data.get("SB", 0))
-        
-                st.markdown("### 📊 Offensive Snapshot")
-        
-                games = h_data.get("G", 1) or 1
-                power_score = min(1.0, h_data.get("HR", 0) / max(1, games) * 4)
-                contact_score = min(1.0, h_data.get("H", 0) / max(1, games) / 1.5)
-        
-                st.caption("Power")
-                st.progress(power_score)
-        
-                st.caption("Contact")
-                st.progress(contact_score)
-        
-                st.markdown("### 🧾 Season Stats")
-                st.dataframe(pd.DataFrame([h_data]), use_container_width=True)
+
+                    st.markdown(f"### {selected_player}")
+                    st.caption(h_data.get("Team", "N/A"))
+                
+                    st.markdown("## 🧢 Batter Profile")
+            
+                    hc1, hc2, hc3, hc4 = st.columns(4)
+            
+                    with hc1:
+                        st.metric("Hits", h_data.get("H", 0))
+                    with hc2:
+                        st.metric("HR", h_data.get("HR", 0))
+                    with hc3:
+                        st.metric("RBI", h_data.get("RBI", 0))
+                    with hc4:
+                        st.metric("SB", h_data.get("SB", 0))
+            
+                    st.markdown("### 📊 Offensive Snapshot")
+            
+                    games = h_data.get("G", 1) or 1
+                    power_score = min(1.0, h_data.get("HR", 0) / max(1, games) * 4)
+                    contact_score = min(1.0, h_data.get("H", 0) / max(1, games) / 1.5)
+            
+                    st.caption("Power")
+                    st.progress(power_score)
+            
+                    st.caption("Contact")
+                    st.progress(contact_score)
+            
+                    st.markdown("### 🧾 Season Stats")
+                    st.dataframe(pd.DataFrame([h_data]), use_container_width=True)
     
     elif page == "🏆 Fantasy Sports Predictor":
         st.title("🏆 Season-Long Fantasy Hub")
