@@ -625,6 +625,25 @@ if sport == "⚾ MLB Baseball":
                 
                 st.markdown("### ⚾ Premium Pitcher Matchup")
 
+                st.markdown(
+                    """
+                    <style>
+                    .pitcher-card {
+                        background: linear-gradient(145deg, #111827, #0b1220);
+                        border: 1px solid rgba(255,255,255,0.12);
+                        border-radius: 18px;
+                        padding: 24px;
+                        box-shadow: 0 0 18px rgba(255,255,255,0.05);
+                        margin-bottom: 18px;
+                    }
+                    .pitcher-card h2 {
+                        margin-top: 0;
+                    }
+                    </style>
+                    """,
+                    unsafe_allow_html=True
+                )
+                
                 card1, card2 = st.columns(2)
                 
                 away_pitcher_stats = pitcher_stats.get(away_sp, {})
@@ -650,6 +669,8 @@ if sport == "⚾ MLB Baseball":
                 
                 with card1:
 
+                    st.markdown("<div class='pitcher-card'>", unsafe_allow_html=True)
+                    
                     away_fip_color = (
                         "green" if a_sp_fip <= 3.25
                         else "orange" if a_sp_fip <= 4.25
@@ -694,9 +715,13 @@ if sport == "⚾ MLB Baseball":
                     st.progress(away_wp / 100)
                 
                     st.caption(f"{away_t} Win Probability: {away_wp:.1f}%")
+
+                    st.markdown("</div>", unsafe_allow_html=True)
                 
                 with card2:
-                
+
+                    st.markdown("<div class='pitcher-card'>", unsafe_allow_html=True)
+                    
                     home_fip_color = (
                         "green" if h_sp_fip <= 3.25
                         else "orange" if h_sp_fip <= 4.25
@@ -741,6 +766,8 @@ if sport == "⚾ MLB Baseball":
                     st.progress(home_wp / 100)
                 
                     st.caption(f"{home_t} Win Probability: {home_wp:.1f}%")
+
+                    st.markdown("</div>", unsafe_allow_html=True)
                 
                 res_c1, res_c2 = st.columns(2)
 
