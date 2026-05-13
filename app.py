@@ -259,27 +259,32 @@ if sport == "⚾ MLB Baseball":
                 if len(row) >= 10:
                     result = row[9].strip().upper()
         
-                    if result in ["WIN", "LOSS"]:
-                        v2_total += 1
-                    
-                        if result == "WIN":
-                            v2_wins += 1
-                        else:
-                            v2_losses += 1
-                    
-                        away_team = row[1]
-                        home_team = row[2]
-                        away_ml = int(row[3])
-                        home_ml = int(row[4])
-                        model_pick = row[7]
+            if result in ["WIN", "LOSS"]:
+                v2_total += 1
 
-                        vegas_pick = away_team if away_ml < home_ml else home_team
-                        actual_winner = model_pick if result == "WIN" else (away_team if model_pick == home_team else home_team)
-                    
-                        if vegas_pick == actual_winner:
-                            vegas_wins += 1
-                        else:
-                            vegas_losses += 1
+                if result == "WIN":
+                    v2_wins += 1
+                else:
+                    v2_losses += 1
+
+                away_team = row[1]
+                home_team = row[2]
+                away_ml = int(row[3])
+                home_ml = int(row[4])
+                model_pick = row[7]
+
+                vegas_pick = away_team if away_ml < home_ml else home_team
+
+                actual_winner = (
+                    model_pick
+                    if result == "WIN"
+                    else (away_team if model_pick == home_team else home_team)
+                )
+
+                if vegas_pick == actual_winner:
+                    vegas_wins += 1
+                else:
+                    vegas_losses += 1
 
     vegas_pick = away_team if away_ml < home_ml else home_team
     actual_winner = model_pick if result == "WIN" else (away_team if model_pick == home_team else home_team)
