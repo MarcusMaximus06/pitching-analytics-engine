@@ -622,6 +622,49 @@ if sport == "⚾ MLB Baseball":
 
                 away_wp = model_away_prob * 100
                 home_wp = model_home_prob * 100
+
+                st.markdown("### 📊 Team Momentum Snapshot")
+
+                tm1, tm2 = st.columns(2)
+                
+                away_recent_games = away_recent_raw.get("recent_games", 0)
+                home_recent_games = home_recent_raw.get("recent_games", 0)
+                
+                away_recent_rs = away_recent_raw.get("recent_rs_per_g", a_rs_g)
+                away_recent_ra = away_recent_raw.get("recent_ra_per_g", a_ra_g)
+                
+                home_recent_rs = home_recent_raw.get("recent_rs_per_g", h_rs_g)
+                home_recent_ra = home_recent_raw.get("recent_ra_per_g", h_ra_g)
+                
+                def momentum_label(rs, ra):
+                    diff = rs - ra
+                
+                    if diff >= 1.0:
+                        return "🔥 Strong Positive"
+                    elif diff >= 0.25:
+                        return "↗ Improving"
+                    elif diff > -0.25:
+                        return "➖ Neutral"
+                    elif diff > -1.0:
+                        return "↘ Slipping"
+                    else:
+                        return "❄️ Cold"
+                
+                with tm1:
+                    st.markdown(f"#### {away_t}")
+                    st.metric("Recent Runs/Game", f"{away_recent_rs:.2f}")
+                    st.metric("Recent Runs Allowed/Game", f"{away_recent_ra:.2f}")
+                    st.metric("Recent Run Diff", f"{away_recent_rs - away_recent_ra:+.2f}")
+                    st.metric("Recent Games Sample", away_recent_games)
+                    st.caption(momentum_label(away_recent_rs, away_recent_ra))
+                
+                with tm2:
+                    st.markdown(f"#### {home_t}")
+                    st.metric("Recent Runs/Game", f"{home_recent_rs:.2f}")
+                    st.metric("Recent Runs Allowed/Game", f"{home_recent_ra:.2f}")
+                    st.metric("Recent Run Diff", f"{home_recent_rs - home_recent_ra:+.2f}")
+                    st.metric("Recent Games Sample", home_recent_games)
+                    st.caption(momentum_label(home_recent_rs, home_recent_ra))
                 
                 st.markdown("### ⚾ Premium Pitcher Matchup")
 
