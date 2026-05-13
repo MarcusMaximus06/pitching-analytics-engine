@@ -646,22 +646,98 @@ if sport == "⚾ MLB Baseball":
                         return "❄️ COLD"
                 
                 with card1:
+
+                    away_fip_color = (
+                        "green" if a_sp_fip <= 3.25
+                        else "orange" if a_sp_fip <= 4.25
+                        else "red"
+                    )
+                
+                    away_era_color = (
+                        "green" if a_recent_era <= 3.00
+                        else "orange" if a_recent_era <= 4.25
+                        else "red"
+                    )
+                
+                    away_k9_color = (
+                        "green" if away_k9 >= 9
+                        else "orange" if away_k9 >= 7
+                        else "red"
+                    )
+                
                     st.markdown(f"## {away_sp}")
                 
-                    st.metric("FIP", f"{a_sp_fip:.2f}")
-                    st.metric("Recent ERA", f"{a_recent_era:.2f}")
-                    st.metric("K/9", f"{away_k9:.1f}")
-                    st.metric("IP", f"{away_pitcher_stats.get('IP', 0)}")
-                    st.metric("Form", pitcher_form_label(a_recent_era))
+                    st.markdown(
+                        f"<span style='color:{away_fip_color}; font-size:20px;'>FIP: {a_sp_fip:.2f}</span>",
+                        unsafe_allow_html=True
+                    )
+                
+                    st.markdown(
+                        f"<span style='color:{away_era_color}; font-size:20px;'>Recent ERA: {a_recent_era:.2f}</span>",
+                        unsafe_allow_html=True
+                    )
+                
+                    st.markdown(
+                        f"<span style='color:{away_k9_color}; font-size:20px;'>K/9: {away_k9:.1f}</span>",
+                        unsafe_allow_html=True
+                    )
+                
+                    st.markdown(f"IP: {away_pitcher_stats.get('IP', 0)}")
+                
+                    st.markdown(
+                        f"### {pitcher_form_label(a_recent_era)}"
+                    )
+                
+                    st.progress(away_wp / 100)
+                
+                    st.caption(f"{away_t} Win Probability: {away_wp:.1f}%")
                 
                 with card2:
+                
+                    home_fip_color = (
+                        "green" if h_sp_fip <= 3.25
+                        else "orange" if h_sp_fip <= 4.25
+                        else "red"
+                    )
+                
+                    home_era_color = (
+                        "green" if h_recent_era <= 3.00
+                        else "orange" if h_recent_era <= 4.25
+                        else "red"
+                    )
+                
+                    home_k9_color = (
+                        "green" if home_k9 >= 9
+                        else "orange" if home_k9 >= 7
+                        else "red"
+                    )
+                
                     st.markdown(f"## {home_sp}")
                 
-                    st.metric("FIP", f"{h_sp_fip:.2f}")
-                    st.metric("Recent ERA", f"{h_recent_era:.2f}")
-                    st.metric("K/9", f"{home_k9:.1f}")
-                    st.metric("IP", f"{home_pitcher_stats.get('IP', 0)}")
-                    st.metric("Form", pitcher_form_label(h_recent_era))
+                    st.markdown(
+                        f"<span style='color:{home_fip_color}; font-size:20px;'>FIP: {h_sp_fip:.2f}</span>",
+                        unsafe_allow_html=True
+                    )
+                
+                    st.markdown(
+                        f"<span style='color:{home_era_color}; font-size:20px;'>Recent ERA: {h_recent_era:.2f}</span>",
+                        unsafe_allow_html=True
+                    )
+                
+                    st.markdown(
+                        f"<span style='color:{home_k9_color}; font-size:20px;'>K/9: {home_k9:.1f}</span>",
+                        unsafe_allow_html=True
+                    )
+                
+                    st.markdown(f"IP: {home_pitcher_stats.get('IP', 0)}")
+                
+                    st.markdown(
+                        f"### {pitcher_form_label(h_recent_era)}"
+                    )
+                
+                    st.progress(home_wp / 100)
+                
+                    st.caption(f"{home_t} Win Probability: {home_wp:.1f}%")
                 
                 res_c1, res_c2 = st.columns(2)
 
