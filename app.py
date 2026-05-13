@@ -18,6 +18,39 @@ from constants import MLB_PARK_FACTORS
 from mlb_recent_form import calculate_recent_form_adjustment, fetch_recent_mlb_team_form
 from mlb_pitcher_form import blend_pitcher_form, fetch_pitcher_recent_era
 
+TEAM_LOGOS = {
+    "Arizona Diamondbacks": "https://www.mlbstatic.com/team-logos/109.svg",
+    "Atlanta Braves": "https://www.mlbstatic.com/team-logos/144.svg",
+    "Baltimore Orioles": "https://www.mlbstatic.com/team-logos/110.svg",
+    "Boston Red Sox": "https://www.mlbstatic.com/team-logos/111.svg",
+    "Chicago Cubs": "https://www.mlbstatic.com/team-logos/112.svg",
+    "Chicago White Sox": "https://www.mlbstatic.com/team-logos/145.svg",
+    "Cincinnati Reds": "https://www.mlbstatic.com/team-logos/113.svg",
+    "Cleveland Guardians": "https://www.mlbstatic.com/team-logos/114.svg",
+    "Colorado Rockies": "https://www.mlbstatic.com/team-logos/115.svg",
+    "Detroit Tigers": "https://www.mlbstatic.com/team-logos/116.svg",
+    "Houston Astros": "https://www.mlbstatic.com/team-logos/117.svg",
+    "Kansas City Royals": "https://www.mlbstatic.com/team-logos/118.svg",
+    "Los Angeles Angels": "https://www.mlbstatic.com/team-logos/108.svg",
+    "Los Angeles Dodgers": "https://www.mlbstatic.com/team-logos/119.svg",
+    "Miami Marlins": "https://www.mlbstatic.com/team-logos/146.svg",
+    "Milwaukee Brewers": "https://www.mlbstatic.com/team-logos/158.svg",
+    "Minnesota Twins": "https://www.mlbstatic.com/team-logos/142.svg",
+    "New York Mets": "https://www.mlbstatic.com/team-logos/121.svg",
+    "New York Yankees": "https://www.mlbstatic.com/team-logos/147.svg",
+    "Oakland Athletics": "https://www.mlbstatic.com/team-logos/133.svg",
+    "Philadelphia Phillies": "https://www.mlbstatic.com/team-logos/143.svg",
+    "Pittsburgh Pirates": "https://www.mlbstatic.com/team-logos/134.svg",
+    "San Diego Padres": "https://www.mlbstatic.com/team-logos/135.svg",
+    "San Francisco Giants": "https://www.mlbstatic.com/team-logos/137.svg",
+    "Seattle Mariners": "https://www.mlbstatic.com/team-logos/136.svg",
+    "St. Louis Cardinals": "https://www.mlbstatic.com/team-logos/138.svg",
+    "Tampa Bay Rays": "https://www.mlbstatic.com/team-logos/139.svg",
+    "Texas Rangers": "https://www.mlbstatic.com/team-logos/140.svg",
+    "Toronto Blue Jays": "https://www.mlbstatic.com/team-logos/141.svg",
+    "Washington Nationals": "https://www.mlbstatic.com/team-logos/120.svg"
+}
+
 # --- CLOUDFLARE BYPASS V9: THE SMART TLS SPOOFER ---
 original_get = requests.get
 def custom_get(url, **kwargs):
@@ -915,9 +948,19 @@ if sport == "⚾ MLB Baseball":
             
                 if headshot_url:
                     st.image(headshot_url, width=140)
-                    
-                st.markdown(f"### {selected_player}")
-                st.caption(p_data.get("Team", "N/A"))
+                
+                team_name = p_data.get("Team", "N/A")
+                team_logo = TEAM_LOGOS.get(team_name)
+                
+                logo_col, text_col = st.columns([1, 5])
+                
+                with logo_col:
+                    if team_logo:
+                        st.image(team_logo, width=55)
+                
+                with text_col:
+                    st.markdown(f"### {selected_player}")
+                    st.caption(team_name)
                 
                 p_fip = p_data.get("FIP", 0)
                 p_ip = p_data.get("IP", 0)
@@ -967,9 +1010,19 @@ if sport == "⚾ MLB Baseball":
             
                 if headshot_url:
                     st.image(headshot_url, width=140)
-
+                
+                team_name = h_data.get("Team", "N/A")
+                team_logo = TEAM_LOGOS.get(team_name)
+                
+                logo_col, text_col = st.columns([1, 5])
+                
+                with logo_col:
+                    if team_logo:
+                        st.image(team_logo, width=55)
+                
+                with text_col:
                     st.markdown(f"### {selected_player}")
-                    st.caption(h_data.get("Team", "N/A"))
+                    st.caption(team_name)
                 
                     st.markdown("## 🧢 Batter Profile")
             
