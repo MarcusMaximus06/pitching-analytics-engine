@@ -210,7 +210,7 @@ if sport == "⚾ MLB Baseball":
         try:
             worksheet = get_google_worksheet("MLB Daily Prediction Model", "MLB Log V2")
             data = worksheet.get_all_values()
-            pending_rows = [(i, row) for i, row in enumerate(data) if i > 0 and len(row) >= 9 and row[8] == "PENDING"]
+            pending_rows = [(i, row) for i, row in enumerate(data) if i > 0 and len(row) >= 10 and row[9] == "PENDING"]
             if not pending_rows: return 0
             
             pending_dates = list(set([row[0] for i, row in pending_rows]))
@@ -233,7 +233,7 @@ if sport == "⚾ MLB Baseball":
                 if lookup_key in score_dict:
                     actual_winner = score_dict[lookup_key]
                     new_status = "WIN" if model_pick == actual_winner else "LOSS"
-                    worksheet.update_cell(i + 1, 9, new_status)
+                    worksheet.update_cell(i + 1, 10, new_status)
                     updates += 1
             return updates
         except Exception as e:
