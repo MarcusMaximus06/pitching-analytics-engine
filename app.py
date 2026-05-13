@@ -991,8 +991,37 @@ if sport == "⚾ MLB Baseball":
                 workload_pct = min(99, max(1, int((p_ip / 180) * 100)))
                 
                 def percentile_bar(label, pct):
+
+                    if pct >= 85:
+                        color = "#d73027"   # elite red
+                    elif pct >= 70:
+                        color = "#fc8d59"   # orange
+                    elif pct >= 50:
+                        color = "#fee08b"   # yellow
+                    else:
+                        color = "#4575b4"   # blue
+                
                     st.markdown(f"**{label}: {pct}th percentile**")
-                    st.progress(pct / 100)
+                
+                    st.markdown(
+                        f'''
+                        <div style="
+                            background-color:#2a2a2a;
+                            border-radius:8px;
+                            height:18px;
+                            width:100%;
+                            margin-bottom:18px;
+                        ">
+                            <div style="
+                                background-color:{color};
+                                width:{pct}%;
+                                height:18px;
+                                border-radius:8px;
+                            "></div>
+                        </div>
+                        ''',
+                        unsafe_allow_html=True
+                    )
                 
                 percentile_bar("Strikeout Ability", strikeout_pct)
                 percentile_bar("Run Prevention", run_prev_pct)
