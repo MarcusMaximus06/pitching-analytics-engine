@@ -956,7 +956,7 @@ if sport == "⚾ MLB Baseball":
                 
                 with logo_col:
                     if team_logo:
-                        st.image(team_logo, width=55)
+                        st.image(team_logo, width=85)
                 
                 with text_col:
                     st.markdown(f"### {selected_player}")
@@ -1018,7 +1018,7 @@ if sport == "⚾ MLB Baseball":
                 
                 with logo_col:
                     if team_logo:
-                        st.image(team_logo, width=55)
+                        st.image(team_logo, width=85)
                 
                 with text_col:
                     st.markdown(f"### {selected_player}")
