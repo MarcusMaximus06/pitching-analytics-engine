@@ -1,3 +1,4 @@
+import plotly.graph_objects as go
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -618,6 +619,49 @@ if sport == "⚾ MLB Baseball":
                     
                 away_lam = ((away_recent_form["offense"] + home_recent_form["defense"]) / 2) * p_factor
                 home_lam = ((home_recent_form["offense"] + away_recent_form["defense"]) / 2) * p_factor
+
+                st.markdown("### ⚾ Premium Pitcher Matchup")
+
+                card1, card2 = st.columns(2)
+                
+                away_pitcher_stats = pitcher_stats.get(away_sp, {})
+                home_pitcher_stats = pitcher_stats.get(home_sp, {})
+                
+                away_k9 = (
+                    (away_pitcher_stats.get("K", 0) / away_pitcher_stats.get("IP", 1)) * 9
+                    if away_pitcher_stats.get("IP", 0) > 0 else 0
+                )
+                
+                home_k9 = (
+                    (home_pitcher_stats.get("K", 0) / home_pitcher_stats.get("IP", 1)) * 9
+                    if home_pitcher_stats.get("IP", 0) > 0 else 0
+                )
+                
+                def pitcher_form_label(era):
+                    if era <= 2.75:
+                        return "🔥 HOT"
+                    elif era <= 4.00:
+                        return "✅ STABLE"
+                    else:
+                        return "❄️ COLD"
+                
+                with card1:
+                    st.markdown(f"## {away_sp}")
+                
+                    st.metric("FIP", f"{a_sp_fip:.2f}")
+                    st.metric("Recent ERA", f"{a_recent_era:.2f}")
+                    st.metric("K/9", f"{away_k9:.1f}")
+                    st.metric("IP", f"{away_pitcher_stats.get('IP', 0)}")
+                    st.metric("Form", pitcher_form_label(a_recent_era))
+                
+                with card2:
+                    st.markdown(f"## {home_sp}")
+                
+                    st.metric("FIP", f"{h_sp_fip:.2f}")
+                    st.metric("Recent ERA", f"{h_recent_era:.2f}")
+                    st.metric("K/9", f"{home_k9:.1f}")
+                    st.metric("IP", f"{home_pitcher_stats.get('IP', 0)}")
+                    st.metric("Form", pitcher_form_label(h_recent_era))
                 
                 res_c1, res_c2 = st.columns(2)
 
