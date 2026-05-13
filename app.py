@@ -771,12 +771,31 @@ if sport == "⚾ MLB Baseball":
                 
                 res_c1, res_c2 = st.columns(2)
 
-                with res_c1:
+                st.markdown("### 🎯 Matchup Edge Meter")
+
+                edge_col1, edge_col2, edge_col3 = st.columns(3)
+                
+                model_edge = abs(model_away_prob - model_home_prob)
+                fav_team = away_t if model_away_prob > model_home_prob else home_t
+                fav_prob = max(model_away_prob, model_home_prob)
+                
+                if model_edge >= 0.12:
+                    edge_label = "Strong Edge"
+                elif model_edge >= 0.06:
+                    edge_label = "Moderate Edge"
+                else:
+                    edge_label = "Tight Matchup"
+                
+                with edge_col1:
                     st.metric(f"{away_t} Win Prob", f"{model_away_prob:.1%}")
-        
-                with res_c2:
+                
+                with edge_col2:
+                    st.metric("Model Lean", fav_team)
+                    st.progress(float(fav_prob))
+                
+                with edge_col3:
                     st.metric(f"{home_t} Win Prob", f"{model_home_prob:.1%}")
-                    st.caption("Confidence tiers appear in the automated slate table when actionable edges are found.")
+                    st.caption(edge_label)
 
                 # --- PLOTLY VISUALIZATION BLOCK ---
                 st.markdown("#### Simulation Distribution Analysis")
