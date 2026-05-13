@@ -322,12 +322,7 @@ if sport == "⚾ MLB Baseball":
         if st.button("🔄 Refresh MLB Cached Data"):
             st.cache_data.clear()
             st.success("MLB cached data cleared. Refresh the page to reload fresh data.")
-        col1, col2, col3, col4 = st.columns([2, 2, 2, 3])
-        with col1: st.metric(label="Total Graded Games", value=tot_games)
-        with col2: st.metric(label="Model Accuracy", value=f"{mod_acc:.1f}%")
-        with col3: st.metric(label="Vegas Accuracy", value=f"{veg_acc:.1f}%")
-        with col4: 
-            st.write("")
+            
             if st.button("🔄 Auto-Grade Yesterday's Bets"):
                 with st.spinner("Pinging MLB Stats API..."):
                     updates = auto_grade_pending_bets()
