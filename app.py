@@ -620,6 +620,9 @@ if sport == "⚾ MLB Baseball":
                 away_lam = ((away_recent_form["offense"] + home_recent_form["defense"]) / 2) * p_factor
                 home_lam = ((home_recent_form["offense"] + away_recent_form["defense"]) / 2) * p_factor
 
+                away_wp = model_away_prob * 100
+                home_wp = model_home_prob * 100
+                
                 st.markdown("### ⚾ Premium Pitcher Matchup")
 
                 card1, card2 = st.columns(2)
