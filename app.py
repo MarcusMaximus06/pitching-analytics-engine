@@ -651,18 +651,26 @@ if sport == "⚾ MLB Baseball":
                         return "❄️ Cold"
                 
                 with tm1:
+                    away_diff = away_recent_rs - away_recent_ra
+                    away_momentum_score = max(0, min(1, (away_diff + 2) / 4))
+                
                     st.markdown(f"#### {away_t}")
                     st.metric("Recent Runs/Game", f"{away_recent_rs:.2f}")
                     st.metric("Recent Runs Allowed/Game", f"{away_recent_ra:.2f}")
-                    st.metric("Recent Run Diff", f"{away_recent_rs - away_recent_ra:+.2f}")
+                    st.metric("Recent Run Diff", f"{away_diff:+.2f}")
+                    st.progress(away_momentum_score)
                     st.metric("Recent Games Sample", away_recent_games)
                     st.caption(momentum_label(away_recent_rs, away_recent_ra))
                 
                 with tm2:
+                    home_diff = home_recent_rs - home_recent_ra
+                    home_momentum_score = max(0, min(1, (home_diff + 2) / 4))
+                
                     st.markdown(f"#### {home_t}")
                     st.metric("Recent Runs/Game", f"{home_recent_rs:.2f}")
                     st.metric("Recent Runs Allowed/Game", f"{home_recent_ra:.2f}")
-                    st.metric("Recent Run Diff", f"{home_recent_rs - home_recent_ra:+.2f}")
+                    st.metric("Recent Run Diff", f"{home_diff:+.2f}")
+                    st.progress(home_momentum_score)
                     st.metric("Recent Games Sample", home_recent_games)
                     st.caption(momentum_label(home_recent_rs, home_recent_ra))
                 
