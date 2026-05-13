@@ -63,7 +63,14 @@ st.sidebar.markdown("---")
 # SPORT BRANCH 1: MLB BASEBALL
 # ==========================================================
 if sport == "⚾ MLB Baseball":
-    page = st.sidebar.radio("Select Engine:", ["🎲 Monte Carlo Simulation Engine", "🏆 Fantasy Sports Predictor"])
+    page = st.sidebar.radio(
+    "Select Engine:",
+    [
+        "🎲 Monte Carlo Simulation Engine",
+        "🔎 MLB Player Lab",
+        "🏆 Fantasy Sports Predictor"
+    ]
+)
     st.sidebar.markdown("---")
 
     PARK_FACTORS = MLB_PARK_FACTORS
@@ -884,6 +891,92 @@ if sport == "⚾ MLB Baseball":
             else:
                 st.error("Engine failure connecting to MLB Stats API.")
 
+    elif page == "🔎 MLB Player Lab":
+        st.title("🔎 MLB Player Lab")
+        st.caption("Savant-inspired MLB player research center")
+    
+        with st.spinner("Loading MLB player database..."):
+            _, pitcher_stats, hitter_stats = fetch_mlb_api_data()
+    
+        player_type = st.radio("Player Type:", ["Pitcher", "Batter"], horizontal=True)
+    
+        if player_type == "Pitcher":
+            all_pitchers = sorted(list(pitcher_stats.keys()))
+            selected_player = st.selectbox("Search Pitcher", all_pitchers)
+    
+            p_data = pitcher_stats.get(selected_player, {})
+    
+            if p_data:
+                p_fip = p_data.get("FIP", 0)
+                p_ip = p_data.get("IP", 0)
+                p_k = p_data.get("K", 0)
+                p_bb = p_data.get("BB", 0)
+    
+                p_k9 = (p_k / p_ip * 9) if p_ip > 0 else 0
+                p_bb9 = (p_bb / p_ip * 9) if p_ip > 0 else 0
+    
+                st.markdown("## 🎯 Pitcher Profile")
+    
+                pc1, pc2, pc3, pc4 = st.columns(4)
+    
+                with pc1:
+                    st.metric("FIP", f"{p_fip:.2f}")
+                with pc2:
+                    st.metric("IP", f"{p_ip}")
+                with pc3:
+                    st.metric("K/9", f"{p_k9:.1f}")
+                with pc4:
+                    st.metric("BB/9", f"{p_bb9:.1f}")
+    
+                st.markdown("### 📊 Pitching Snapshot")
+    
+                st.caption("Strikeout Ability")
+                st.progress(min(1.0, p_k9 / 12))
+    
+                st.caption("Run Prevention")
+                st.progress(max(0.0, 1 - (p_fip / 6)))
+    
+                st.caption("Control")
+                st.progress(max(0.0, 1 - (p_bb9 / 5)))
+    
+                st.markdown("### 🧾 Season Stats")
+                st.dataframe(pd.DataFrame([p_data]), use_container_width=True)
+
+    else:
+        all_hitters = sorted(list(hitter_stats.keys()))
+        selected_player = st.selectbox("Search Batter", all_hitters)
+
+        h_data = hitter_stats.get(selected_player, {})
+
+        if h_data:
+            st.markdown("## 🧢 Batter Profile")
+
+            hc1, hc2, hc3, hc4 = st.columns(4)
+
+            with hc1:
+                st.metric("Hits", h_data.get("H", 0))
+            with hc2:
+                st.metric("HR", h_data.get("HR", 0))
+            with hc3:
+                st.metric("RBI", h_data.get("RBI", 0))
+            with hc4:
+                st.metric("SB", h_data.get("SB", 0))
+
+            st.markdown("### 📊 Offensive Snapshot")
+
+            games = h_data.get("G", 1) or 1
+            power_score = min(1.0, h_data.get("HR", 0) / max(1, games) * 4)
+            contact_score = min(1.0, h_data.get("H", 0) / max(1, games) / 1.5)
+
+            st.caption("Power")
+            st.progress(power_score)
+
+            st.caption("Contact")
+            st.progress(contact_score)
+
+            st.markdown("### 🧾 Season Stats")
+            st.dataframe(pd.DataFrame([h_data]), use_container_width=True)
+    
     elif page == "🏆 Fantasy Sports Predictor":
         st.title("🏆 Season-Long Fantasy Hub")
         st.markdown("### 🏈 NFL (Sleeper PPR) & ⚾ MLB (Standard Points)")
