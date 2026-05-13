@@ -952,11 +952,11 @@ if sport == "⚾ MLB Baseball":
                 team_name = p_data.get("Team", "N/A")
                 team_logo = TEAM_LOGOS.get(team_name)
                 
-                logo_col, text_col = st.columns([1, 5])
+                logo_col, text_col = st.columns([0.4, 5])
                 
                 with logo_col:
                     if team_logo:
-                        st.image(team_logo, width=85)
+                        st.image(team_logo, width=55)
                 
                 with text_col:
                     st.markdown(f"### {selected_player}")
@@ -1014,11 +1014,11 @@ if sport == "⚾ MLB Baseball":
                 team_name = h_data.get("Team", "N/A")
                 team_logo = TEAM_LOGOS.get(team_name)
                 
-                logo_col, text_col = st.columns([1, 5])
+                logo_col, text_col = st.columns([0.4, 5])
                 
                 with logo_col:
                     if team_logo:
-                        st.image(team_logo, width=85)
+                        st.image(team_logo, width=55)
                 
                 with text_col:
                     st.markdown(f"### {selected_player}")
