@@ -285,14 +285,6 @@ if sport == "⚾ MLB Baseball":
                     vegas_wins += 1
                 else:
                     vegas_losses += 1
-
-    vegas_pick = away_team if away_ml < home_ml else home_team
-    actual_winner = model_pick if result == "WIN" else (away_team if model_pick == home_team else home_team)
-
-    if vegas_pick == actual_winner:
-        vegas_wins += 1
-    else:
-        vegas_losses += 1
         
             v2_acc = (v2_wins / v2_total * 100) if v2_total > 0 else 0
             vegas_total = vegas_wins + vegas_losses
