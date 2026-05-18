@@ -17,6 +17,7 @@ from config import APP_TITLE, APP_PAGE_TITLE, CACHE_TTL_SHORT, CACHE_TTL_ODDS, C
 from constants import MLB_PARK_FACTORS
 from mlb_recent_form import calculate_recent_form_adjustment, fetch_recent_mlb_team_form
 from mlb_pitcher_form import blend_pitcher_form, fetch_pitcher_recent_era
+from pybaseball import statcast_pitcher
 
 TEAM_LOGOS = {
     "Arizona Diamondbacks": "https://www.mlbstatic.com/team-logos/109.svg",
