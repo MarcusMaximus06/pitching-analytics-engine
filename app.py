@@ -1105,28 +1105,6 @@ if sport == "⚾ MLB Baseball":
                 
                 else:
                     st.info("Pitch arsenal data coming soon.")
-                
-                st.markdown(f"**{pitch} — {usage}% — {velo:.1f} MPH**")
-                
-                st.markdown(
-                        f'''
-                        <div style="
-                            background-color:#2a2a2a;
-                            border-radius:8px;
-                            height:16px;
-                            width:100%;
-                            margin-bottom:14px;
-                        ">
-                            <div style="
-                                background-color:{color};
-                                width:{usage}%;
-                                height:16px;
-                                border-radius:8px;
-                            "></div>
-                        </div>
-                        ''',
-                        unsafe_allow_html=True
-                )
                     
                 st.markdown("### 🧾 Season Stats")
                 st.dataframe(pd.DataFrame([p_data]), use_container_width=True)
