@@ -1108,7 +1108,7 @@ if sport == "⚾ MLB Baseball":
                 
                 st.markdown(f"**{pitch} — {usage}% — {velo:.1f} MPH**")
                 
-                    st.markdown(
+                st.markdown(
                         f'''
                         <div style="
                             background-color:#2a2a2a;
@@ -1126,7 +1126,7 @@ if sport == "⚾ MLB Baseball":
                         </div>
                         ''',
                         unsafe_allow_html=True
-                    )
+                )
                     
                 st.markdown("### 🧾 Season Stats")
                 st.dataframe(pd.DataFrame([p_data]), use_container_width=True)
