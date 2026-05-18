@@ -1083,8 +1083,6 @@ if sport == "⚾ MLB Baseball":
                 
                         color = PITCH_COLORS.get(pitch, "#4575b4")
                 
-                        st.markdown(f"**{pitch} — {usage}% — {velo:.1f} MPH**")
-                
                         st.markdown(
                             f'''
                             <div style="
@@ -1108,7 +1106,7 @@ if sport == "⚾ MLB Baseball":
                 else:
                     st.info("Pitch arsenal data coming soon.")
                 
-                    st.markdown(f"**{pitch} — {usage}% — {velo:.1f} MPH**")
+                st.markdown(f"**{pitch} — {usage}% — {velo:.1f} MPH**")
                 
                     st.markdown(
                         f'''
