@@ -275,6 +275,41 @@ if sport == "⚾ MLB Baseball":
         except Exception:
             return []
 
+    @st.cache_data(ttl=CACHE_TTL_DAILY)
+    def fetch_batter_statcast(player_id):
+        try:
+            if not player_id:
+                return None
+    
+            end_date = datetime.today().strftime("%Y-%m-%d")
+            start_date = (datetime.today() - timedelta(days=45)).strftime("%Y-%m-%d")
+    
+            df = statcast_batter(start_date, end_date, int(player_id))
+    
+            if df is None or df.empty:
+                return None
+    
+            avg_ev = round(df["launch_speed"].dropna().mean(), 1) if "launch_speed" in df.columns else 0
+    
+            hard_hit = (
+                (df["launch_speed"] >= 95).mean() * 100
+                if "launch_speed" in df.columns else 0
+            )
+    
+            k_rate = (
+                (df["events"] == "strikeout").mean() * 100
+                if "events" in df.columns else 0
+            )
+    
+            return {
+                "avg_ev": round(avg_ev, 1),
+                "hard_hit": round(hard_hit, 1),
+                "k_rate": round(k_rate, 1)
+            }
+    
+        except Exception:
+            return None
+
     def log_to_google_sheets(row_data):
         try:
             gc = get_google_client()
