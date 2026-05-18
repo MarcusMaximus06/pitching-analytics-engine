@@ -7,3 +7,4 @@ curl-cffi
 plotly
 cfbd
 nfl_data_py
+pybaseball
