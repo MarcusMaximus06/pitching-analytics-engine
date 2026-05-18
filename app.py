@@ -1090,7 +1090,17 @@ if sport == "⚾ MLB Baseball":
     
                 p_k9 = (p_k / p_ip * 9) if p_ip > 0 else 0
                 p_bb9 = (p_bb / p_ip * 9) if p_ip > 0 else 0
-    
+
+                st.markdown("""
+                <div style="
+                    background-color:#111827;
+                    padding:28px;
+                    border-radius:18px;
+                    border:1px solid #1f2937;
+                    margin-bottom:24px;
+                ">
+                """, unsafe_allow_html=True)
+                
                 st.markdown("## 🎯 Pitcher Profile")
     
                 pc1, pc2, pc3, pc4 = st.columns(4)
@@ -1149,7 +1159,8 @@ if sport == "⚾ MLB Baseball":
                 percentile_bar("Control", control_pct)
                 percentile_bar("Workload", workload_pct)
 
-                st.markdown("### ⚾ Pitch Arsenal Snapshot")
+                st.markdown("### ⚾ Pitch Arsenal + Raw Movement Profile")
+                st.caption("Top bar = pitch usage frequency • Bottom blue bar = raw movement magnitude (not pitch quality)")
 
                 arsenal_data = fetch_pitch_arsenal(player_id)
 
@@ -1222,7 +1233,9 @@ if sport == "⚾ MLB Baseball":
                 
                 else:
                     st.info("Pitch arsenal data coming soon.")
-                    
+
+                st.markdown("</div>", unsafe_allow_html=True)
+                
                 st.markdown("### 🧾 Season Stats")
                 st.dataframe(pd.DataFrame([p_data]), use_container_width=True)
 
