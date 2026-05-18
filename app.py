@@ -51,6 +51,18 @@ TEAM_LOGOS = {
     "Washington Nationals": "https://www.mlbstatic.com/team-logos/120.svg"
 }
 
+PITCH_COLORS = {
+    "Fastball": "#d73027",
+    "4-Seam": "#d73027",
+    "Sinker": "#fc8d59",
+    "Cutter": "#fdae61",
+    "Slider": "#fee08b",
+    "Curveball": "#66bd63",
+    "Changeup": "#1a9850",
+    "Splitter": "#3288bd",
+    "Knuckleball": "#5e4fa2"
+}
+
 # --- CLOUDFLARE BYPASS V9: THE SMART TLS SPOOFER ---
 original_get = requests.get
 def custom_get(url, **kwargs):
