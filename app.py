@@ -1220,6 +1220,73 @@ if sport == "⚾ MLB Baseball":
                             ''',
                             unsafe_allow_html=True
                         )
+
+                        movement_rows = []
+                        
+                        for item in arsenal_data:
+                            movement_rows.append({
+                                "Pitch": item.get("pitch", "Pitch"),
+                                "Horizontal Break": item.get("h_break", 0),
+                                "Vertical Break": item.get("v_break", 0),
+                                "Usage": item.get("usage", 0),
+                                "Velocity": item.get("velo", 0)
+                            })
+                        
+                        movement_df = pd.DataFrame(movement_rows)
+                        
+                        if not movement_df.empty:
+                            st.markdown("### 🧭 Pitch Movement Map")
+                        
+                            fig_move = go.Figure()
+                        
+                            for _, row in movement_df.iterrows():
+                                pitch_name = row["Pitch"]
+                                pitch_color = "#60a5fa"
+                        
+                                for key in PITCH_COLORS:
+                                    if key.lower() in str(pitch_name).lower():
+                                        pitch_color = PITCH_COLORS[key]
+                        
+                                fig_move.add_trace(go.Scatter(
+                                    x=[row["Horizontal Break"]],
+                                    y=[row["Vertical Break"]],
+                                    mode="markers+text",
+                                    text=[pitch_name],
+                                    textposition="top center",
+                                    marker=dict(
+                                        size=max(12, row["Usage"] * 1.2),
+                                        color=pitch_color,
+                                        line=dict(width=1, color="white")
+                                    ),
+                                    name=pitch_name,
+                                    hovertemplate=
+                                        "<b>%{text}</b><br>" +
+                                        "Horizontal Break: %{x:.1f} in<br>" +
+                                        "Vertical Break: %{y:.1f} in<br>" +
+                                        "<extra></extra>"
+                                ))
+                        
+                            fig_move.update_layout(
+                                height=500,
+                                paper_bgcolor="#0e1117",
+                                plot_bgcolor="#0e1117",
+                                font=dict(color="white"),
+                                xaxis=dict(
+                                    title="Horizontal Break (inches)",
+                                    zeroline=True,
+                                    zerolinecolor="#9ca3af",
+                                    gridcolor="#374151"
+                                ),
+                                yaxis=dict(
+                                    title="Vertical Break (inches)",
+                                    zeroline=True,
+                                    zerolinecolor="#9ca3af",
+                                    gridcolor="#374151"
+                                ),
+                                showlegend=False
+                            )
+                        
+                            st.plotly_chart(fig_move, use_container_width=True)
                 
                 else:
                     st.info("Pitch arsenal data coming soon.")
