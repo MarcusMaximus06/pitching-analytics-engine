@@ -1163,6 +1163,8 @@ if sport == "⚾ MLB Baseball":
                         pitch = item.get("pitch") or item.get("pitch_name") or item.get("type") or "Pitch"
                         usage = item["usage"]
                         velo = item["velo"]
+                        h_break = item.get("h_break", 0)
+                        v_break = item.get("v_break", 0)
                     
                         color = PITCH_COLORS.get(pitch, "#4575b4")
                     
@@ -1171,7 +1173,8 @@ if sport == "⚾ MLB Baseball":
                                 color = PITCH_COLORS[key]
                     
                         st.markdown(
-                            f"<div style='font-size:16px; font-weight:700; color:white; margin-top:10px; margin-bottom:4px;'>{pitch} — {usage}% — {velo:.1f} MPH</div>",
+                            f"<div style='font-size:16px; font-weight:700; color:white; margin-top:10px; margin-bottom:4px;'>{pitch} — {usage}% — {velo:.1f} MPH</div>"
+                            f"<div style='font-size:13px; color:#9ca3af; margin-bottom:6px;'>Horizontal Break: {h_break:+.1f} in | Vertical Break: {v_break:+.1f} in</div>",
                             unsafe_allow_html=True
                         )
                     
