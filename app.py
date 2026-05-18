@@ -1121,11 +1121,15 @@ if sport == "⚾ MLB Baseball":
                 
                     for item in arsenal_data:
                 
-                        pitch = item["pitch"]
+                        pitch = item.get("pitch") or item.get("pitch_name") or item.get("type") or "Pitch"
                         usage = item["usage"]
                         velo = item["velo"]
                 
                         color = PITCH_COLORS.get(pitch, "#4575b4")
+
+                        for key in PITCH_COLORS:
+                            if key.lower() in str(pitch).lower():
+                                color = PITCH_COLORS[key]
                 
                         st.markdown(
                             f'''
