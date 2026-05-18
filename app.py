@@ -1202,19 +1202,65 @@ if sport == "⚾ MLB Baseball":
                 with hc4:
                     st.metric("SB", h_data.get("SB", 0))
         
-                st.markdown("### 📊 Offensive Snapshot")
-        
+                st.markdown("### 📊 Savant-Style Hitting Percentiles")
+
                 games = h_data.get("G", 1) or 1
-                power_score = min(1.0, h_data.get("HR", 0) / max(1, games) * 4)
-                contact_score = min(1.0, h_data.get("H", 0) / max(1, games) / 1.5)
-        
-                st.caption("Power")
-                st.progress(power_score)
-        
-                st.caption("Contact")
-                st.progress(contact_score)
-        
-                st.markdown("### 🧾 Season Stats")
+                
+                hr = h_data.get("HR", 0)
+                hits = h_data.get("H", 0)
+                sb = h_data.get("SB", 0)
+                bb = h_data.get("BB", 0)
+                so = h_data.get("SO", 0)
+                
+                power_pct = min(99, max(1, int((hr / max(1, games)) * 400)))
+                contact_pct = min(99, max(1, int((hits / max(1, games)) * 70)))
+                speed_pct = min(99, max(1, int((sb / max(1, games)) * 500)))
+                
+                discipline_raw = bb / max(1, so)
+                
+                discipline_pct = min(99, max(1, int(discipline_raw * 120)))
+                
+                def hitter_percentile_bar(label, pct):
+                
+                    if pct >= 85:
+                        color = "#d73027"
+                
+                    elif pct >= 70:
+                        color = "#fc8d59"
+                
+                    elif pct >= 50:
+                        color = "#fee08b"
+                
+                    else:
+                        color = "#4575b4"
+                
+                    st.markdown(f"**{label}: {pct}th percentile**")
+                
+                    st.markdown(
+                        f'''
+                        <div style="
+                            background-color:#2a2a2a;
+                            border-radius:8px;
+                            height:18px;
+                            width:100%;
+                            margin-bottom:18px;
+                        ">
+                            <div style="
+                                background-color:{color};
+                                width:{pct}%;
+                                height:18px;
+                                border-radius:8px;
+                            "></div>
+                        </div>
+                        ''',
+                        unsafe_allow_html=True
+                    )
+                
+                hitter_percentile_bar("Power", power_pct)
+                hitter_percentile_bar("Contact", contact_pct)
+                hitter_percentile_bar("Speed", speed_pct)
+                hitter_percentile_bar("Plate Discipline", discipline_pct)
+                
                 st.dataframe(pd.DataFrame([h_data]), use_container_width=True)
     
     elif page == "🏆 Fantasy Sports Predictor":
