@@ -1112,7 +1112,10 @@ if sport == "⚾ MLB Baseball":
 
                 st.markdown("### ⚾ Pitch Arsenal Snapshot")
 
-                arsenal_data = PITCH_ARSENALS.get(selected_player)
+                arsenal_data = fetch_pitch_arsenal(player_id)
+
+                if not arsenal_data:
+                    arsenal_data = PITCH_ARSENALS.get(selected_player)
 
                 if arsenal_data:
                 
