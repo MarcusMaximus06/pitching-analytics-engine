@@ -1300,7 +1300,8 @@ if sport == "⚾ MLB Baseball":
                         )
                     
                         fig_loc.update_layout(
-                            height=520,
+                            height=650,
+                            width=650,
                             paper_bgcolor="#0e1117",
                             plot_bgcolor="#0e1117",
                             font=dict(color="white"),
@@ -1309,7 +1310,9 @@ if sport == "⚾ MLB Baseball":
                                 range=[-2.2, 2.2],
                                 zeroline=True,
                                 zerolinecolor="#6b7280",
-                                gridcolor="#374151"
+                                gridcolor="#374151",
+                                scaleanchor="y",
+                                scaleratio=1
                             ),
                             yaxis=dict(
                                 title="Pitch Height",
