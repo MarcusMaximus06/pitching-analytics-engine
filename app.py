@@ -1120,17 +1120,22 @@ if sport == "⚾ MLB Baseball":
                 if arsenal_data:
                 
                     for item in arsenal_data:
-                
+
                         pitch = item.get("pitch") or item.get("pitch_name") or item.get("type") or "Pitch"
                         usage = item["usage"]
                         velo = item["velo"]
-                
+                    
                         color = PITCH_COLORS.get(pitch, "#4575b4")
-
+                    
                         for key in PITCH_COLORS:
                             if key.lower() in str(pitch).lower():
                                 color = PITCH_COLORS[key]
-                
+                    
+                        st.markdown(
+                            f"<div style='font-size:16px; font-weight:700; color:white; margin-top:10px; margin-bottom:4px;'>{pitch} — {usage}% — {velo:.1f} MPH</div>",
+                            unsafe_allow_html=True
+                        )
+                    
                         st.markdown(
                             f'''
                             <div style="
