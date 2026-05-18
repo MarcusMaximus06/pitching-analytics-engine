@@ -1090,18 +1090,6 @@ if sport == "⚾ MLB Baseball":
     
                 p_k9 = (p_k / p_ip * 9) if p_ip > 0 else 0
                 p_bb9 = (p_bb / p_ip * 9) if p_ip > 0 else 0
-
-                st.markdown("""
-                <div style="
-                    background-color:#111827;
-                    padding:28px;
-                    border-radius:18px;
-                    border:1px solid #1f2937;
-                    margin-top:0px;
-                    padding-top:8px;
-                    margin-bottom:24px;
-                ">
-                """, unsafe_allow_html=True)
                 
                 st.markdown("## 🎯 Pitcher Profile")
     
@@ -1235,8 +1223,6 @@ if sport == "⚾ MLB Baseball":
                 
                 else:
                     st.info("Pitch arsenal data coming soon.")
-
-                st.markdown("</div>", unsafe_allow_html=True)
                 
                 st.markdown("### 🧾 Season Stats")
                 st.dataframe(pd.DataFrame([p_data]), use_container_width=True)
