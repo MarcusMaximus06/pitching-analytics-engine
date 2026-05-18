@@ -235,6 +235,46 @@ if sport == "⚾ MLB Baseball":
             
         return team_data, pitcher_data, hitter_data
 
+    @st.cache_data(ttl=CACHE_TTL_DAILY)
+    def fetch_pitch_arsenal(player_id):
+        try:
+            if not player_id:
+                return []
+    
+            end_date = datetime.today().strftime("%Y-%m-%d")
+            start_date = (datetime.today() - timedelta(days=45)).strftime("%Y-%m-%d")
+    
+            df = statcast_pitcher(start_date, end_date, int(player_id))
+    
+            if df is None or df.empty or "pitch_name" not in df.columns:
+                return []
+    
+            arsenal = (
+                df.groupby("pitch_name")
+                .agg(
+                    count=("pitch_name", "count"),
+                    velo=("release_speed", "mean")
+                )
+                .reset_index()
+            )
+    
+            total = arsenal["count"].sum()
+            arsenal["usage"] = arsenal["count"] / total * 100
+    
+            arsenal = arsenal.sort_values("usage", ascending=False).head(6)
+    
+            return [
+                {
+                    "pitch": row["pitch_name"],
+                    "usage": round(row["usage"], 1),
+                    "velo": round(row["velo"], 1) if pd.notna(row["velo"]) else 0
+                }
+                for _, row in arsenal.iterrows()
+            ]
+    
+        except Exception:
+            return []
+
     def log_to_google_sheets(row_data):
         try:
             gc = get_google_client()
