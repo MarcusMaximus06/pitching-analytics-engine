@@ -401,8 +401,14 @@ if sport == "⚾ MLB Baseball":
         if st.button("🔄 Refresh MLB Cached Data"):
             st.cache_data.clear()
             st.success("MLB cached data cleared. Refresh the page to reload fresh data.")
-            
-            if st.button("🔄 Auto-Grade Yesterday's Bets"):
+        
+        if st.button("🔄 Auto-Grade Yesterday's Bets"):
+            with st.spinner("Pinging MLB Stats API..."):
+                updates = auto_grade_pending_bets()
+                if updates > 0:
+                    st.success(f"✅ Successfully graded {updates} games! Refresh.")
+                elif updates == 0:
+                    st.info("No games ready to be graded.")
                 with st.spinner("Pinging MLB Stats API..."):
                     updates = auto_grade_pending_bets()
                     if updates > 0: st.success(f"✅ Successfully graded {updates} games! Refresh.")
