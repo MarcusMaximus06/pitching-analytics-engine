@@ -1071,19 +1071,42 @@ if sport == "⚾ MLB Baseball":
 
                 st.markdown("### ⚾ Pitch Arsenal Snapshot")
 
-                sample_arsenal = [
-                    {"pitch": "4-Seam", "usage": 38, "velo": 96.5},
-                    {"pitch": "Slider", "usage": 24, "velo": 86.8},
-                    {"pitch": "Changeup", "usage": 16, "velo": 88.1},
-                    {"pitch": "Curveball", "usage": 12, "velo": 80.4},
-                    {"pitch": "Sinker", "usage": 10, "velo": 94.2},
-                ]
+                arsenal_data = PITCH_ARSENALS.get(selected_player)
+
+                if arsenal_data:
                 
-                for item in sample_arsenal:
-                    pitch = item["pitch"]
-                    usage = item["usage"]
-                    velo = item["velo"]
-                    color = PITCH_COLORS.get(pitch, "#4575b4")
+                    for item in arsenal_data:
+                
+                        pitch = item["pitch"]
+                        usage = item["usage"]
+                        velo = item["velo"]
+                
+                        color = PITCH_COLORS.get(pitch, "#4575b4")
+                
+                        st.markdown(f"**{pitch} — {usage}% — {velo:.1f} MPH**")
+                
+                        st.markdown(
+                            f'''
+                            <div style="
+                                background-color:#2a2a2a;
+                                border-radius:8px;
+                                height:16px;
+                                width:100%;
+                                margin-bottom:14px;
+                            ">
+                                <div style="
+                                    background-color:{color};
+                                    width:{usage}%;
+                                    height:16px;
+                                    border-radius:8px;
+                                "></div>
+                            </div>
+                            ''',
+                            unsafe_allow_html=True
+                        )
+                
+                else:
+                    st.info("Pitch arsenal data coming soon.")
                 
                     st.markdown(f"**{pitch} — {usage}% — {velo:.1f} MPH**")
                 
