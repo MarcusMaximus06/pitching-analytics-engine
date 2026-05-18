@@ -240,6 +240,9 @@ if sport == "⚾ MLB Baseball":
         try:
             if not player_id:
                 return []
+
+            @st.cache_data(ttl=CACHE_TTL_DAILY)
+            def fetch_batter_statcast(player_id):
     
             end_date = datetime.today().strftime("%Y-%m-%d")
             start_date = (datetime.today() - timedelta(days=45)).strftime("%Y-%m-%d")
