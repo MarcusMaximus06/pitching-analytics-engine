@@ -253,7 +253,9 @@ if sport == "⚾ MLB Baseball":
                 df.groupby("pitch_name")
                 .agg(
                     count=("pitch_name", "count"),
-                    velo=("release_speed", "mean")
+                    velo=("release_speed", "mean"),
+                    h_break=("pfx_x", "mean"),
+                    v_break=("pfx_z", "mean")
                 )
                 .reset_index()
             )
@@ -267,7 +269,9 @@ if sport == "⚾ MLB Baseball":
                 {
                     "pitch": row["pitch_name"],
                     "usage": round(row["usage"], 1),
-                    "velo": round(row["velo"], 1) if pd.notna(row["velo"]) else 0
+                    "velo": round(row["velo"], 1) if pd.notna(row["velo"]) else 0,
+                    "h_break": round(row["h_break"] * 12, 1) if pd.notna(row["h_break"]) else 0,
+                    "v_break": round(row["v_break"] * 12, 1) if pd.notna(row["v_break"]) else 0
                 }
                 for _, row in arsenal.iterrows()
             ]
