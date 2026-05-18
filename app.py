@@ -63,6 +63,29 @@ PITCH_COLORS = {
     "Knuckleball": "#5e4fa2"
 }
 
+PITCH_ARSENALS = {
+    "Paul Skenes": [
+        {"pitch": "4-Seam", "usage": 39, "velo": 98.1},
+        {"pitch": "Splitter", "usage": 24, "velo": 91.4},
+        {"pitch": "Slider", "usage": 22, "velo": 87.3},
+        {"pitch": "Curveball", "usage": 15, "velo": 82.0},
+    ],
+
+    "Chris Sale": [
+        {"pitch": "4-Seam", "usage": 41, "velo": 94.8},
+        {"pitch": "Slider", "usage": 36, "velo": 79.5},
+        {"pitch": "Changeup", "usage": 17, "velo": 85.1},
+        {"pitch": "Sinker", "usage": 6, "velo": 93.2},
+    ],
+
+    "Shota Imanaga": [
+        {"pitch": "4-Seam", "usage": 48, "velo": 92.7},
+        {"pitch": "Splitter", "usage": 28, "velo": 84.3},
+        {"pitch": "Slider", "usage": 15, "velo": 81.4},
+        {"pitch": "Curveball", "usage": 9, "velo": 76.2},
+    ],
+}
+
 # --- CLOUDFLARE BYPASS V9: THE SMART TLS SPOOFER ---
 original_get = requests.get
 def custom_get(url, **kwargs):
