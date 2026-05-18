@@ -1177,7 +1177,7 @@ if sport == "⚾ MLB Baseball":
                             f"<div style='font-size:13px; color:#9ca3af; margin-bottom:6px;'>Horizontal Break: {h_break:+.1f} in | Vertical Break: {v_break:+.1f} in</div>",
                             unsafe_allow_html=True
                         )
-                    
+                        
                         st.markdown(
                             f'''
                             <div style="
@@ -1191,6 +1191,28 @@ if sport == "⚾ MLB Baseball":
                                     background-color:{color};
                                     width:{usage}%;
                                     height:16px;
+                                    border-radius:8px;
+                                "></div>
+                            </div>
+                            ''',
+                            unsafe_allow_html=True
+                        )
+
+                        movement_score = min(100, max(0, int((abs(h_break) + abs(v_break)) * 3)))
+        
+                        st.markdown(
+                            f'''
+                            <div style="
+                                background-color:#1f2937;
+                                border-radius:8px;
+                                height:10px;
+                                width:100%;
+                                margin-bottom:18px;
+                            ">
+                                <div style="
+                                    background-color:#60a5fa;
+                                    width:{movement_score}%;
+                                    height:10px;
                                     border-radius:8px;
                                 "></div>
                             </div>
