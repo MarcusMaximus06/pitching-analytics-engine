@@ -1323,7 +1323,7 @@ if sport == "⚾ MLB Baseball":
                             legend_title="Pitch Type"
                         )
                     
-                        st.plotly_chart(fig_loc, use_container_width=True, key=f"pitch_location_{player_id}")
+                        st.plotly_chart(fig_loc, use_container_width=False, key=f"pitch_location_{player_id}")
                 
                 else:
                     st.info("Pitch arsenal data coming soon.")
