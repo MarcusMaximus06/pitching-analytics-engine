@@ -1239,6 +1239,88 @@ if sport == "⚾ MLB Baseball":
                             ''',
                             unsafe_allow_html=True
                         )
+
+                    location_rows = []
+    
+                    for pitch_item in arsenal_data:
+                        pitch_name = pitch_item.get("pitch", "Pitch")
+                        pitch_usage = pitch_item.get("usage", 0)
+                    
+                        for loc in pitch_item.get("locations", []):
+                            location_rows.append({
+                                "Pitch": pitch_name,
+                                "Usage": pitch_usage,
+                                "Plate X": loc.get("x", 0),
+                                "Plate Z": loc.get("z", 0)
+                            })
+                    
+                    location_df = pd.DataFrame(location_rows)
+                    
+                    if not location_df.empty:
+                        st.markdown("### 🎯 Pitch Location Map")
+                        st.caption("Dots show where recent pitches crossed the plate. Box represents approximate strike zone.")
+                    
+                        fig_loc = go.Figure()
+                    
+                        for pitch_name in location_df["Pitch"].unique():
+                            pitch_df = location_df[location_df["Pitch"] == pitch_name]
+                    
+                            pitch_color = "#60a5fa"
+                    
+                            for key in PITCH_COLORS:
+                                if key.lower() in str(pitch_name).lower():
+                                    pitch_color = PITCH_COLORS[key]
+                    
+                            fig_loc.add_trace(go.Scatter(
+                                x=pitch_df["Plate X"],
+                                y=pitch_df["Plate Z"],
+                                mode="markers",
+                                marker=dict(
+                                    size=7,
+                                    color=pitch_color,
+                                    opacity=0.55,
+                                    line=dict(width=0)
+                                ),
+                                name=pitch_name,
+                                hovertemplate=
+                                    "<b>%{fullData.name}</b><br>" +
+                                    "Plate X: %{x:.2f}<br>" +
+                                    "Plate Z: %{y:.2f}<br>" +
+                                    "<extra></extra>"
+                            ))
+                    
+                        fig_loc.add_shape(
+                            type="rect",
+                            x0=-0.83,
+                            x1=0.83,
+                            y0=1.5,
+                            y1=3.5,
+                            line=dict(color="white", width=2),
+                            fillcolor="rgba(255,255,255,0)"
+                        )
+                    
+                        fig_loc.update_layout(
+                            height=520,
+                            paper_bgcolor="#0e1117",
+                            plot_bgcolor="#0e1117",
+                            font=dict(color="white"),
+                            xaxis=dict(
+                                title="Plate Location: Inside / Outside",
+                                range=[-2.2, 2.2],
+                                zeroline=True,
+                                zerolinecolor="#6b7280",
+                                gridcolor="#374151"
+                            ),
+                            yaxis=dict(
+                                title="Pitch Height",
+                                range=[0, 5],
+                                zeroline=False,
+                                gridcolor="#374151"
+                            ),
+                            legend_title="Pitch Type"
+                        )
+                    
+                        st.plotly_chart(fig_loc, use_container_width=True, key=f"pitch_location_{player_id}")
                 
                 else:
                     st.info("Pitch arsenal data coming soon.")
