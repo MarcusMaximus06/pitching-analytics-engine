@@ -1097,7 +1097,8 @@ if sport == "⚾ MLB Baseball":
                     padding:28px;
                     border-radius:18px;
                     border:1px solid #1f2937;
-                    margin-top:20px;
+                    margin-top:0px;
+                    padding-top:8px;
                     margin-bottom:24px;
                 ">
                 """, unsafe_allow_html=True)
