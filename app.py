@@ -240,9 +240,6 @@ if sport == "⚾ MLB Baseball":
         try:
             if not player_id:
                 return []
-
-            @st.cache_data(ttl=CACHE_TTL_DAILY)
-            def fetch_batter_statcast(player_id):
     
             end_date = datetime.today().strftime("%Y-%m-%d")
             start_date = (datetime.today() - timedelta(days=45)).strftime("%Y-%m-%d")
@@ -277,6 +274,27 @@ if sport == "⚾ MLB Baseball":
     
         except Exception:
             return []
+
+    @st.cache_data(ttl=CACHE_TTL_DAILY)
+    def fetch_pitch_arsenal(player_id):
+    
+        try:
+            ...
+            return arsenal_data
+    
+        except Exception:
+            return []
+    
+    
+    @st.cache_data(ttl=CACHE_TTL_DAILY)
+    def fetch_batter_statcast(player_id):
+    
+        try:
+            ...
+            return statcast_data
+    
+        except Exception:
+            return None
 
     def log_to_google_sheets(row_data):
         try:
