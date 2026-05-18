@@ -1209,6 +1209,8 @@ if sport == "⚾ MLB Baseball":
                 with text_col:
                     st.markdown(f"### {selected_player}")
                     st.caption(team_name)
+
+                batter_statcast = fetch_batter_statcast(player_id)
                 
                 st.markdown("## 🧢 Batter Profile")
         
@@ -1222,6 +1224,21 @@ if sport == "⚾ MLB Baseball":
                     st.metric("RBI", h_data.get("RBI", 0))
                 with hc4:
                     st.metric("SB", h_data.get("SB", 0))
+
+                if batter_statcast:
+
+                    st.markdown("### 🔥 Advanced Contact Snapshot")
+                
+                    ac1, ac2, ac3 = st.columns(3)
+                
+                    with ac1:
+                        st.metric("Avg Exit Velocity", f"{batter_statcast.get('avg_ev', 0)} MPH")
+                
+                    with ac2:
+                        st.metric("Hard-Hit %", f"{batter_statcast.get('hard_hit', 0)}%")
+                
+                    with ac3:
+                        st.metric("K Rate", f"{batter_statcast.get('k_rate', 0)}%")
         
                 st.markdown("### 📊 Savant-Style Hitting Percentiles")
 
