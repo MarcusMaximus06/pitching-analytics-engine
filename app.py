@@ -1566,89 +1566,10 @@ if sport == "⚾ MLB Baseball":
                 
             if not p_stats or not h_stats:
                 st.error("🚨 Could not sync with MLB Stats API.")
+                
                 else:
-                    hitter_list = []
-                    for name, s in h_stats.items():
-                        tb = (s['H'] - s['2B'] - s['3B'] - s['HR']) + (2*s['2B']) + (3*s['3B']) + (4*s['HR'])
-                        fpts = tb + s['BB'] + s['R'] + s['RBI'] + s['SB'] - s['SO']
-                        fpts_per_g = fpts / s['G']
-                        ros_proj = fpts_per_g * (162 - s['G'])
-                        hitter_list.append({'Name': name, 'Position': 'Batter', 'FPts': fpts, 'FPts_per_G': round(fpts_per_g, 2), 'ROS_Proj': round(ros_proj, 1)})
+                    st.info("MLB Trade Analyzer loaded.")
                     
-                    pitcher_list = []
-                    for name, s in p_stats.items():
-                        fpts = (s['IP'] * 3) + s['K'] + (s['W'] * 5) + (s['SV'] * 5) - (s['L'] * 5) - (s['ER'] * 2) - s['H'] - s['BB']
-                        fpts_per_g = fpts / s['G']
-                        ros_proj = fpts_per_g * (162 - s['G'])
-                        pitcher_list.append({'Name': name, 'Position': 'Pitcher', 'FPts': fpts, 'FPts_per_G': round(fpts_per_g, 2), 'ROS_Proj': round(ros_proj, 1)})
-                        
-                    fantasy_df = pd.DataFrame(hitter_list + pitcher_list)
-                    fantasy_df = fantasy_df.dropna(subset=['ROS_Proj']).sort_values('ROS_Proj', ascending=False)
-                    all_players = sorted(fantasy_df['Name'].astype(str).unique().tolist())
-                    
-                    col1, col2 = st.columns(2)
-                    with col1: team_a = st.multiselect("Team A Receives:", all_players, key="team_a")
-                    with col2: team_b = st.multiselect("Team B Receives:", all_players, key="team_b")
-                        
-                    if st.button("⚖️ Analyze Trade Edge"):
-                        if team_a or team_b:
-                            a_df = fantasy_df[fantasy_df['Name'].isin(team_a)]
-                            b_df = fantasy_df[fantasy_df['Name'].isin(team_b)]
-                            
-                            a_proj = a_df['ROS_Proj'].sum()
-                            b_proj = b_df['ROS_Proj'].sum()
-                            
-                            c1, c2 = st.columns(2)
-                            with c1:
-                                st.metric("Team A Total ROS Projection", f"{a_proj:.1f} FPts")
-                                if not a_df.empty: st.dataframe(a_df[['Name', 'Position', 'FPts_per_G', 'ROS_Proj']], hide_index=True)
-                            with c2:
-                                st.metric("Team B Total ROS Projection", f"{b_proj:.1f} FPts")
-                                if not b_df.empty: st.dataframe(b_df[['Name', 'Position', 'FPts_per_G', 'ROS_Proj']], hide_index=True)
-                                
-                            st.markdown("---")
-                            diff = abs(a_proj - b_proj)
-                            if a_proj > b_proj + 15:
-                                st.success(f"📈 **Team A** wins this trade by a projected **{diff:.1f}** Rest-of-Season points.")
-                            elif b_proj > a_proj + 15:
-                                st.success(f"📈 **Team B** wins this trade by a projected **{diff:.1f}** Rest-of-Season points.")
-                            else:
-                                st.info(f"🤝 This trade is highly balanced. Only a **{diff:.1f}** point differential.")
-                        else:
-                            st.warning("Add players to both sides to analyze a trade.")
-             st.markdown("### 🔮 MLB Fantasy Projection Lab")
-            
-                        projection_type = st.radio(
-                            "Projection Type:",
-                            ["Batter", "Pitcher"],
-                            horizontal=True
-                        )
-                      
-                        with st.spinner("Compiling League-Wide Player Database..."):
-                            _, p_stats, h_stats = fetch_mlb_api_data()
-            
-                        if projection_type == "Batter":
-                            batter_names = sorted(list(h_stats.keys()))
-                            fantasy_player = st.selectbox("Select Batter Projection:", batter_names)
-                        
-                            b = h_stats.get(fantasy_player, {})
-                            games = b.get("G", 1) or 1
-                        
-                            fantasy_ppg = (
-                                b.get("H", 0)
-                                + b.get("BB", 0)
-                                + b.get("R", 0)
-                                + b.get("RBI", 0)
-                                + b.get("SB", 0)
-                                + (b.get("HR", 0) * 3)
-                                - b.get("SO", 0)
-                            ) / games
-                        
-                            projected_points = fantasy_ppg * 1.08
-                        
-                            st.metric("Projected Fantasy Points", f"{projected_points:.1f}")
-                            st.caption("Early projection based on season production, power, speed, and strikeout penalty.")
-                            
         elif fantasy_sport == "🏈 NFL Sleeper PPR Trade Engine":
             @st.cache_data(ttl=CACHE_TTL_DAILY)
             def load_sleeper_players():
