@@ -1564,8 +1564,8 @@ if sport == "⚾ MLB Baseball":
             st.subheader("⚖️ ESPN Standard Points Trade Analyzer")
             st.caption("Calculates Rest-of-Season (ROS) projections natively via MLB API data logs.")
                 
-                if not p_stats or not h_stats:
-                    st.error("🚨 Could not sync with MLB Stats API.")
+            if not p_stats or not h_stats:
+                st.error("🚨 Could not sync with MLB Stats API.")
                 else:
                     hitter_list = []
                     for name, s in h_stats.items():
