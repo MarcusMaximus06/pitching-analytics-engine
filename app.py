@@ -410,6 +410,31 @@ if sport == "⚾ MLB Baseball":
         )
     
         return sp_score
+
+    def calculate_team_k_tendency(team_stats, team_name):
+        # Temporary safe version until we add real team batting strikeout rates
+        high_k_teams = [
+            "Colorado Rockies",
+            "Pittsburgh Pirates",
+            "Chicago White Sox",
+            "Miami Marlins",
+            "Oakland Athletics"
+        ]
+    
+        low_k_teams = [
+            "Houston Astros",
+            "San Diego Padres",
+            "Cleveland Guardians",
+            "Arizona Diamondbacks"
+        ]
+    
+        if team_name in high_k_teams:
+            return 1.08
+    
+        if team_name in low_k_teams:
+            return 0.94
+    
+        return 1.00
     
     def auto_grade_pending_bets():
         try:
