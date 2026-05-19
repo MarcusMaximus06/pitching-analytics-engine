@@ -1563,7 +1563,10 @@ if sport == "⚾ MLB Baseball":
         if fantasy_sport == "⚾ MLB Trade Analyzer & Projections":
             st.subheader("⚖️ ESPN Standard Points Trade Analyzer")
             st.caption("Calculates Rest-of-Season (ROS) projections natively via MLB API data logs.")
-                
+
+            with st.spinner("Compiling League-Wide Player Database..."):
+                _, p_stats, h_stats = fetch_mlb_api_data()
+            
             if not p_stats or not h_stats:
                 st.error("🚨 Could not sync with MLB Stats API.")
                 
