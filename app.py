@@ -650,8 +650,8 @@ if sport == "⚾ MLB Baseball":
                                     home_recent_raw["recent_ra_per_g"]
                                 )
                                 
-                                away_lam = ((away_recent_form["offense"] + home_recent_form["defense"]) / 2) * p_factor
-                                home_lam = ((home_recent_form["offense"] + away_recent_form["defense"]) / 2) * p_factor
+                                away_lam = (((away_recent_form["offense"] + home_recent_form["defense"]) / 2) * p_factor) * (1 + sp_edge_adjustment)
+                                home_lam = (((home_recent_form["offense"] + away_recent_form["defense"]) / 2) * p_factor) * (1 - sp_edge_adjustment)
                                 
                                 sim_a = np.random.poisson(away_lam, DEFAULT_SIMULATION_SIZE)
                                 sim_h = np.random.poisson(home_lam, DEFAULT_SIMULATION_SIZE)
@@ -790,8 +790,8 @@ if sport == "⚾ MLB Baseball":
                     home_recent_raw["recent_ra_per_g"]
                 )
                 
-                away_lam = ((away_recent_form["offense"] + home_recent_form["defense"]) / 2) * p_factor
-                home_lam = ((home_recent_form["offense"] + away_recent_form["defense"]) / 2) * p_factor
+                away_lam = (((away_recent_form["offense"] + home_recent_form["defense"]) / 2) * p_factor) * (1 + sp_edge_adjustment)
+                home_lam = (((home_recent_form["offense"] + away_recent_form["defense"]) / 2) * p_factor) * (1 - sp_edge_adjustment)
                 
                 sim_a = np.random.poisson(away_lam, DEFAULT_SIMULATION_SIZE)
                 sim_h = np.random.poisson(home_lam, DEFAULT_SIMULATION_SIZE)
