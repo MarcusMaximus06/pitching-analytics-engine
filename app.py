@@ -648,7 +648,7 @@ if sport == "⚾ MLB Baseball":
                                 elif action_taken == home_t:
                                     confidence_tier = get_confidence_tier(model_home_prob, v_h_prob)
                                 
-                                if action_taken != "No Edge":
+                                if action_taken != "No Edge" and confidence_tier != "Low":
                                     row_data = [date_str, away_t, home_t, a_ml, h_ml, f"{model_away_prob:.1%}", f"{model_home_prob:.1%}", action_taken, confidence_tier, "PENDING"]
                                     log_status = log_to_google_sheets(row_data)
                                     if log_status in ["SUCCESS", "DUPLICATE"]:
