@@ -435,6 +435,32 @@ if sport == "⚾ MLB Baseball":
             return 0.94
     
         return 1.00
+
+    def calculate_bullpen_fatigue(team_name):
+        # Temporary safe version until we add real bullpen usage data
+        tired_bullpen_teams = [
+            "Colorado Rockies",
+            "Chicago White Sox",
+            "Miami Marlins",
+            "Oakland Athletics",
+            "Washington Nationals"
+        ]
+    
+        rested_bullpen_teams = [
+            "Los Angeles Dodgers",
+            "Atlanta Braves",
+            "New York Yankees",
+            "Philadelphia Phillies",
+            "Houston Astros"
+        ]
+    
+        if team_name in tired_bullpen_teams:
+            return 1.06
+    
+        if team_name in rested_bullpen_teams:
+            return 0.96
+    
+        return 1.00
     
     def auto_grade_pending_bets():
         try:
