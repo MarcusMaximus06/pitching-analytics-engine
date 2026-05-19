@@ -680,6 +680,9 @@ if sport == "⚾ MLB Baseball":
                                 a_run_prevention = (a_sp_fip * 0.60) + (a_ra_g * 0.40)
                                 h_run_prevention = (h_sp_fip * 0.60) + (h_ra_g * 0.40)
                                 p_factor = PARK_FACTORS.get(home_t, 100) / 100
+
+                                away_bullpen_factor = calculate_bullpen_fatigue(away_t)
+                                home_bullpen_factor = calculate_bullpen_fatigue(home_t)
                                 
                                 away_recent_raw = fetch_recent_mlb_team_form(away_t) or {
                                     "recent_rs_per_g": a_rs_g,
@@ -707,8 +710,8 @@ if sport == "⚾ MLB Baseball":
                                     home_recent_raw["recent_ra_per_g"]
                                 )
                                 
-                                away_lam = (((away_recent_form["offense"] + home_recent_form["defense"]) / 2) * p_factor) * (1 + sp_edge_adjustment)
-                                home_lam = (((home_recent_form["offense"] + away_recent_form["defense"]) / 2) * p_factor) * (1 - sp_edge_adjustment)
+                                away_lam = (((away_recent_form["offense"] + home_recent_form["defense"]) / 2) * p_factor * home_bullpen_factor) * (1 + sp_edge_adjustment)
+                                home_lam = (((home_recent_form["offense"] + away_recent_form["defense"]) / 2) * p_factor * away_bullpen_factor) * (1 - sp_edge_adjustment)
                                 
                                 sim_a = np.random.poisson(away_lam, DEFAULT_SIMULATION_SIZE)
                                 sim_h = np.random.poisson(home_lam, DEFAULT_SIMULATION_SIZE)
@@ -853,8 +856,8 @@ if sport == "⚾ MLB Baseball":
                     home_recent_raw["recent_ra_per_g"]
                 )
                 
-                away_lam = (((away_recent_form["offense"] + home_recent_form["defense"]) / 2) * p_factor) * (1 + sp_edge_adjustment)
-                home_lam = (((home_recent_form["offense"] + away_recent_form["defense"]) / 2) * p_factor) * (1 - sp_edge_adjustment)
+                away_lam = (((away_recent_form["offense"] + home_recent_form["defense"]) / 2) * p_factor * home_bullpen_factor) * (1 + sp_edge_adjustment)
+                home_lam = (((home_recent_form["offense"] + away_recent_form["defense"]) / 2) * p_factor * away_bullpen_factor) * (1 - sp_edge_adjustment)
                 
                 sim_a = np.random.poisson(away_lam, DEFAULT_SIMULATION_SIZE)
                 sim_h = np.random.poisson(home_lam, DEFAULT_SIMULATION_SIZE)
