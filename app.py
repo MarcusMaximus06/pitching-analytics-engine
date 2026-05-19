@@ -1563,39 +1563,6 @@ if sport == "⚾ MLB Baseball":
         if fantasy_sport == "⚾ MLB Trade Analyzer & Projections":
             st.subheader("⚖️ ESPN Standard Points Trade Analyzer")
             st.caption("Calculates Rest-of-Season (ROS) projections natively via MLB API data logs.")
-
-            st.markdown("### 🔮 MLB Fantasy Projection Lab")
-
-            projection_type = st.radio(
-                "Projection Type:",
-                ["Batter", "Pitcher"],
-                horizontal=True
-            )
-          
-            with st.spinner("Compiling League-Wide Player Database..."):
-                _, p_stats, h_stats = fetch_mlb_api_data()
-
-            if projection_type == "Batter":
-                batter_names = sorted(list(h_stats.keys()))
-                fantasy_player = st.selectbox("Select Batter Projection:", batter_names)
-            
-                b = h_stats.get(fantasy_player, {})
-                games = b.get("G", 1) or 1
-            
-                fantasy_ppg = (
-                    b.get("H", 0)
-                    + b.get("BB", 0)
-                    + b.get("R", 0)
-                    + b.get("RBI", 0)
-                    + b.get("SB", 0)
-                    + (b.get("HR", 0) * 3)
-                    - b.get("SO", 0)
-                ) / games
-            
-                projected_points = fantasy_ppg * 1.08
-            
-                st.metric("Projected Fantasy Points", f"{projected_points:.1f}")
-                st.caption("Early projection based on season production, power, speed, and strikeout penalty.")
                 
                 if not p_stats or not h_stats:
                     st.error("🚨 Could not sync with MLB Stats API.")
@@ -1650,6 +1617,39 @@ if sport == "⚾ MLB Baseball":
                         else:
                             st.warning("Add players to both sides to analyze a trade.")
 
+            st.markdown("### 🔮 MLB Fantasy Projection Lab")
+            
+                        projection_type = st.radio(
+                            "Projection Type:",
+                            ["Batter", "Pitcher"],
+                            horizontal=True
+                        )
+                      
+                        with st.spinner("Compiling League-Wide Player Database..."):
+                            _, p_stats, h_stats = fetch_mlb_api_data()
+            
+                        if projection_type == "Batter":
+                            batter_names = sorted(list(h_stats.keys()))
+                            fantasy_player = st.selectbox("Select Batter Projection:", batter_names)
+                        
+                            b = h_stats.get(fantasy_player, {})
+                            games = b.get("G", 1) or 1
+                        
+                            fantasy_ppg = (
+                                b.get("H", 0)
+                                + b.get("BB", 0)
+                                + b.get("R", 0)
+                                + b.get("RBI", 0)
+                                + b.get("SB", 0)
+                                + (b.get("HR", 0) * 3)
+                                - b.get("SO", 0)
+                            ) / games
+                        
+                            projected_points = fantasy_ppg * 1.08
+                        
+                            st.metric("Projected Fantasy Points", f"{projected_points:.1f}")
+                            st.caption("Early projection based on season production, power, speed, and strikeout penalty.")
+        
         elif fantasy_sport == "🏈 NFL Sleeper PPR Trade Engine":
             @st.cache_data(ttl=CACHE_TTL_DAILY)
             def load_sleeper_players():
