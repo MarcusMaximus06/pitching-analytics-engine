@@ -1567,8 +1567,8 @@ if sport == "⚾ MLB Baseball":
             if not p_stats or not h_stats:
                 st.error("🚨 Could not sync with MLB Stats API.")
                 
-                else:
-                    st.info("MLB Trade Analyzer loaded.")
+            else:
+                st.info("MLB Trade Analyzer loaded.")
                     
         elif fantasy_sport == "🏈 NFL Sleeper PPR Trade Engine":
             @st.cache_data(ttl=CACHE_TTL_DAILY)
