@@ -1616,7 +1616,7 @@ if sport == "⚾ MLB Baseball":
                         "Early projection based on season production, power, speed, and strikeout penalty."
                     )
 
-                            else:
+            else:
                 pitcher_names = sorted(list(p_stats.keys()))
 
                 fantasy_pitcher = st.selectbox(
