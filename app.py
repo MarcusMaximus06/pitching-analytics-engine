@@ -644,6 +644,12 @@ if sport == "⚾ MLB Baseball":
                                 home_sp_score = calculate_sp_edge_score(pitcher_stats, home_sp)
                                 
                                 sp_edge_adjustment = (away_sp_score - home_sp_score) * 0.25
+
+                                away_k_factor = calculate_team_k_tendency(team_stats, home_t)
+                                home_k_factor = calculate_team_k_tendency(team_stats, away_t)
+                                
+                                sp_edge_adjustment = sp_edge_adjustment * away_k_factor
+                                sp_edge_adjustment = sp_edge_adjustment / home_k_factor
                                 
                                 a_run_prevention = (a_sp_fip * 0.60) + (a_ra_g * 0.40)
                                 h_run_prevention = (h_sp_fip * 0.60) + (h_ra_g * 0.40)
@@ -779,6 +785,12 @@ if sport == "⚾ MLB Baseball":
                 home_sp_score = calculate_sp_edge_score(pitcher_stats, home_sp)
                 
                 sp_edge_adjustment = (away_sp_score - home_sp_score) * 0.25
+
+                away_k_factor = calculate_team_k_tendency(team_stats, home_t)
+                home_k_factor = calculate_team_k_tendency(team_stats, away_t)
+                
+                sp_edge_adjustment = sp_edge_adjustment * away_k_factor
+                sp_edge_adjustment = sp_edge_adjustment / home_k_factor
                 
                 st.caption(
                     f"Pitcher Form Blend | "
