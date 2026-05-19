@@ -383,6 +383,34 @@ if sport == "⚾ MLB Baseball":
         except Exception:
             return 0, 0.0, 0.0, "Unavailable"
 
+    def calculate_sp_edge_score(pitcher_stats, pitcher_name):
+        p = pitcher_stats.get(pitcher_name, {})
+    
+        ip = p.get("IP", 0)
+        k = p.get("K", 0)
+        bb = p.get("BB", 0)
+        fip = p.get("FIP", 4.20)
+    
+        if ip <= 0:
+            return 0
+    
+        k9 = (k / ip) * 9
+        bb9 = (bb / ip) * 9
+    
+        strikeout_score = min(1.0, k9 / 12)
+        control_score = max(0.0, 1 - (bb9 / 5))
+        run_prev_score = max(0.0, 1 - (fip / 6))
+        workload_score = min(1.0, ip / 180)
+    
+        sp_score = (
+            strikeout_score * 0.40
+            + run_prev_score * 0.30
+            + control_score * 0.20
+            + workload_score * 0.10
+        )
+    
+        return sp_score
+    
     def auto_grade_pending_bets():
         try:
             worksheet = get_google_worksheet("MLB Daily Prediction Model", "MLB Log V2")
