@@ -1616,8 +1616,7 @@ if sport == "⚾ MLB Baseball":
                                 st.info(f"🤝 This trade is highly balanced. Only a **{diff:.1f}** point differential.")
                         else:
                             st.warning("Add players to both sides to analyze a trade.")
-
-            st.markdown("### 🔮 MLB Fantasy Projection Lab")
+             st.markdown("### 🔮 MLB Fantasy Projection Lab")
             
                         projection_type = st.radio(
                             "Projection Type:",
@@ -1649,7 +1648,7 @@ if sport == "⚾ MLB Baseball":
                         
                             st.metric("Projected Fantasy Points", f"{projected_points:.1f}")
                             st.caption("Early projection based on season production, power, speed, and strikeout penalty.")
-        
+                            
         elif fantasy_sport == "🏈 NFL Sleeper PPR Trade Engine":
             @st.cache_data(ttl=CACHE_TTL_DAILY)
             def load_sleeper_players():
