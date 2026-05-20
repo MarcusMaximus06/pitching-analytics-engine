@@ -1608,7 +1608,10 @@ if sport == "⚾ MLB Baseball":
                         - b.get("SO", 0)
                     ) / games
     
-                    projected_points = fantasy_ppg * 1.08
+                    player_team = b.get("Team", "N/A")
+                    park_factor = PARK_FACTORS.get(player_team, 100) / 100
+                    
+                    projected_points = fantasy_ppg * 1.08 * park_factor
     
                     floor_points = projected_points * 0.65
                     ceiling_points = projected_points * 1.45
@@ -1660,7 +1663,10 @@ if sport == "⚾ MLB Baseball":
                         - p.get("BB", 0)
                     ) / games
     
-                    projected_points = fantasy_ppg * 1.05
+                    pitcher_team = p.get("Team", "N/A")
+                    park_factor = PARK_FACTORS.get(pitcher_team, 100) / 100
+                    
+                    projected_points = fantasy_ppg * 1.05 * (2 - park_factor)
     
                     floor_points = projected_points * 0.60
                     ceiling_points = projected_points * 1.55
