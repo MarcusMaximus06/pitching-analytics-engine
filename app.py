@@ -1584,7 +1584,49 @@ if sport == "⚾ MLB Baseball":
                     ["Batter", "Pitcher"],
                     horizontal=True
                 )
-    
+
+                st.markdown("---")
+                st.markdown("## 🔥 Top Fantasy Projections")
+
+                hitter_board = []
+
+                for hitter_name, hitter_data in h_stats.items():
+
+                    games = hitter_data.get("G", 1) or 1
+
+                    fantasy_ppg = (
+                        hitter_data.get("H", 0)
+                        + hitter_data.get("BB", 0)
+                        + hitter_data.get("R", 0)
+                        + hitter_data.get("RBI", 0)
+                        + hitter_data.get("SB", 0)
+                        + (hitter_data.get("HR", 0) * 3)
+                        - hitter_data.get("SO", 0)
+                    ) / games
+
+                    team = hitter_data.get("Team", "N/A")
+
+                    park_factor = PARK_FACTORS.get(team, 100) / 100
+
+                    proj = fantasy_ppg * 1.08 * park_factor
+
+                    hitter_board.append({
+                        "Player": hitter_name,
+                        "Proj Points": round(proj, 1)
+                    })
+
+                hitter_df = pd.DataFrame(hitter_board)
+
+                hitter_df = hitter_df.sort_values(
+                    by="Proj Points",
+                    ascending=False
+                ).head(10)
+
+                st.dataframe(
+                    hitter_df,
+                    use_container_width=True
+                )
+                
                 if projection_type == "Batter":
     
                     batter_names = sorted(list(h_stats.keys()))
@@ -1754,48 +1796,6 @@ if sport == "⚾ MLB Baseball":
     
                     st.caption(
                         f"Projection factors: Season production × Pitcher Park Boost ({2 - park_factor:.2f}) × Matchup Factor ({matchup_factor:.2f})"
-                    )
-
-                    st.markdown("---")
-                    st.markdown("## 🔥 Top Fantasy Projections")
-    
-                    hitter_board = []
-    
-                    for hitter_name, hitter_data in h_stats.items():
-    
-                        games = hitter_data.get("G", 1) or 1
-    
-                        fantasy_ppg = (
-                            hitter_data.get("H", 0)
-                            + hitter_data.get("BB", 0)
-                            + hitter_data.get("R", 0)
-                            + hitter_data.get("RBI", 0)
-                            + hitter_data.get("SB", 0)
-                            + (hitter_data.get("HR", 0) * 3)
-                            - hitter_data.get("SO", 0)
-                        ) / games
-    
-                        team = hitter_data.get("Team", "N/A")
-    
-                        park_factor = PARK_FACTORS.get(team, 100) / 100
-    
-                        proj = fantasy_ppg * 1.08 * park_factor
-    
-                        hitter_board.append({
-                            "Player": hitter_name,
-                            "Proj Points": round(proj, 1)
-                        })
-    
-                    hitter_df = pd.DataFrame(hitter_board)
-    
-                    hitter_df = hitter_df.sort_values(
-                        by="Proj Points",
-                        ascending=False
-                    ).head(10)
-    
-                    st.dataframe(
-                        hitter_df,
-                        use_container_width=True
                     )
             
         elif fantasy_sport == "🏈 NFL Sleeper PPR Trade Engine":
