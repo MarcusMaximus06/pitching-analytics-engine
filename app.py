@@ -1610,7 +1610,16 @@ if sport == "⚾ MLB Baseball":
 
                     park_factor = PARK_FACTORS.get(team, 100) / 100
 
-                    proj = fantasy_ppg * 1.08 * park_factor
+                    if fantasy_ppg >= 7:
+                        lineup_factor = 1.08
+                    elif fantasy_ppg >= 5:
+                        lineup_factor = 1.04
+                    elif fantasy_ppg >= 3:
+                        lineup_factor = 1.00
+                    else:
+                        lineup_factor = 0.94
+                    
+                    proj = fantasy_ppg * 1.08 * park_factor * lineup_factor
 
                     hitter_board.append({
                         "Player": hitter_name,
@@ -1726,7 +1735,16 @@ if sport == "⚾ MLB Baseball":
                     elif player_team in elite_pitching_teams:
                         matchup_factor = 0.92
                     
-                    projected_points = fantasy_ppg * 1.08 * park_factor * matchup_factor
+                    if fantasy_ppg >= 7:
+                        lineup_factor = 1.08
+                    elif fantasy_ppg >= 5:
+                        lineup_factor = 1.04
+                    elif fantasy_ppg >= 3:
+                        lineup_factor = 1.00
+                    else:
+                        lineup_factor = 0.94
+                    
+                    projected_points = fantasy_ppg * 1.08 * park_factor * matchup_factor * lineup_factor
     
                     floor_points = projected_points * 0.65
                     ceiling_points = projected_points * 1.45
@@ -1761,7 +1779,7 @@ if sport == "⚾ MLB Baseball":
                         st.info("📈 Stable Projection")
     
                     st.caption(
-                        f"Projection factors: Season production × Park Factor ({park_factor:.2f}) × Matchup Factor ({matchup_factor:.2f})"
+                        f"Projection factors: Season production × Park Factor ({park_factor:.2f}) × Matchup Factor ({matchup_factor:.2f}) × Lineup Factor ({lineup_factor:.2f})"
                     )
 
                 else:
