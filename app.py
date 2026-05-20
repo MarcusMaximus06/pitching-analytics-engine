@@ -1611,7 +1611,29 @@ if sport == "⚾ MLB Baseball":
                     player_team = b.get("Team", "N/A")
                     park_factor = PARK_FACTORS.get(player_team, 100) / 100
                     
-                    projected_points = fantasy_ppg * 1.08 * park_factor
+                    matchup_factor = 1.00
+
+                    elite_pitching_teams = [
+                        "Seattle Mariners",
+                        "Atlanta Braves",
+                        "Philadelphia Phillies",
+                        "Los Angeles Dodgers"
+                    ]
+                    
+                    weak_pitching_teams = [
+                        "Colorado Rockies",
+                        "Chicago White Sox",
+                        "Miami Marlins",
+                        "Oakland Athletics"
+                    ]
+                    
+                    if player_team in weak_pitching_teams:
+                        matchup_factor = 1.10
+                    
+                    elif player_team in elite_pitching_teams:
+                        matchup_factor = 0.92
+                    
+                    projected_points = fantasy_ppg * 1.08 * park_factor * matchup_factor
     
                     floor_points = projected_points * 0.65
                     ceiling_points = projected_points * 1.45
@@ -1635,9 +1657,18 @@ if sport == "⚾ MLB Baseball":
                     
                     with fc4:
                         st.metric("Confidence", confidence)
+
+                    if ceiling_points >= 18:
+                        st.success("💥 Boom Potential")
+                    
+                    elif floor_points <= 4:
+                        st.warning("⚠️ Bust Risk")
+                    
+                    else:
+                        st.info("📈 Stable Projection")
     
                     st.caption(
-                        "Early projection based on season production, power, speed, and strikeout penalty."
+                        f"Projection factors: Season production × Park Factor ({park_factor:.2f}) × Matchup Factor ({matchup_factor:.2f})"
                     )
 
                 else:
@@ -1666,7 +1697,28 @@ if sport == "⚾ MLB Baseball":
                     pitcher_team = p.get("Team", "N/A")
                     park_factor = PARK_FACTORS.get(pitcher_team, 100) / 100
                     
-                    projected_points = fantasy_ppg * 1.05 * (2 - park_factor)
+                    matchup_factor = 1.00
+
+                    high_k_teams = [
+                        "Colorado Rockies",
+                        "Chicago White Sox",
+                        "Miami Marlins",
+                        "Oakland Athletics"
+                    ]
+                    
+                    disciplined_teams = [
+                        "Houston Astros",
+                        "Cleveland Guardians",
+                        "San Diego Padres"
+                    ]
+                    
+                    if pitcher_team in high_k_teams:
+                        matchup_factor = 1.12
+                    
+                    elif pitcher_team in disciplined_teams:
+                        matchup_factor = 0.90
+                    
+                    projected_points = fantasy_ppg * 1.05 * (2 - park_factor) * matchup_factor
     
                     floor_points = projected_points * 0.60
                     ceiling_points = projected_points * 1.55
@@ -1690,9 +1742,18 @@ if sport == "⚾ MLB Baseball":
                     
                     with fc4:
                         st.metric("Confidence", confidence)
+
+                    if ceiling_points >= 30:
+                        st.success("💥 Tournament Upside")
+                    
+                    elif floor_points <= 8:
+                        st.warning("⚠️ Volatile Pitcher")
+                    
+                    else:
+                        st.info("📈 Stable Arm")
     
                     st.caption(
-                        "Early pitcher projection based on innings, strikeouts, wins/saves, and run prevention."
+                        f"Projection factors: Season production × Pitcher Park Boost ({2 - park_factor:.2f}) × Matchup Factor ({matchup_factor:.2f})"
                     )
             
         elif fantasy_sport == "🏈 NFL Sleeper PPR Trade Engine":
