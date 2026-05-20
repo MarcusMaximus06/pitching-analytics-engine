@@ -334,10 +334,10 @@ if sport == "⚾ MLB Baseball":
             return None
 
     @st.cache_data(ttl=CACHE_TTL_DAILY)
-def fetch_recent_batter_fantasy_form(player_id):
-    try:
-        if not player_id:
-            return None
+    def fetch_recent_batter_fantasy_form(player_id):
+        try:
+            if not player_id:
+                return None
 
         url = f"https://statsapi.mlb.com/api/v1/people/{player_id}/stats?stats=gameLog&group=hitting&season=2026"
         data = requests.get(url, timeout=10).json()
