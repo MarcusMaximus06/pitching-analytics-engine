@@ -1624,6 +1624,8 @@ if sport == "⚾ MLB Baseball":
                     ascending=False
                 ).head(10)
 
+                hitter_df = hitter_df.reset_index(drop=True)
+
                 st.dataframe(
                     hitter_df,
                     use_container_width=True
@@ -1662,6 +1664,8 @@ if sport == "⚾ MLB Baseball":
                     by="Proj Points",
                     ascending=False
                 ).head(10)
+
+                pitcher_df = pitcher_df.reset_index(drop=True)
                 
                 st.markdown("### ⚾ Top Pitcher Projections")
                 
