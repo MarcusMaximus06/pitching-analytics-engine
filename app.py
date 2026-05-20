@@ -1626,6 +1626,47 @@ if sport == "⚾ MLB Baseball":
                     hitter_df,
                     use_container_width=True
                 )
+
+                pitcher_board = []
+
+                for pitcher_name, pitcher_data in p_stats.items():
+                
+                    games = pitcher_data.get("G", 1) or 1
+                
+                    fantasy_ppg = (
+                        (pitcher_data.get("IP", 0) * 3)
+                        + pitcher_data.get("K", 0)
+                        + (pitcher_data.get("W", 0) * 5)
+                        + (pitcher_data.get("SV", 0) * 5)
+                        - (pitcher_data.get("L", 0) * 5)
+                        - (pitcher_data.get("ER", 0) * 2)
+                        - pitcher_data.get("H", 0)
+                        - pitcher_data.get("BB", 0)
+                    ) / games
+                
+                    team = pitcher_data.get("Team", "N/A")
+                    park_factor = PARK_FACTORS.get(team, 100) / 100
+                
+                    proj = fantasy_ppg * 1.05 * (2 - park_factor)
+                
+                    pitcher_board.append({
+                        "Player": pitcher_name,
+                        "Proj Points": round(proj, 1)
+                    })
+                
+                pitcher_df = pd.DataFrame(pitcher_board)
+                
+                pitcher_df = pitcher_df.sort_values(
+                    by="Proj Points",
+                    ascending=False
+                ).head(10)
+                
+                st.markdown("### ⚾ Top Pitcher Projections")
+                
+                st.dataframe(
+                    pitcher_df,
+                    use_container_width=True
+                )
                 
                 if projection_type == "Batter":
     
