@@ -1595,13 +1595,15 @@ if sport == "⚾ MLB Baseball":
                     games = hitter_data.get("G", 1) or 1
 
                     fantasy_ppg = (
-                        hitter_data.get("H", 0)
-                        + hitter_data.get("BB", 0)
-                        + hitter_data.get("R", 0)
-                        + hitter_data.get("RBI", 0)
-                        + hitter_data.get("SB", 0)
-                        + (hitter_data.get("HR", 0) * 3)
-                        - hitter_data.get("SO", 0)
+                        (hitter_data.get("H", 0) * 1)
+                        + (hitter_data.get("2B", 0) * 2)
+                        + (hitter_data.get("3B", 0) * 3)
+                        + (hitter_data.get("HR", 0) * 6)
+                        + (hitter_data.get("R", 0) * 2)
+                        + (hitter_data.get("RBI", 0) * 2)
+                        + (hitter_data.get("BB", 0) * 1)
+                        + (hitter_data.get("SB", 0) * 5)
+                        - (hitter_data.get("SO", 0) * 0.5)
                     ) / games
 
                     team = hitter_data.get("Team", "N/A")
