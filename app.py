@@ -1628,7 +1628,8 @@ if sport == "⚾ MLB Baseball":
 
                 st.dataframe(
                     hitter_df,
-                    use_container_width=True
+                    use_container_width=True,
+                    hide_index=True
                 )
 
                 pitcher_board = []
@@ -1671,7 +1672,8 @@ if sport == "⚾ MLB Baseball":
                 
                 st.dataframe(
                     pitcher_df,
-                    use_container_width=True
+                    use_container_width=True,
+                    hide_index=True
                 )
                 
                 if projection_type == "Batter":
