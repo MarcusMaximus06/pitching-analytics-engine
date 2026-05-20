@@ -1623,6 +1623,8 @@ if sport == "⚾ MLB Baseball":
 
                     hitter_board.append({
                         "Player": hitter_name,
+                        "Team": team,
+                        "Lineup Factor": round(lineup_factor, 2),
                         "Proj Points": round(proj, 1)
                     })
 
