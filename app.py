@@ -1742,7 +1742,10 @@ def fetch_recent_batter_fantasy_form(player_id):
                     )
     
                     b = h_stats.get(fantasy_player, {})
-    
+
+                    batter_player_id = b.get("ID")
+                    recent_form_ppg = fetch_recent_batter_fantasy_form(batter_player_id)
+                    
                     games = b.get("G", 1) or 1
     
                     fantasy_ppg = (
@@ -1791,7 +1794,13 @@ def fetch_recent_batter_fantasy_form(player_id):
                     else:
                         lineup_factor = 0.94
                     
-                    projected_points = fantasy_ppg * 1.08 * park_factor * matchup_factor * lineup_factor
+                    if recent_form_ppg is not None:
+                        projected_points = (
+                            (fantasy_ppg * 0.75) +
+                            (recent_form_ppg * 0.25)
+                        ) * 1.08 * park_factor * matchup_factor * lineup_factor
+                    else:
+                        projected_points = fantasy_ppg * 1.08 * park_factor * matchup_factor * lineup_factor
     
                     floor_points = projected_points * 0.65
                     ceiling_points = projected_points * 1.45
@@ -1825,9 +1834,14 @@ def fetch_recent_batter_fantasy_form(player_id):
                     else:
                         st.info("📈 Stable Projection")
     
-                    st.caption(
-                        f"Projection factors: Season production × Park Factor ({park_factor:.2f}) × Matchup Factor ({matchup_factor:.2f}) × Lineup Factor ({lineup_factor:.2f})"
-                    )
+                    if recent_form_ppg is not None:
+                        st.caption(
+                            f"Projection factors: 75% Season Form + 25% Recent 7-Game Form ({recent_form_ppg:.1f}) × Park Factor ({park_factor:.2f}) × Matchup Factor ({matchup_factor:.2f}) × Lineup Factor ({lineup_factor:.2f})"
+                        )
+                    else:
+                        st.caption(
+                            f"Projection factors: Season production × Park Factor ({park_factor:.2f}) × Matchup Factor ({matchup_factor:.2f}) × Lineup Factor ({lineup_factor:.2f})"
+                        )
 
                 else:
                     pitcher_names = sorted(list(p_stats.keys()))
