@@ -829,6 +829,9 @@ if sport == "⚾ MLB Baseball":
                 
                 a_run_prevention = (a_sp_fip * 0.60) + (a_ra_g * 0.40)
                 h_run_prevention = (h_sp_fip * 0.60) + (h_ra_g * 0.40)
+
+                away_bullpen_factor = calculate_bullpen_fatigue(away_t)
+                home_bullpen_factor = calculate_bullpen_fatigue(home_t)
                 
                 away_recent_raw = fetch_recent_mlb_team_form(away_t) or {
                     "recent_rs_per_g": a_rs_g,
