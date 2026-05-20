@@ -333,6 +333,51 @@ if sport == "⚾ MLB Baseball":
         except Exception:
             return None
 
+    @st.cache_data(ttl=CACHE_TTL_DAILY)
+def fetch_recent_batter_fantasy_form(player_id):
+    try:
+        if not player_id:
+            return None
+
+        url = f"https://statsapi.mlb.com/api/v1/people/{player_id}/stats?stats=gameLog&group=hitting&season=2026"
+        data = requests.get(url, timeout=10).json()
+
+        splits = data.get("stats", [{}])[0].get("splits", [])
+
+        if not splits:
+            return None
+
+        recent_games = splits[-7:]
+
+        total_points = 0
+        games = 0
+
+        for g in recent_games:
+            s = g.get("stat", {})
+
+            points = (
+                (int(s.get("hits", 0)) * 1)
+                + (int(s.get("doubles", 0)) * 2)
+                + (int(s.get("triples", 0)) * 3)
+                + (int(s.get("homeRuns", 0)) * 6)
+                + (int(s.get("runs", 0)) * 2)
+                + (int(s.get("rbi", 0)) * 2)
+                + (int(s.get("baseOnBalls", 0)) * 1)
+                + (int(s.get("stolenBases", 0)) * 5)
+                - (int(s.get("strikeOuts", 0)) * 0.5)
+            )
+
+            total_points += points
+            games += 1
+
+        if games == 0:
+            return None
+
+        return round(total_points / games, 2)
+
+    except Exception:
+        return None
+
     def log_to_google_sheets(row_data):
         try:
             gc = get_google_client()
