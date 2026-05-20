@@ -1610,10 +1610,28 @@ if sport == "⚾ MLB Baseball":
     
                     projected_points = fantasy_ppg * 1.08
     
-                    st.metric(
-                        "Projected Fantasy Points",
-                        f"{projected_points:.1f}"
-                    )
+                    floor_points = projected_points * 0.65
+                    ceiling_points = projected_points * 1.45
+                    
+                    confidence = "Medium"
+                    if games >= 40:
+                        confidence = "High"
+                    elif games < 15:
+                        confidence = "Low"
+                    
+                    fc1, fc2, fc3, fc4 = st.columns(4)
+                    
+                    with fc1:
+                        st.metric("Projected Points", f"{projected_points:.1f}")
+                    
+                    with fc2:
+                        st.metric("Floor", f"{floor_points:.1f}")
+                    
+                    with fc3:
+                        st.metric("Ceiling", f"{ceiling_points:.1f}")
+                    
+                    with fc4:
+                        st.metric("Confidence", confidence)
     
                     st.caption(
                         "Early projection based on season production, power, speed, and strikeout penalty."
@@ -1644,10 +1662,28 @@ if sport == "⚾ MLB Baseball":
     
                     projected_points = fantasy_ppg * 1.05
     
-                    st.metric(
-                        "Projected Fantasy Points",
-                        f"{projected_points:.1f}"
-                    )
+                    floor_points = projected_points * 0.60
+                    ceiling_points = projected_points * 1.55
+                    
+                    confidence = "Medium"
+                    if games >= 10:
+                        confidence = "High"
+                    elif games < 4:
+                        confidence = "Low"
+                    
+                    fc1, fc2, fc3, fc4 = st.columns(4)
+                    
+                    with fc1:
+                        st.metric("Projected Points", f"{projected_points:.1f}")
+                    
+                    with fc2:
+                        st.metric("Floor", f"{floor_points:.1f}")
+                    
+                    with fc3:
+                        st.metric("Ceiling", f"{ceiling_points:.1f}")
+                    
+                    with fc4:
+                        st.metric("Confidence", confidence)
     
                     st.caption(
                         "Early pitcher projection based on innings, strikeouts, wins/saves, and run prevention."
