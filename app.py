@@ -1616,6 +1616,40 @@ if sport == "⚾ MLB Baseball":
                         "Early projection based on season production, power, speed, and strikeout penalty."
                     )
 
+                else:
+                    pitcher_names = sorted(list(p_stats.keys()))
+    
+                    fantasy_pitcher = st.selectbox(
+                        "Select Pitcher Projection:",
+                        pitcher_names
+                    )
+    
+                    p = p_stats.get(fantasy_pitcher, {})
+    
+                    games = p.get("G", 1) or 1
+    
+                    fantasy_ppg = (
+                        (p.get("IP", 0) * 3)
+                        + p.get("K", 0)
+                        + (p.get("W", 0) * 5)
+                        + (p.get("SV", 0) * 5)
+                        - (p.get("L", 0) * 5)
+                        - (p.get("ER", 0) * 2)
+                        - p.get("H", 0)
+                        - p.get("BB", 0)
+                    ) / games
+    
+                    projected_points = fantasy_ppg * 1.05
+    
+                    st.metric(
+                        "Projected Fantasy Points",
+                        f"{projected_points:.1f}"
+                    )
+    
+                    st.caption(
+                        "Early pitcher projection based on innings, strikeouts, wins/saves, and run prevention."
+                    )
+        
             else:
                 pitcher_names = sorted(list(p_stats.keys()))
 
