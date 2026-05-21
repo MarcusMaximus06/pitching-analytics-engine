@@ -2939,15 +2939,15 @@ elif sport == "🏈 NFL Football":
         predicted_winner = away_team_name if prob_away > prob_home else home_team_name
         st.info(f"🏆 Predicted Winner: **{predicted_winner}**")
 
-        elif nfl_page == "🏆 NFL Fantasy Predictor":
-    
-            st.title("🏆 NFL Fantasy Predictor")
-    
-            st.caption(
-                "Sleeper PPR projections, trade tools, and player rankings."
-            )
-    
-            st.info("NFL fantasy engine coming next.")
+    elif nfl_page == "🏆 NFL Fantasy Predictor":
+
+        st.title("🏆 NFL Fantasy Predictor")
+
+        st.caption(
+            "Sleeper PPR projections, trade tools, and player rankings."
+        )
+
+        st.info("NFL fantasy engine coming next.")
 
 # ==========================================================
 # SPORT BRANCH 4: NCAA FOOTBALL (DYNAMIC CFBD API)
