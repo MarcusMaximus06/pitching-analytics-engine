@@ -1787,8 +1787,15 @@ if sport == "⚾ MLB Baseball":
                 hitter_df = hitter_df.sort_values(
                     by="Proj Points",
                     ascending=False
-                ).head(10)
+                )
 
+                player_search = st.text_input("Search projected hitters:")
+
+                if player_search:
+                    hitter_df = hitter_df[
+                        hitter_df["Player"].str.contains(player_search, case=False, na=False)
+                    ]
+                    
                 hitter_df = hitter_df.reset_index(drop=True)
 
                 st.dataframe(
@@ -1881,7 +1888,11 @@ if sport == "⚾ MLB Baseball":
                     
                     matchup_factor = 1.00
 
-                    bat_side = b.get("Bat Side", "U")
+                    bat_side = st.selectbox(
+                        "Batter Hits:",
+                        ["U", "R", "L", "S"],
+                        index=["U", "R", "L", "S"].index(b.get("Bat Side", "U")) if b.get("Bat Side", "U") in ["U", "R", "L", "S"] else 0
+                    )
 
                     pitcher_hand = st.selectbox(
                         "Opposing Pitcher Throws:",
@@ -1891,7 +1902,9 @@ if sport == "⚾ MLB Baseball":
                     
                     handedness_factor = 1.00
 
-                    if bat_side == "L" and pitcher_hand == "R":
+                    if bat_side == "S":
+                        handedness_factor = 1.02
+                    elif bat_side == "L" and pitcher_hand == "R":
                         handedness_factor = 1.04
                     elif bat_side == "R" and pitcher_hand == "L":
                         handedness_factor = 1.04
