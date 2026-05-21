@@ -2603,9 +2603,21 @@ elif sport == "🥎 NCAA Softball":
 # SPORT BRANCH 3: NFL FOOTBALL
 # ==========================================================
 elif sport == "🏈 NFL Football":
+    nfl_page = st.sidebar.radio(
+        "Select NFL Engine:",
+        [
+            "🏈 NFL Simulation Engine",
+            "🏆 NFL Fantasy Predictor"
+        ]
+    )
+
+    st.sidebar.markdown("---")
+    if nfl_page == "🏈 NFL Simulation Engine":
     st.title("🏈 NFL Ensemble Simulation Engine")
     st.markdown("### 📊 Elo + Split EPA Power Ratings")
-    st.caption("*Fuses structural base Elo ratings with weighted Pass/Rush Expected Points Added (EPA) per play. Includes situational edges.*")
+    st.caption(
+        "*Fuses structural base Elo ratings with weighted Pass/Rush Expected Points Added (EPA) per play. Includes situational edges.*"
+    )
     
     def log_nfl_to_sheets(row_data):
         try:
@@ -2926,6 +2938,16 @@ elif sport == "🏈 NFL Football":
             
         predicted_winner = away_team_name if prob_away > prob_home else home_team_name
         st.info(f"🏆 Predicted Winner: **{predicted_winner}**")
+
+        elif nfl_page == "🏆 NFL Fantasy Predictor":
+    
+            st.title("🏆 NFL Fantasy Predictor")
+    
+            st.caption(
+                "Sleeper PPR projections, trade tools, and player rankings."
+            )
+    
+            st.info("NFL fantasy engine coming next.")
 
 # ==========================================================
 # SPORT BRANCH 4: NCAA FOOTBALL (DYNAMIC CFBD API)
