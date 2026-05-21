@@ -125,8 +125,33 @@ st.set_page_config(page_title=APP_PAGE_TITLE, layout="wide")
 # MASTER SPORT ROUTER
 # ==========================================================
 st.sidebar.title(APP_TITLE)
-sport = st.sidebar.selectbox("Select Sport Engine:", ["⚾ MLB Baseball", "🥎 NCAA Softball", "🏈 NFL Football", "🎓 NCAA Football"])
+sport = st.sidebar.selectbox(
+    "Select Sport Engine:",
+    [
+        "🏠 Home",
+        "⚾ MLB Baseball",
+        "🏈 NFL Football",
+        "🎓 NCAA Football",
+        "🥎 NCAA Softball"
+    ]
+)
 st.sidebar.markdown("---")
+
+if sport == "🏠 Home":
+    st.title("🏠 Hag Labs Sports Analytics Hub")
+    st.markdown("### Pick a sport engine from the sidebar.")
+
+    st.markdown("""
+    #### Active Engines
+    - ⚾ MLB Baseball: betting model, player lab, fantasy projections
+    - 🏈 NFL Football: simulation engine and fantasy projections in progress
+
+    #### Coming Soon
+    - 🎓 NCAA Football
+    - 🥎 NCAA Softball
+    """)
+
+    st.stop()
 
 # ==========================================================
 # SPORT BRANCH 1: MLB BASEBALL
