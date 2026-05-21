@@ -1213,6 +1213,12 @@ if sport == "⚾ MLB Baseball":
                     edge_label = "Tight Matchup"
                 
                 with edge_col1:
+
+                    away_logo = TEAM_LOGOS.get(away_t)
+                
+                    if away_logo:
+                        st.image(away_logo, width=55)
+                
                     st.metric(f"{away_t} Win Prob", f"{model_away_prob:.1%}")
                 
                 with edge_col2:
@@ -1227,6 +1233,11 @@ if sport == "⚾ MLB Baseball":
                     confidence = "Medium"
                 
                 with edge_col3:
+
+                    home_logo = TEAM_LOGOS.get(home_t)
+                
+                    if home_logo:
+                        st.image(home_logo, width=55)
                 
                     st.metric(f"{home_t} Win Prob", f"{model_home_prob:.1%}")
                 
