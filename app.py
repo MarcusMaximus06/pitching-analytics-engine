@@ -1694,20 +1694,14 @@ if sport == "⚾ MLB Baseball":
 
                     park_factor = PARK_FACTORS.get(team, 100) / 100
 
-                    if batting_order == 1:
-                        lineup_factor = 1.12
-                    elif batting_order == 2:
-                        lineup_factor = 1.10
-                    elif batting_order == 3:
+                    if fantasy_ppg >= 7:
                         lineup_factor = 1.08
-                    elif batting_order == 4:
-                        lineup_factor = 1.06
-                    elif batting_order == 5:
-                        lineup_factor = 1.03
-                    elif batting_order and batting_order >= 6:
-                        lineup_factor = 0.96
+                    elif fantasy_ppg >= 5:
+                        lineup_factor = 1.04
+                    elif fantasy_ppg >= 3:
+                        lineup_factor = 1.00
                     else:
-                        lineup_factor = 0.90
+                        lineup_factor = 0.94
                     
                     proj = fantasy_ppg * 1.08 * park_factor * lineup_factor
 
