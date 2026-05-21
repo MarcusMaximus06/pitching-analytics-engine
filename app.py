@@ -378,6 +378,45 @@ if sport == "⚾ MLB Baseball":
         except Exception:
             return None
 
+    @st.cache_data(ttl=CACHE_TTL_SHORT)
+    def fetch_today_mlb_lineups():
+        try:
+            date_str = get_local_date_str()
+    
+            url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={date_str}&hydrate=lineups"
+    
+            data = requests.get(url, timeout=10).json()
+    
+            lineup_map = {}
+    
+            for date_block in data.get("dates", []):
+                for game in date_block.get("games", []):
+    
+                    teams = game.get("teams", {})
+    
+                    for side in ["away", "home"]:
+    
+                        team_name = teams.get(side, {}).get("team", {}).get("name", "Unknown")
+    
+                        lineup = teams.get(side, {}).get("lineup", [])
+    
+                        for idx, player in enumerate(lineup):
+    
+                            player_name = clean_name(player.get("fullName", ""))
+    
+                            if player_name:
+    
+                                lineup_map[player_name] = {
+                                    "Team": team_name,
+                                    "Batting Order": idx + 1,
+                                    "Confirmed Starter": True
+                                }
+    
+            return lineup_map
+    
+        except Exception:
+            return {}
+    
     def log_to_google_sheets(row_data):
         try:
             gc = get_google_client()
