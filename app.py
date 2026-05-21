@@ -204,6 +204,7 @@ if sport == "⚾ MLB Baseball":
                 
                 pitcher_data[p_name] = {
                     'ID': p['player'].get('id'),
+                    'Throw Side': p.get('player', {}).get('pitchHand', {}).get('code', 'U'),
                     'FIP': fip,
                     'Team': t_name,
                     'IP': ip,
@@ -225,6 +226,7 @@ if sport == "⚾ MLB Baseball":
                 hitter_data[h_name] = {
                     'ID': h['player'].get('id'),
                     'Team': h.get('team', {}).get('name', 'Free Agent'),
+                    'Bat Side': h.get('player', {}).get('batSide', {}).get('code', 'U'),
                     'H': s.get('hits',0), '2B': s.get('doubles',0), '3B': s.get('triples',0), 'HR': s.get('homeRuns',0),
                     'BB': s.get('baseOnBalls',0), 'R': s.get('runs',0), 'RBI': s.get('rbi',0), 'SB': s.get('stolenBases',0),
                     'SO': s.get('strikeOuts',0), 'G': s.get('gamesPlayed', 1) or 1
@@ -1811,6 +1813,11 @@ if sport == "⚾ MLB Baseball":
                     
                     matchup_factor = 1.00
 
+                    bat_side = b.get("Bat Side", "U")
+                    pitcher_hand = "U"
+                    
+                    handedness_factor = 1.00
+                    
                     elite_pitching_teams = [
                         "Seattle Mariners",
                         "Atlanta Braves",
