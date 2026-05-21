@@ -218,6 +218,19 @@ if sport == "⚾ MLB Baseball":
                     'G': s.get('gamesPlayed', 1) or 1
                 }
 
+            position_lookup = {}
+
+            try:
+                pos_url = "https://statsapi.mlb.com/api/v1/sports/1/players?season=2026"
+                pos_resp = requests.get(pos_url, timeout=15).json()
+            
+                for person in pos_resp.get("people", []):
+                    pid = person.get("id")
+                    pos = person.get("primaryPosition", {}).get("abbreviation", "UTIL")
+                    position_lookup[pid] = pos
+            
+            except Exception:
+                position_lookup = {}
             h_url = "https://statsapi.mlb.com/api/v1/stats?stats=season&group=hitting&playerPool=ALL&season=2026&limit=1500"
             h_resp = requests.get(h_url, timeout=15).json()
             for h in h_resp.get('stats', [{}])[0].get('splits', []):
@@ -226,7 +239,7 @@ if sport == "⚾ MLB Baseball":
                 hitter_data[h_name] = {
                     'ID': h['player'].get('id'),
                     'Team': h.get('team', {}).get('name', 'Free Agent'),
-                    'Position': h.get('player', {}).get('primaryPosition', {}).get('abbreviation', 'UTIL'),
+                    'Position': position_lookup.get(h['player'].get('id'), 'UTIL'),
                     'Bat Side': h.get('player', {}).get('batSide', {}).get('code', 'U'),
                     'H': s.get('hits',0), '2B': s.get('doubles',0), '3B': s.get('triples',0), 'HR': s.get('homeRuns',0),
                     'BB': s.get('baseOnBalls',0), 'R': s.get('runs',0), 'RBI': s.get('rbi',0), 'SB': s.get('stolenBases',0),
