@@ -1814,10 +1814,22 @@ if sport == "⚾ MLB Baseball":
                     matchup_factor = 1.00
 
                     bat_side = b.get("Bat Side", "U")
-                    pitcher_hand = "U"
+
+                    pitcher_hand = st.selectbox(
+                        "Opposing Pitcher Throws:",
+                        ["U", "R", "L"],
+                        index=0
+                    )
                     
                     handedness_factor = 1.00
-                    
+
+                    if bat_side == "L" and pitcher_hand == "R":
+                        handedness_factor = 1.04
+                    elif bat_side == "R" and pitcher_hand == "L":
+                        handedness_factor = 1.04
+                    elif bat_side == pitcher_hand and bat_side in ["L", "R"]:
+                        handedness_factor = 0.96
+                        
                     elite_pitching_teams = [
                         "Seattle Mariners",
                         "Atlanta Braves",
@@ -1862,9 +1874,9 @@ if sport == "⚾ MLB Baseball":
                         projected_points = (
                             (fantasy_ppg * 0.75) +
                             (recent_form_ppg * 0.25)
-                        ) * 1.08 * park_factor * matchup_factor * lineup_factor
+                        ) * 1.08 * park_factor * matchup_factor * lineup_factor * handedness_factor
                     else:
-                        projected_points = fantasy_ppg * 1.08 * park_factor * matchup_factor * lineup_factor
+                        projected_points = fantasy_ppg * 1.08 * park_factor * matchup_factor * lineup_factor * handedness_factor
     
                     floor_points = projected_points * 0.65
                     ceiling_points = projected_points * 1.45
