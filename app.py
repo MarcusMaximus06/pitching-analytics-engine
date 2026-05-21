@@ -1865,6 +1865,25 @@ if sport == "⚾ MLB Baseball":
                     else:
                         lineup_factor = 0.90
 
+                    st.markdown(
+                        """
+                        <style>
+                        .fantasy-card {
+                            background: linear-gradient(145deg, #111827, #0b1220);
+                            border: 1px solid rgba(255,255,255,0.12);
+                            border-radius: 18px;
+                            padding: 22px;
+                            margin-top: 18px;
+                            margin-bottom: 18px;
+                            box-shadow: 0 0 18px rgba(255,255,255,0.05);
+                        }
+                        </style>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                    
+                    st.markdown("<div class='fantasy-card'>", unsafe_allow_html=True)
+
                     if confirmed_starter:
                         st.success(f"✅ Confirmed starter today — batting {batting_order}")
                     else:
@@ -1912,12 +1931,14 @@ if sport == "⚾ MLB Baseball":
     
                     if recent_form_ppg is not None:
                         st.caption(
-                            f"Projection factors: 75% Season Form + 25% Recent 7-Game Form ({recent_form_ppg:.1f}) × Park Factor ({park_factor:.2f}) × Matchup Factor ({matchup_factor:.2f}) × Lineup Factor ({lineup_factor:.2f})"
+                            f"Projection factors: 75% Season Form + 25% Recent 7-Game Form ({recent_form_ppg:.1f}) × Park Factor ({park_factor:.2f}) × Matchup Factor ({matchup_factor:.2f}) × Handedness Factor ({handedness_factor:.2f})"
                         )
                     else:
                         st.caption(
-                            f"Projection factors: Season production × Park Factor ({park_factor:.2f}) × Matchup Factor ({matchup_factor:.2f}) × Lineup Factor ({lineup_factor:.2f})"
+                            f"Projection factors: Season production × Park Factor ({park_factor:.2f}) × Matchup Factor ({matchup_factor:.2f}) × Handedness Factor ({handedness_factor:.2f})"
                         )
+
+                    st.markdown("</div>", unsafe_allow_html=True)
 
                 else:
                     pitcher_names = sorted(list(p_stats.keys()))
