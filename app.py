@@ -1851,7 +1851,12 @@ if sport == "⚾ MLB Baseball":
                         lineup_factor = 0.96
                     else:
                         lineup_factor = 0.90
-                    
+
+                    if confirmed_starter:
+                        st.success(f"✅ Confirmed starter today — batting {batting_order}")
+                    else:
+                        st.warning("⚠️ Not confirmed in today's starting lineup yet")
+                        
                     if recent_form_ppg is not None:
                         projected_points = (
                             (fantasy_ppg * 0.75) +
