@@ -1694,14 +1694,20 @@ if sport == "⚾ MLB Baseball":
 
                     park_factor = PARK_FACTORS.get(team, 100) / 100
 
-                    if fantasy_ppg >= 7:
+                    if batting_order == 1:
+                        lineup_factor = 1.12
+                    elif batting_order == 2:
+                        lineup_factor = 1.10
+                    elif batting_order == 3:
                         lineup_factor = 1.08
-                    elif fantasy_ppg >= 5:
-                        lineup_factor = 1.04
-                    elif fantasy_ppg >= 3:
-                        lineup_factor = 1.00
+                    elif batting_order == 4:
+                        lineup_factor = 1.06
+                    elif batting_order == 5:
+                        lineup_factor = 1.03
+                    elif batting_order and batting_order >= 6:
+                        lineup_factor = 0.96
                     else:
-                        lineup_factor = 0.94
+                        lineup_factor = 0.90
                     
                     proj = fantasy_ppg * 1.08 * park_factor * lineup_factor
 
@@ -1782,6 +1788,13 @@ if sport == "⚾ MLB Baseball":
     
                     b = h_stats.get(fantasy_player, {})
 
+                    today_lineups = fetch_today_mlb_lineups()
+
+                    lineup_data = today_lineups.get(fantasy_player, {})
+                    
+                    batting_order = lineup_data.get("Batting Order")
+                    confirmed_starter = lineup_data.get("Confirmed Starter", False)
+                    
                     batter_player_id = b.get("ID")
                     recent_form_ppg = fetch_recent_batter_fantasy_form(batter_player_id)
                     
@@ -1824,14 +1837,20 @@ if sport == "⚾ MLB Baseball":
                     elif player_team in elite_pitching_teams:
                         matchup_factor = 0.92
                     
-                    if fantasy_ppg >= 7:
+                    if batting_order == 1:
+                        lineup_factor = 1.12
+                    elif batting_order == 2:
+                        lineup_factor = 1.10
+                    elif batting_order == 3:
                         lineup_factor = 1.08
-                    elif fantasy_ppg >= 5:
-                        lineup_factor = 1.04
-                    elif fantasy_ppg >= 3:
-                        lineup_factor = 1.00
+                    elif batting_order == 4:
+                        lineup_factor = 1.06
+                    elif batting_order == 5:
+                        lineup_factor = 1.03
+                    elif batting_order and batting_order >= 6:
+                        lineup_factor = 0.96
                     else:
-                        lineup_factor = 0.94
+                        lineup_factor = 0.90
                     
                     if recent_form_ppg is not None:
                         projected_points = (
