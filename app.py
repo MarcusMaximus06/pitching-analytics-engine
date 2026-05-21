@@ -1895,11 +1895,68 @@ if sport == "⚾ MLB Baseball":
                     return {}
 
             st.subheader("🏈 Sleeper PPR Dynasty & Redraft Analyzer")
+            st.markdown("### 🔮 NFL Fantasy Projection Lab")
+
+            projection_mode = st.radio(
+                "NFL Projection Type:",
+                ["Player Projections", "Trade Analyzer"],
+                horizontal=True
+            )
             st.caption("Sync your Sleeper account or use the manual trade matrix to evaluate PPR values.")
             
             with st.spinner("Fetching live Sleeper player registry..."):
                 sleeper_players = load_sleeper_players()
-                
+
+            if projection_mode == "Player Projections" and sleeper_players:
+
+                nfl_rows = []
+            
+                for pid, pdata in sleeper_players.items():
+                    name = pdata.get("Name", "Unknown")
+                    pos = pdata.get("Pos", "UNK")
+                    team = pdata.get("Team", "FA")
+            
+                    if pos not in ["QB", "RB", "WR", "TE"]:
+                        continue
+            
+                    base_projection = {
+                        "QB": 18.0,
+                        "RB": 12.0,
+                        "WR": 11.0,
+                        "TE": 8.0
+                    }.get(pos, 5.0)
+            
+                    nfl_rows.append({
+                        "Player": name,
+                        "Team": team,
+                        "Position": pos,
+                        "Projected PPR": base_projection
+                    })
+            
+                nfl_df = pd.DataFrame(nfl_rows)
+            
+                position_filter = st.selectbox(
+                    "Filter NFL players by position:",
+                    ["All", "QB", "RB", "WR", "TE"]
+                )
+            
+                if position_filter != "All":
+                    nfl_df = nfl_df[nfl_df["Position"] == position_filter]
+            
+                player_search = st.text_input("Search NFL players:")
+            
+                if player_search:
+                    nfl_df = nfl_df[
+                        nfl_df["Player"].str.contains(player_search, case=False, na=False)
+                    ]
+            
+                nfl_df = nfl_df.sort_values("Projected PPR", ascending=False)
+            
+                st.dataframe(
+                    nfl_df,
+                    use_container_width=True,
+                    hide_index=True
+                )
             if not sleeper_players:
                 st.warning("⚠️ Could not sync with Sleeper API. Running in manual mode.")
                 player_list = ["Christian McCaffrey (RB - SF)", "CeeDee Lamb (WR - DAL)", "Josh Allen (QB - BUF)", "Justin Jefferson (WR - MIN)", "Tyreek Hill (WR - MIA)"]
