@@ -1219,9 +1219,66 @@ if sport == "⚾ MLB Baseball":
                     st.metric("Model Lean", fav_team)
                     st.progress(float(fav_prob))
                 
+                confidence = "Low"
+
+                if model_edge >= 0.12:
+                    confidence = "High"
+                elif model_edge >= 0.06:
+                    confidence = "Medium"
+                
                 with edge_col3:
+                
                     st.metric(f"{home_t} Win Prob", f"{model_home_prob:.1%}")
-                    st.caption(edge_label)
+                
+                    if confidence == "High":
+                        confidence_html = """
+                        <div style='
+                            background-color:#14532d;
+                            color:#86efac;
+                            padding:10px;
+                            border-radius:12px;
+                            text-align:center;
+                            font-weight:700;
+                            font-size:20px;
+                            margin-top:10px;
+                        '>
+                            🔥 HIGH CONFIDENCE
+                        </div>
+                        """
+                
+                    elif confidence == "Medium":
+                        confidence_html = """
+                        <div style='
+                            background-color:#78350f;
+                            color:#fde68a;
+                            padding:10px;
+                            border-radius:12px;
+                            text-align:center;
+                            font-weight:700;
+                            font-size:20px;
+                            margin-top:10px;
+                        '>
+                            ⚡ MEDIUM CONFIDENCE
+                        </div>
+                        """
+                
+                    else:
+                        confidence_html = """
+                        <div style='
+                            background-color:#7f1d1d;
+                            color:#fca5a5;
+                            padding:10px;
+                            border-radius:12px;
+                            text-align:center;
+                            font-weight:700;
+                            font-size:20px;
+                            margin-top:10px;
+                        '>
+                            ❄️ LOW CONFIDENCE
+                        </div>
+                        """
+                
+                    st.markdown(confidence_html, unsafe_allow_html=True)
 
                 # --- PLOTLY VISUALIZATION BLOCK ---
                 st.markdown("#### Simulation Distribution Analysis")
