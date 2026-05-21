@@ -1791,6 +1791,14 @@ if sport == "⚾ MLB Baseball":
                     ascending=False
                 )
 
+                position_filter = st.selectbox(
+                    "Filter hitters by position:",
+                    ["All"] + sorted(hitter_df["Position"].dropna().unique().tolist())
+                )
+                
+                if position_filter != "All":
+                    hitter_df = hitter_df[hitter_df["Position"] == position_filter]
+                
                 player_search = st.text_input("Search projected hitters:")
 
                 if player_search:
