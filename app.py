@@ -226,6 +226,7 @@ if sport == "⚾ MLB Baseball":
                 hitter_data[h_name] = {
                     'ID': h['player'].get('id'),
                     'Team': h.get('team', {}).get('name', 'Free Agent'),
+                    'Position': h.get('player', {}).get('primaryPosition', {}).get('abbreviation', 'UTIL'),
                     'Bat Side': h.get('player', {}).get('batSide', {}).get('code', 'U'),
                     'H': s.get('hits',0), '2B': s.get('doubles',0), '3B': s.get('triples',0), 'HR': s.get('homeRuns',0),
                     'BB': s.get('baseOnBalls',0), 'R': s.get('runs',0), 'RBI': s.get('rbi',0), 'SB': s.get('stolenBases',0),
@@ -1778,6 +1779,7 @@ if sport == "⚾ MLB Baseball":
                     hitter_board.append({
                         "Player": hitter_name,
                         "Team": team,
+                        "Position": hitter_data.get("Position", "UTIL"),
                         "Lineup Factor": round(lineup_factor, 2),
                         "Proj Points": round(proj, 1)
                     })
