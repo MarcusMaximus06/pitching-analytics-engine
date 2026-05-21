@@ -1836,12 +1836,18 @@ if sport == "⚾ MLB Baseball":
                 pitcher_df = pitcher_df.sort_values(
                     by="Proj Points",
                     ascending=False
-                ).head(10)
+                )
 
                 pitcher_df = pitcher_df.reset_index(drop=True)
                 
                 st.markdown("### ⚾ Top Pitcher Projections")
-                
+
+                pitcher_search = st.text_input("Search projected pitchers:")
+
+                if pitcher_search:
+                    pitcher_df = pitcher_df[
+                        pitcher_df["Player"].str.contains(pitcher_search, case=False, na=False)
+                    ]
                 st.dataframe(
                     pitcher_df,
                     use_container_width=True,
