@@ -2613,11 +2613,11 @@ elif sport == "🏈 NFL Football":
 
     st.sidebar.markdown("---")
     if nfl_page == "🏈 NFL Simulation Engine":
-    st.title("🏈 NFL Ensemble Simulation Engine")
-    st.markdown("### 📊 Elo + Split EPA Power Ratings")
-    st.caption(
-        "*Fuses structural base Elo ratings with weighted Pass/Rush Expected Points Added (EPA) per play. Includes situational edges.*"
-    )
+        st.title("🏈 NFL Ensemble Simulation Engine")
+        st.markdown("### 📊 Elo + Split EPA Power Ratings")
+        st.caption(
+            "*Fuses structural base Elo ratings with weighted Pass/Rush Expected Points Added (EPA) per play. Includes situational edges.*"
+        )
     
     def log_nfl_to_sheets(row_data):
         try:
