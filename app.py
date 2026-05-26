@@ -2613,7 +2613,7 @@ elif sport == "🏈 NFL Football":
 
     st.sidebar.markdown("---")
 
-    if nfl_page == "🏆 NFL Fantasy Predictor":
+if nfl_page == "🏆 NFL Fantasy Predictor":
     
         st.title("🏆 NFL Fantasy Predictor")
         st.caption("Sleeper PPR projections, rankings, tiers, and trade tools.")
