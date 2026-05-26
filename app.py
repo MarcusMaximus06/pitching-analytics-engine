@@ -2942,12 +2942,83 @@ elif sport == "🏈 NFL Football":
 elif nfl_page == "🏆 NFL Fantasy Predictor":
 
     st.title("🏆 NFL Fantasy Predictor")
+    st.caption("Sleeper PPR projections, rankings, and trade tools.")
 
-    st.caption(
-        "Sleeper PPR projections, trade tools, and player rankings."
-    )
+    @st.cache_data(ttl=CACHE_TTL_DAILY)
+    def load_sleeper_players():
+        try:
+            url = "https://api.sleeper.app/v1/players/nfl"
+            resp = requests.get(url, timeout=15).json()
 
-    st.info("NFL fantasy engine coming next.")
+            active_players = {}
+
+            for pid, pdata in resp.items():
+                if pdata.get("active"):
+                    name = f"{pdata.get('first_name', '')} {pdata.get('last_name', '')}".strip()
+                    pos = pdata.get("position", "UNK")
+                    team = pdata.get("team", "FA")
+
+                    if pos in ["QB", "RB", "WR", "TE"]:
+                        active_players[pid] = {
+                            "Name": name,
+                            "Position": pos,
+                            "Team": team
+                        }
+
+            return active_players
+
+        except Exception:
+            return {}
+
+    with st.spinner("Fetching live Sleeper player registry..."):
+        sleeper_players = load_sleeper_players()
+
+    if not sleeper_players:
+        st.warning("Could not load Sleeper NFL players.")
+    else:
+        rows = []
+
+        for pid, p in sleeper_players.items():
+            pos = p.get("Position", "UNK")
+
+            base_projection = {
+                "QB": 18.0,
+                "RB": 12.0,
+                "WR": 11.0,
+                "TE": 8.0
+            }.get(pos, 5.0)
+
+            rows.append({
+                "Player": p.get("Name", "Unknown"),
+                "Team": p.get("Team", "FA"),
+                "Position": pos,
+                "Projected PPR": base_projection
+            })
+
+        nfl_df = pd.DataFrame(rows)
+
+        position_filter = st.selectbox(
+            "Filter by position:",
+            ["All", "QB", "RB", "WR", "TE"]
+        )
+
+        if position_filter != "All":
+            nfl_df = nfl_df[nfl_df["Position"] == position_filter]
+
+        player_search = st.text_input("Search NFL players:")
+
+        if player_search:
+            nfl_df = nfl_df[
+                nfl_df["Player"].str.contains(player_search, case=False, na=False)
+            ]
+
+        nfl_df = nfl_df.sort_values("Projected PPR", ascending=False)
+
+        st.dataframe(
+            nfl_df,
+            use_container_width=True,
+            hide_index=True
+        )
 
 # ==========================================================
 # SPORT BRANCH 4: NCAA FOOTBALL (DYNAMIC CFBD API)
