@@ -2614,207 +2614,207 @@ elif sport == "🏈 NFL Football":
     st.sidebar.markdown("---")
 
 if nfl_page == "🏆 NFL Fantasy Predictor":
-    
-        st.title("🏆 NFL Fantasy Predictor")
-        st.caption("Sleeper PPR projections, rankings, tiers, and trade tools.")
-    
-        @st.cache_data(ttl=CACHE_TTL_DAILY)
-        def load_sleeper_players():
-            try:
-                url = "https://api.sleeper.app/v1/players/nfl"
-                resp = requests.get(url, timeout=20).json()
-    
-                players = {}
-    
-                for pid, pdata in resp.items():
-                    if not pdata.get("active"):
-                        continue
-    
-                    pos = pdata.get("position", "UNK")
-                    if pos not in ["QB", "RB", "WR", "TE"]:
-                        continue
-    
-                    name = f"{pdata.get('first_name', '')} {pdata.get('last_name', '')}".strip()
-                    team = pdata.get("team", "FA")
-                    age = pdata.get("age", None)
-    
-                    players[pid] = {
-                        "Name": name,
-                        "Position": pos,
-                        "Team": team,
-                        "Age": age
-                    }
-    
-                return players
-    
-            except Exception:
-                return {}
-    
-        def nfl_base_projection(pos, name):
-            elite_names = [
-                "Josh Allen", "Jalen Hurts", "Lamar Jackson", "Patrick Mahomes",
-                "Christian McCaffrey", "Bijan Robinson", "Breece Hall", "Saquon Barkley",
-                "Justin Jefferson", "Ja'Marr Chase", "CeeDee Lamb", "Amon-Ra St. Brown",
-                "Tyreek Hill", "Puka Nacua", "A.J. Brown",
-                "Travis Kelce", "Sam LaPorta", "Trey McBride", "George Kittle"
-            ]
-    
-            strong_names = [
-                "Joe Burrow", "C.J. Stroud", "Dak Prescott", "Anthony Richardson",
-                "Jahmyr Gibbs", "Jonathan Taylor", "Kyren Williams", "De'Von Achane",
-                "Garrett Wilson", "Drake London", "Mike Evans", "Chris Olave",
-                "DK Metcalf", "DeVonta Smith", "Jaylen Waddle",
-                "Mark Andrews", "Dalton Kincaid", "Evan Engram"
-            ]
-    
-            base = {
-                "QB": 17.0,
-                "RB": 11.5,
-                "WR": 10.5,
-                "TE": 7.5
-            }.get(pos, 5.0)
-    
-            if name in elite_names:
-                base *= 1.30
-            elif name in strong_names:
-                base *= 1.15
-    
-            return base
-    
-        with st.spinner("Fetching live Sleeper player registry..."):
-            sleeper_players = load_sleeper_players()
-    
-        if not sleeper_players:
-            st.warning("Could not load Sleeper NFL players.")
-        else:
-            rows = []
-    
-            for pid, p in sleeper_players.items():
-                name = p.get("Name", "Unknown")
-                pos = p.get("Position", "UNK")
-                team = p.get("Team", "FA")
-                age = p.get("Age", None)
-    
-                projected_ppr = nfl_base_projection(pos, name)
-    
-                if pos == "QB":
-                    floor = projected_ppr * 0.75
-                    ceiling = projected_ppr * 1.35
-                elif pos == "RB":
-                    floor = projected_ppr * 0.65
-                    ceiling = projected_ppr * 1.55
-                elif pos == "WR":
-                    floor = projected_ppr * 0.60
-                    ceiling = projected_ppr * 1.65
-                else:
-                    floor = projected_ppr * 0.55
-                    ceiling = projected_ppr * 1.75
-    
-                if projected_ppr >= 18:
-                    tier = "Elite"
-                elif projected_ppr >= 14:
-                    tier = "Strong Starter"
-                elif projected_ppr >= 10:
-                    tier = "Starter/Flex"
-                elif projected_ppr >= 7:
-                    tier = "Depth"
-                else:
-                    tier = "Bench"
-    
-                rows.append({
-                    "Player": name,
-                    "Team": team,
+
+    st.title("🏆 NFL Fantasy Predictor")
+    st.caption("Sleeper PPR projections, rankings, tiers, and trade tools.")
+
+    @st.cache_data(ttl=CACHE_TTL_DAILY)
+    def load_sleeper_players():
+        try:
+            url = "https://api.sleeper.app/v1/players/nfl"
+            resp = requests.get(url, timeout=20).json()
+
+            players = {}
+
+            for pid, pdata in resp.items():
+                if not pdata.get("active"):
+                    continue
+
+                pos = pdata.get("position", "UNK")
+                if pos not in ["QB", "RB", "WR", "TE"]:
+                    continue
+
+                name = f"{pdata.get('first_name', '')} {pdata.get('last_name', '')}".strip()
+                team = pdata.get("team", "FA")
+                age = pdata.get("age", None)
+
+                players[pid] = {
+                    "Name": name,
                     "Position": pos,
-                    "Age": age,
-                    "Projected PPR": round(projected_ppr, 1),
-                    "Floor": round(floor, 1),
-                    "Ceiling": round(ceiling, 1),
-                    "Tier": tier
-                })
-    
-            nfl_df = pd.DataFrame(rows)
-    
-            st.markdown("### 🔮 NFL Player Projections")
-    
-            c1, c2, c3 = st.columns(3)
-    
-            with c1:
-                position_filter = st.selectbox(
-                    "Filter by position:",
-                    ["All", "QB", "RB", "WR", "TE"]
-                )
-    
-            with c2:
-                tier_filter = st.selectbox(
-                    "Filter by tier:",
-                    ["All", "Elite", "Strong Starter", "Starter/Flex", "Depth", "Bench"]
-                )
-    
-            with c3:
-                player_search = st.text_input("Search NFL players:")
-    
-            filtered_df = nfl_df.copy()
-    
-            if position_filter != "All":
-                filtered_df = filtered_df[filtered_df["Position"] == position_filter]
-    
-            if tier_filter != "All":
-                filtered_df = filtered_df[filtered_df["Tier"] == tier_filter]
-    
-            if player_search:
-                filtered_df = filtered_df[
-                    filtered_df["Player"].str.contains(player_search, case=False, na=False)
-                ]
-    
-            filtered_df = filtered_df.sort_values("Projected PPR", ascending=False)
-    
-            st.dataframe(
-                filtered_df,
-                use_container_width=True,
-                hide_index=True
+                    "Team": team,
+                    "Age": age
+                }
+
+            return players
+
+        except Exception:
+            return {}
+
+    def nfl_base_projection(pos, name):
+        elite_names = [
+            "Josh Allen", "Jalen Hurts", "Lamar Jackson", "Patrick Mahomes",
+            "Christian McCaffrey", "Bijan Robinson", "Breece Hall", "Saquon Barkley",
+            "Justin Jefferson", "Ja'Marr Chase", "CeeDee Lamb", "Amon-Ra St. Brown",
+            "Tyreek Hill", "Puka Nacua", "A.J. Brown",
+            "Travis Kelce", "Sam LaPorta", "Trey McBride", "George Kittle"
+        ]
+
+        strong_names = [
+            "Joe Burrow", "C.J. Stroud", "Dak Prescott", "Anthony Richardson",
+            "Jahmyr Gibbs", "Jonathan Taylor", "Kyren Williams", "De'Von Achane",
+            "Garrett Wilson", "Drake London", "Mike Evans", "Chris Olave",
+            "DK Metcalf", "DeVonta Smith", "Jaylen Waddle",
+            "Mark Andrews", "Dalton Kincaid", "Evan Engram"
+        ]
+
+        base = {
+            "QB": 17.0,
+            "RB": 11.5,
+            "WR": 10.5,
+            "TE": 7.5
+        }.get(pos, 5.0)
+
+        if name in elite_names:
+            base *= 1.30
+        elif name in strong_names:
+            base *= 1.15
+
+        return base
+
+    with st.spinner("Fetching live Sleeper player registry..."):
+        sleeper_players = load_sleeper_players()
+
+    if not sleeper_players:
+        st.warning("Could not load Sleeper NFL players.")
+    else:
+        rows = []
+
+        for pid, p in sleeper_players.items():
+            name = p.get("Name", "Unknown")
+            pos = p.get("Position", "UNK")
+            team = p.get("Team", "FA")
+            age = p.get("Age", None)
+
+            projected_ppr = nfl_base_projection(pos, name)
+
+            if pos == "QB":
+                floor = projected_ppr * 0.75
+                ceiling = projected_ppr * 1.35
+            elif pos == "RB":
+                floor = projected_ppr * 0.65
+                ceiling = projected_ppr * 1.55
+            elif pos == "WR":
+                floor = projected_ppr * 0.60
+                ceiling = projected_ppr * 1.65
+            else:
+                floor = projected_ppr * 0.55
+                ceiling = projected_ppr * 1.75
+
+            if projected_ppr >= 18:
+                tier = "Elite"
+            elif projected_ppr >= 14:
+                tier = "Strong Starter"
+            elif projected_ppr >= 10:
+                tier = "Starter/Flex"
+            elif projected_ppr >= 7:
+                tier = "Depth"
+            else:
+                tier = "Bench"
+
+            rows.append({
+                "Player": name,
+                "Team": team,
+                "Position": pos,
+                "Age": age,
+                "Projected PPR": round(projected_ppr, 1),
+                "Floor": round(floor, 1),
+                "Ceiling": round(ceiling, 1),
+                "Tier": tier
+            })
+
+        nfl_df = pd.DataFrame(rows)
+
+        st.markdown("### 🔮 NFL Player Projections")
+
+        c1, c2, c3 = st.columns(3)
+
+        with c1:
+            position_filter = st.selectbox(
+                "Filter by position:",
+                ["All", "QB", "RB", "WR", "TE"]
             )
-    
-            st.markdown("---")
-            st.markdown("### ⚖️ NFL Trade Analyzer")
-    
-            trade_players = sorted(nfl_df["Player"].dropna().unique().tolist())
-    
-            t1, t2 = st.columns(2)
-    
-            with t1:
-                team_a = st.multiselect("Team A Receives:", trade_players, key="nfl_trade_a")
-    
-            with t2:
-                team_b = st.multiselect("Team B Receives:", trade_players, key="nfl_trade_b")
-    
-            if st.button("Analyze NFL Trade"):
-                a_df = nfl_df[nfl_df["Player"].isin(team_a)]
-                b_df = nfl_df[nfl_df["Player"].isin(team_b)]
-    
-                a_total = a_df["Projected PPR"].sum()
-                b_total = b_df["Projected PPR"].sum()
-                diff = abs(a_total - b_total)
-    
-                r1, r2 = st.columns(2)
-    
-                with r1:
-                    st.metric("Team A Receives", f"{a_total:.1f} PPR")
-                    if not a_df.empty:
-                        st.dataframe(a_df[["Player", "Team", "Position", "Projected PPR", "Tier"]], hide_index=True)
-    
-                with r2:
-                    st.metric("Team B Receives", f"{b_total:.1f} PPR")
-                    if not b_df.empty:
-                        st.dataframe(b_df[["Player", "Team", "Position", "Projected PPR", "Tier"]], hide_index=True)
-    
-                if a_total > b_total + 3:
-                    st.success(f"Team A wins this trade by {diff:.1f} projected PPR points.")
-                elif b_total > a_total + 3:
-                    st.success(f"Team B wins this trade by {diff:.1f} projected PPR points.")
-                else:
-                    st.info(f"This trade is balanced. Difference: {diff:.1f} projected PPR points.")
-    
-        st.stop()
+
+        with c2:
+            tier_filter = st.selectbox(
+                "Filter by tier:",
+                ["All", "Elite", "Strong Starter", "Starter/Flex", "Depth", "Bench"]
+            )
+
+        with c3:
+            player_search = st.text_input("Search NFL players:")
+
+        filtered_df = nfl_df.copy()
+
+        if position_filter != "All":
+            filtered_df = filtered_df[filtered_df["Position"] == position_filter]
+
+        if tier_filter != "All":
+            filtered_df = filtered_df[filtered_df["Tier"] == tier_filter]
+
+        if player_search:
+            filtered_df = filtered_df[
+                filtered_df["Player"].str.contains(player_search, case=False, na=False)
+            ]
+
+        filtered_df = filtered_df.sort_values("Projected PPR", ascending=False)
+
+        st.dataframe(
+            filtered_df,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.markdown("---")
+        st.markdown("### ⚖️ NFL Trade Analyzer")
+
+        trade_players = sorted(nfl_df["Player"].dropna().unique().tolist())
+
+        t1, t2 = st.columns(2)
+
+        with t1:
+            team_a = st.multiselect("Team A Receives:", trade_players, key="nfl_trade_a")
+
+        with t2:
+            team_b = st.multiselect("Team B Receives:", trade_players, key="nfl_trade_b")
+
+        if st.button("Analyze NFL Trade"):
+            a_df = nfl_df[nfl_df["Player"].isin(team_a)]
+            b_df = nfl_df[nfl_df["Player"].isin(team_b)]
+
+            a_total = a_df["Projected PPR"].sum()
+            b_total = b_df["Projected PPR"].sum()
+            diff = abs(a_total - b_total)
+
+            r1, r2 = st.columns(2)
+
+            with r1:
+                st.metric("Team A Receives", f"{a_total:.1f} PPR")
+                if not a_df.empty:
+                    st.dataframe(a_df[["Player", "Team", "Position", "Projected PPR", "Tier"]], hide_index=True)
+
+            with r2:
+                st.metric("Team B Receives", f"{b_total:.1f} PPR")
+                if not b_df.empty:
+                    st.dataframe(b_df[["Player", "Team", "Position", "Projected PPR", "Tier"]], hide_index=True)
+
+            if a_total > b_total + 3:
+                st.success(f"Team A wins this trade by {diff:.1f} projected PPR points.")
+            elif b_total > a_total + 3:
+                st.success(f"Team B wins this trade by {diff:.1f} projected PPR points.")
+            else:
+                st.info(f"This trade is balanced. Difference: {diff:.1f} projected PPR points.")
+
+    st.stop()
                 
     if nfl_page == "🏈 NFL Simulation Engine":
         st.title("🏈 NFL Ensemble Simulation Engine")
