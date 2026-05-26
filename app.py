@@ -2814,14 +2814,14 @@ elif sport == "🏈 NFL Football":
                 else:
                     st.info(f"This trade is balanced. Difference: {diff:.1f} projected PPR points.")
     
-        st.stop()
+            st.stop()
                 
-    elif nfl_page == "🏈 NFL Simulation Engine":
-        st.title("🏈 NFL Ensemble Simulation Engine")
-        st.markdown("### 📊 Elo + Split EPA Power Ratings")
-        st.caption(
-            "*Fuses structural base Elo ratings with weighted Pass/Rush Expected Points Added (EPA) per play. Includes situational edges.*"
-        )
+        if nfl_page == "🏈 NFL Simulation Engine":
+            st.title("🏈 NFL Ensemble Simulation Engine")
+            st.markdown("### 📊 Elo + Split EPA Power Ratings")
+            st.caption(
+                "*Fuses structural base Elo ratings with weighted Pass/Rush Expected Points Added (EPA) per play. Includes situational edges.*"
+            )
     
     def log_nfl_to_sheets(row_data):
         try:
