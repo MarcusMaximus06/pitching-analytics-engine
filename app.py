@@ -3077,7 +3077,7 @@ elif sport == "🏈 NFL Football":
                 team = p.get("Team", "FA")
                 age = p.get("Age", None)
     
-                projected_ppr = nfl_base_projection(pos, name)
+                projected_ppr = 10
     
                 if pos == "QB":
                     floor = projected_ppr * 0.75
