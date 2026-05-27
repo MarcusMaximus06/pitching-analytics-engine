@@ -2702,7 +2702,7 @@ elif sport == "🏈 NFL Football":
         
     st.markdown("### 🔗 Sleeper League Sync")
 
-        sleeper_username = st.text_input("Sleeper Username:")
+    sleeper_username = st.text_input("Sleeper Username:")
 
         if sleeper_username:
             try:
