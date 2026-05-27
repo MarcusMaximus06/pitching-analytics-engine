@@ -2876,6 +2876,45 @@ elif sport == "🏈 NFL Football":
                 if power_rows:
                     power_df = pd.DataFrame(power_rows)
                     power_df = power_df.sort_values("Roster Value", ascending=False)
+
+                    st.markdown("### 🤝 Suggested Trade Partners")
+
+                    recommendations = []
+
+                    for _, team_a in power_df.iterrows():
+
+                        for _, team_b in power_df.iterrows():
+
+                            if team_a["Team/User"] == team_b["Team/User"]:
+                                continue
+
+                            need = team_a["Weakest Position"]
+
+                            partner_strength = team_b[f"{need} Value"]
+
+                            if partner_strength >= 40:
+
+                                recommendations.append({
+                                    "Team Needing Help": team_a["Team/User"],
+                                    "Weak Position": need,
+                                    "Suggested Partner": team_b["Team/User"],
+                                    "Partner Strength": round(partner_strength, 1)
+                                })
+
+                    rec_df = pd.DataFrame(recommendations)
+
+                    if not rec_df.empty:
+
+                        rec_df = rec_df.sort_values(
+                            "Partner Strength",
+                            ascending=False
+                        ).head(15)
+
+                        st.dataframe(
+                            rec_df,
+                            use_container_width=True,
+                            hide_index=True
+                        )
                 
                     st.markdown("### 🏆 Sleeper Team Power Rankings")
                     st.caption("Ranks every synced Sleeper roster using the currently selected Redraft/Dynasty value mode.")
