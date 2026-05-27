@@ -1904,223 +1904,766 @@ if sport == "⚾ MLB Baseball":
                 )
             
         elif fantasy_sport == "🏈 NFL Sleeper PPR Trade Engine":
+            st.subheader("🏈 NFL Sleeper PPR Command Center")
+            st.caption("Sleeper sync, player values, trade calculator, roster power rankings, league analysis, and saved trade history.")
+
+            DATA_DIR = "haglabs_data"
+            TRADE_HISTORY_FILE = os.path.join(DATA_DIR, "nfl_trade_history.csv")
+            SAVED_LEAGUES_FILE = os.path.join(DATA_DIR, "nfl_saved_leagues.csv")
+
+            os.makedirs(DATA_DIR, exist_ok=True)
+
             @st.cache_data(ttl=CACHE_TTL_DAILY)
-            def load_sleeper_players():
+            def load_sleeper_players_full():
                 try:
                     url = "https://api.sleeper.app/v1/players/nfl"
-                    resp = requests.get(url, timeout=15).json()
-                    active_players = {}
+                    resp = requests.get(url, timeout=25).json()
+
+                    rows = []
+                    lookup = {}
+
                     for pid, pdata in resp.items():
-                        if pdata.get('active'):
-                            name = f"{pdata.get('first_name', '')} {pdata.get('last_name', '')}".strip()
-                            pos = pdata.get('position', 'UNK')
-                            team = pdata.get('team', 'FA')
-                            active_players[pid] = {'Name': name, 'Pos': pos, 'Team': team}
-                    return active_players
+                        pos = pdata.get("position") or "UNK"
+
+                        if pos not in ["QB", "RB", "WR", "TE", "K", "DEF"]:
+                            continue
+
+                        first = pdata.get("first_name") or ""
+                        last = pdata.get("last_name") or ""
+                        name = f"{first} {last}".strip()
+
+                        if not name:
+                            name = pdata.get("full_name") or pdata.get("search_full_name") or str(pid)
+
+                        age = pdata.get("age")
+                        team = pdata.get("team") or "FA"
+                        years_exp = pdata.get("years_exp") or 0
+                        status = pdata.get("status") or "Unknown"
+                        active = bool(pdata.get("active", False))
+
+                        row = {
+                            "Player ID": str(pid),
+                            "Player": name,
+                            "Position": pos,
+                            "Team": team,
+                            "Age": age,
+                            "Experience": years_exp,
+                            "Status": status,
+                            "Active": active,
+                        }
+
+                        rows.append(row)
+                        lookup[str(pid)] = row
+
+                    df = pd.DataFrame(rows)
+
+                    if not df.empty:
+                        df = df.sort_values(["Position", "Player"]).reset_index(drop=True)
+
+                    return df, lookup
+
                 except Exception:
-                    return {}
+                    return pd.DataFrame(), {}
 
-            st.subheader("🏈 Sleeper PPR Dynasty & Redraft Analyzer")
-            st.markdown("### 🔮 NFL Fantasy Projection Lab")
+            def safe_float(value, default=0.0):
+                try:
+                    if value is None or pd.isna(value):
+                        return default
+                    return float(value)
+                except Exception:
+                    return default
 
-            projection_mode = st.radio(
-                "NFL Projection Type:",
-                ["Player Projections", "Trade Analyzer"],
-                horizontal=True
-            )
-            st.caption("Sync your Sleeper account or use the manual trade matrix to evaluate PPR values.")
-            
-            with st.spinner("Fetching live Sleeper player registry..."):
-                sleeper_players = load_sleeper_players()
+            def nfl_base_projection(position, age=None, experience=0, active=True):
+                base = {
+                    "QB": 17.5,
+                    "RB": 11.5,
+                    "WR": 10.5,
+                    "TE": 7.5,
+                    "K": 7.0,
+                    "DEF": 7.0,
+                }.get(position, 4.0)
 
-            if projection_mode == "Player Projections" and sleeper_players:
+                exp = safe_float(experience, 0)
+                age_val = safe_float(age, 0)
 
-                nfl_rows = []
-            
-                for pid, pdata in sleeper_players.items():
-                    name = pdata.get("Name", "Unknown")
-                    pos = pdata.get("Pos", "UNK")
-                    team = pdata.get("Team", "FA")
-            
-                    if pos not in ["QB", "RB", "WR", "TE"]:
+                if exp <= 1:
+                    base *= 0.88
+                elif exp <= 3:
+                    base *= 1.02
+                elif exp >= 8:
+                    base *= 0.94
+
+                if age_val:
+                    if position == "RB" and age_val >= 29:
+                        base *= 0.88
+                    elif position in ["WR", "TE"] and age_val >= 31:
+                        base *= 0.90
+                    elif position == "QB" and age_val >= 36:
+                        base *= 0.92
+
+                if not active:
+                    base *= 0.60
+
+                return round(base, 2)
+
+            def calculate_age_modifier(position, age):
+                age_val = safe_float(age, 0)
+
+                if age_val <= 0:
+                    return 1.00
+
+                prime_age = {
+                    "QB": 32,
+                    "RB": 26,
+                    "WR": 28,
+                    "TE": 29,
+                    "K": 34,
+                    "DEF": 30,
+                }.get(position, 28)
+
+                if age_val <= prime_age:
+                    return 1.00
+
+                decline = (age_val - prime_age) * 0.025
+                return max(0.78, 1.00 - decline)
+
+            def calculate_redraft_value(position, age, projected_ppr):
+                scarcity = {
+                    "QB": 0.92,
+                    "RB": 1.20,
+                    "WR": 1.08,
+                    "TE": 1.15,
+                    "K": 0.45,
+                    "DEF": 0.45,
+                }.get(position, 1.0)
+
+                value = projected_ppr * scarcity
+                return round(value, 1)
+
+            def calculate_dynasty_value(position, age, projected_ppr):
+                redraft = calculate_redraft_value(position, age, projected_ppr)
+                age_mod = calculate_age_modifier(position, age)
+
+                youth_bonus = 1.00
+                age_val = safe_float(age, 0)
+
+                if age_val:
+                    if position == "RB" and age_val <= 24:
+                        youth_bonus = 1.18
+                    elif position in ["WR", "TE"] and age_val <= 25:
+                        youth_bonus = 1.14
+                    elif position == "QB" and age_val <= 27:
+                        youth_bonus = 1.10
+
+                return round(redraft * age_mod * youth_bonus, 1)
+
+            def dynasty_tag(position, age):
+                age_val = safe_float(age, 0)
+
+                if age_val <= 0:
+                    return "Unknown"
+
+                if position == "RB":
+                    if age_val <= 24:
+                        return "Young Core"
+                    if age_val >= 29:
+                        return "Decline Risk"
+                    return "Prime Window"
+
+                if position in ["WR", "TE"]:
+                    if age_val <= 25:
+                        return "Young Core"
+                    if age_val >= 31:
+                        return "Decline Risk"
+                    return "Prime Window"
+
+                if position == "QB":
+                    if age_val <= 27:
+                        return "Young Core"
+                    if age_val >= 36:
+                        return "Late Career"
+                    return "Stable Asset"
+
+                return "Standard"
+
+            def build_player_values(players_df, value_mode):
+                if players_df.empty:
+                    return pd.DataFrame()
+
+                df = players_df.copy()
+                df = df[df["Position"].isin(["QB", "RB", "WR", "TE"])].copy()
+
+                if df.empty:
+                    return df
+
+                df["Projected PPR"] = df.apply(
+                    lambda r: nfl_base_projection(
+                        r.get("Position"),
+                        r.get("Age"),
+                        r.get("Experience"),
+                        r.get("Active", True),
+                    ),
+                    axis=1,
+                )
+
+                df["Redraft Value"] = df.apply(
+                    lambda r: calculate_redraft_value(
+                        r.get("Position"),
+                        r.get("Age"),
+                        r.get("Projected PPR"),
+                    ),
+                    axis=1,
+                )
+
+                df["Dynasty Value"] = df.apply(
+                    lambda r: calculate_dynasty_value(
+                        r.get("Position"),
+                        r.get("Age"),
+                        r.get("Projected PPR"),
+                    ),
+                    axis=1,
+                )
+
+                df["Trade Value"] = np.where(
+                    value_mode == "Dynasty",
+                    df["Dynasty Value"],
+                    df["Redraft Value"],
+                )
+
+                df["Dynasty Tag"] = df.apply(
+                    lambda r: dynasty_tag(r.get("Position"), r.get("Age")),
+                    axis=1,
+                )
+
+                df["Value Tier"] = pd.cut(
+                    df["Trade Value"],
+                    bins=[-1, 5, 9, 13, 17, 100],
+                    labels=["Depth", "Flex", "Starter", "High-End", "Elite"],
+                )
+
+                return df.sort_values("Trade Value", ascending=False).reset_index(drop=True)
+
+            def trade_side_value(selected_players, values_df):
+                if not selected_players or values_df.empty:
+                    return 0.0
+
+                selected_names = [p.split(" (")[0] for p in selected_players]
+                side_df = values_df[values_df["Player"].isin(selected_names)]
+
+                return round(float(side_df["Trade Value"].sum()), 1)
+
+            def save_trade_history(row):
+                history_df = pd.DataFrame([row])
+
+                if os.path.exists(TRADE_HISTORY_FILE):
+                    existing = pd.read_csv(TRADE_HISTORY_FILE)
+                    history_df = pd.concat([existing, history_df], ignore_index=True)
+
+                history_df.to_csv(TRADE_HISTORY_FILE, index=False)
+
+            def save_league(username, league_id, league_name):
+                row = {
+                    "Saved At": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "Username": username,
+                    "League ID": league_id,
+                    "League Name": league_name,
+                }
+
+                saved_df = pd.DataFrame([row])
+
+                if os.path.exists(SAVED_LEAGUES_FILE):
+                    existing = pd.read_csv(SAVED_LEAGUES_FILE)
+                    existing = existing[existing["League ID"].astype(str) != str(league_id)]
+                    saved_df = pd.concat([existing, saved_df], ignore_index=True)
+
+                saved_df.to_csv(SAVED_LEAGUES_FILE, index=False)
+
+            def get_player_row(player_id, player_lookup):
+                return player_lookup.get(str(player_id), {})
+
+            def roster_value_summary(roster_players, player_lookup, values_df):
+                rows = []
+
+                for pid in roster_players or []:
+                    p = get_player_row(pid, player_lookup)
+
+                    if not p:
                         continue
-            
-                    base_projection = {
-                        "QB": 18.0,
-                        "RB": 12.0,
-                        "WR": 11.0,
-                        "TE": 8.0
-                    }.get(pos, 5.0)
-            
-                    nfl_rows.append({
-                        "Player": name,
-                        "Team": team,
-                        "Position": pos,
-                        "Projected PPR": base_projection
-                    })
-            
-                nfl_df = pd.DataFrame(nfl_rows)
-            
-                position_filter = st.selectbox(
-                    "Filter NFL players by position:",
-                    ["All", "QB", "RB", "WR", "TE"]
-                )
-            
-                if position_filter != "All":
-                    nfl_df = nfl_df[nfl_df["Position"] == position_filter]
-            
-                player_search = st.text_input("Search NFL players:")
-            
-                if player_search:
-                    nfl_df = nfl_df[
-                        nfl_df["Player"].str.contains(player_search, case=False, na=False)
-                    ]
-            
-                nfl_df = nfl_df.sort_values("Projected PPR", ascending=False)
-            
-                st.dataframe(
-                    nfl_df,
-                    use_container_width=True,
-                    hide_index=True
-                )
-            if not sleeper_players:
-                st.warning("⚠️ Could not sync with Sleeper API. Running in manual mode.")
-                player_list = ["Christian McCaffrey (RB - SF)", "CeeDee Lamb (WR - DAL)", "Josh Allen (QB - BUF)", "Justin Jefferson (WR - MIN)", "Tyreek Hill (WR - MIA)"]
-            else:
-                player_list = [f"{data['Name']} ({data['Pos']} - {data['Team']})" for pid, data in sleeper_players.items() if data['Pos'] in ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']]
-                player_list = sorted(list(set(player_list)))
 
-# =========================================================
-# NFL FANTASY VALUE ENGINE
-# =========================================================
+                    match = values_df[values_df["Player ID"].astype(str) == str(pid)]
 
-POSITION_SCARCITY = {
-    "QB": 0.92,
-    "RB": 1.20,
-    "WR": 1.08,
-    "TE": 1.15
-}
+                    if match.empty:
+                        continue
 
-AGE_CURVE = {
-    "QB": 32,
-    "RB": 26,
-    "WR": 28,
-    "TE": 29
-}
+                    value_row = match.iloc[0].to_dict()
+                    rows.append(value_row)
 
-def calculate_age_modifier(position, age):
-    if age is None:
-        return 1.00
+                if not rows:
+                    return {
+                        "Roster Value": 0.0,
+                        "QB Value": 0.0,
+                        "RB Value": 0.0,
+                        "WR Value": 0.0,
+                        "TE Value": 0.0,
+                        "Weakest Position": "Unknown",
+                        "Top Players": "",
+                        "Roster Rows": pd.DataFrame(),
+                    }
 
-    try:
-        age = float(age)
-    except Exception:
-        return 1.00
+                roster_df = pd.DataFrame(rows)
 
-    prime_age = {
-        "QB": 32,
-        "RB": 26,
-        "WR": 28,
-        "TE": 29
-    }.get(position, 27)
+                position_values = {
+                    "QB": round(float(roster_df[roster_df["Position"] == "QB"]["Trade Value"].sum()), 1),
+                    "RB": round(float(roster_df[roster_df["Position"] == "RB"]["Trade Value"].sum()), 1),
+                    "WR": round(float(roster_df[roster_df["Position"] == "WR"]["Trade Value"].sum()), 1),
+                    "TE": round(float(roster_df[roster_df["Position"] == "TE"]["Trade Value"].sum()), 1),
+                }
 
-    if age <= prime_age:
-        return 1.00
+                weakest = min(position_values, key=position_values.get)
+                top_players = ", ".join(roster_df.sort_values("Trade Value", ascending=False)["Player"].head(5).tolist())
 
-    decline = (age - prime_age) * 0.025
-    return max(0.82, 1.00 - decline)
-    
-def calculate_usage_bonus(position, projected_ppr):
+                return {
+                    "Roster Value": round(float(roster_df["Trade Value"].sum()), 1),
+                    "QB Value": position_values["QB"],
+                    "RB Value": position_values["RB"],
+                    "WR Value": position_values["WR"],
+                    "TE Value": position_values["TE"],
+                    "Weakest Position": weakest,
+                    "Top Players": top_players,
+                    "Roster Rows": roster_df,
+                }
 
-    if position == "RB":
-        return projected_ppr * 0.08
+            def label_team_status(roster_value, rank, league_size):
+                if league_size <= 0:
+                    return "Unknown"
 
-    if position == "WR":
-        return projected_ppr * 0.06
+                if rank <= max(2, int(league_size * 0.25)):
+                    return "Contender"
+                if rank >= max(1, int(league_size * 0.75)):
+                    return "Rebuilder"
+                if roster_value <= 0:
+                    return "Incomplete"
+                return "Middle Pack"
 
-    if position == "TE":
-        return projected_ppr * 0.05
+            with st.spinner("Loading Sleeper player registry..."):
+                sleeper_players_df, sleeper_lookup = load_sleeper_players_full()
 
-    return projected_ppr * 0.03
+            value_mode = st.radio(
+                "Value Mode:",
+                ["Redraft", "Dynasty"],
+                horizontal=True,
+                key="nfl_value_mode",
+            )
 
-def calculate_fantasy_trade_value(position, age, projected_ppr):
+            st.info(
+                "Value Guide: Projected PPR is an estimated weekly PPR score. "
+                "Redraft Value is win-now value. Dynasty Value adds age/position adjustments. "
+                "Trade Value uses the selected mode above."
+            )
 
-    scarcity = POSITION_SCARCITY.get(position, 1.0)
+            player_values_df = build_player_values(sleeper_players_df, value_mode)
 
-    age_mod = calculate_age_modifier(position, age)
+            nfl_tab1, nfl_tab2, nfl_tab3, nfl_tab4, nfl_tab5 = st.tabs(
+                [
+                    "📊 Player Values",
+                    "⚖️ Trade Calculator",
+                    "🔗 Sleeper League Sync",
+                    "🧠 League AI",
+                    "💾 Saved Data",
+                ]
+            )
 
-    usage_bonus = calculate_usage_bonus(position, projected_ppr)
+            with nfl_tab1:
+                st.markdown("### 📊 NFL Player Values")
 
-    value = (
-        (projected_ppr * scarcity * age_mod)
-        + usage_bonus
-    )
-
-    return round(value, 1)
-            
-    st.markdown("### ⚖️ Trade Simulator")
-    col1, col2 = st.columns(2)
-    with col1:
-        team_a_nfl = st.multiselect("Team A Receives:", player_list, key="nfl_team_a")
-    with col2:
-        team_b_nfl = st.multiselect("Team B Receives:", player_list, key="nfl_team_b")
-        
-    st.markdown("#### 🎯 PPR Value Assignment")
-    st.caption("Assign your projected PPR Points (or Dynasty Value metric) for the selected assets.")
-    
-    c1, c2 = st.columns(2)
-    a_val = 0
-    b_val = 0
-    with c1:
-        for p in team_a_nfl:
-            val = st.number_input(f"Value for {p}:", value=200, step=10, key=f"val_{p}_a")
-            a_val += val
-    with c2:
-        for p in team_b_nfl:
-            val = st.number_input(f"Value for {p}:", value=200, step=10, key=f"val_{p}_b")
-            b_val += val
-            
-    if st.button("⚖️ Calculate NFL Trade Edge"):
-        if team_a_nfl or team_b_nfl:
-            st.markdown("---")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Team A Total Value", f"{a_val} PPR Pts")
-            with col2:
-                st.metric("Team B Total Value", f"{b_val} PPR Pts")
-                
-            diff = abs(a_val - b_val)
-            if a_val > b_val + 20:
-                st.success(f"📈 **Team A** wins this trade by **{diff}** points.")
-            elif b_val > a_val + 20:
-                st.success(f"📈 **Team B** wins this trade by **{diff}** points.")
-            else:
-                st.info(f"🤝 This trade is highly balanced (Differential: {diff}).")
-        else:
-            st.warning("Select players to analyze.")
-            
-    st.markdown("---")
-    st.subheader("📡 Sleeper League Sync")
-    username = st.text_input("Enter Sleeper Username to view active leagues:", value="marcusmaximus06")
-    if st.button("Sync Rosters"):
-        with st.spinner("Pinging Sleeper API..."):
-            try:
-                user_resp = requests.get(f"https://api.sleeper.app/v1/user/{username}", timeout=15).json()
-                if user_resp and 'user_id' in user_resp:
-                    user_id = user_resp['user_id']
-                    leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2026", timeout=15).json()
-                    if not leagues:
-                        leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2025", timeout=15).json()
-                    if leagues:
-                        st.success(f"✅ Synced {len(leagues)} leagues for {username}!")
-                        for league in leagues:
-                            st.write(f"🏆 **{league['name']}**")
-                    else:
-                        st.info("No active NFL leagues found for this user.")
+                if player_values_df.empty:
+                    st.warning("Sleeper players did not load. Try refreshing the page.")
                 else:
-                    st.error("User not found on Sleeper.")
-            except Exception as e:
-                st.error("Failed to connect to Sleeper API. The connection may have been blocked or timed out.")
+                    pos_filter = st.selectbox(
+                        "Position Filter:",
+                        ["All", "QB", "RB", "WR", "TE"],
+                        key="nfl_values_pos_filter",
+                    )
+
+                    search_text = st.text_input("Search Player:", key="nfl_values_search")
+
+                    display_df = player_values_df.copy()
+
+                    if pos_filter != "All":
+                        display_df = display_df[display_df["Position"] == pos_filter]
+
+                    if search_text:
+                        display_df = display_df[
+                            display_df["Player"].str.contains(search_text, case=False, na=False)
+                        ]
+
+                    st.dataframe(
+                        display_df[
+                            [
+                                "Player",
+                                "Team",
+                                "Position",
+                                "Age",
+                                "Projected PPR",
+                                "Redraft Value",
+                                "Dynasty Value",
+                                "Trade Value",
+                                "Value Tier",
+                                "Dynasty Tag",
+                            ]
+                        ].head(250),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+            with nfl_tab2:
+                st.markdown("### ⚖️ Trade Calculator")
+
+                if player_values_df.empty:
+                    st.warning("Player values are unavailable.")
+                else:
+                    player_options = [
+                        f"{r['Player']} ({r['Position']} - {r['Team']})"
+                        for _, r in player_values_df.iterrows()
+                    ]
+
+                    trade_col1, trade_col2 = st.columns(2)
+
+                    with trade_col1:
+                        team_a_assets = st.multiselect(
+                            "Team A Receives:",
+                            player_options,
+                            key="trade_team_a_assets",
+                        )
+
+                    with trade_col2:
+                        team_b_assets = st.multiselect(
+                            "Team B Receives:",
+                            player_options,
+                            key="trade_team_b_assets",
+                        )
+
+                    team_a_value = trade_side_value(team_a_assets, player_values_df)
+                    team_b_value = trade_side_value(team_b_assets, player_values_df)
+                    value_gap = round(team_a_value - team_b_value, 1)
+
+                    metric_col1, metric_col2, metric_col3 = st.columns(3)
+
+                    with metric_col1:
+                        st.metric("Team A Receives", team_a_value)
+
+                    with metric_col2:
+                        st.metric("Team B Receives", team_b_value)
+
+                    with metric_col3:
+                        st.metric("Gap", value_gap)
+
+                    if abs(value_gap) <= 3:
+                        st.success("Balanced trade.")
+                    elif value_gap > 3:
+                        st.warning("Team A receives more value.")
+                    else:
+                        st.warning("Team B receives more value.")
+
+                    notes = st.text_area("Trade Notes:", key="trade_notes")
+
+                    if st.button("💾 Save Trade", key="save_trade_button"):
+                        save_trade_history(
+                            {
+                                "Saved At": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "Mode": value_mode,
+                                "Team A Receives": " | ".join(team_a_assets),
+                                "Team B Receives": " | ".join(team_b_assets),
+                                "Team A Value": team_a_value,
+                                "Team B Value": team_b_value,
+                                "Gap": value_gap,
+                                "Notes": notes,
+                            }
+                        )
+                        st.success("Trade saved.")
+
+            with nfl_tab3:
+                st.markdown("### 🔗 Sleeper League Sync")
+
+                sleeper_username = st.text_input(
+                    "Sleeper Username:",
+                    value="marcusmaximus06",
+                    key="sleeper_username_main",
+                )
+
+                season = st.selectbox(
+                    "Season:",
+                    ["2025", "2024", "2026"],
+                    key="sleeper_season_select",
+                )
+
+                if sleeper_username:
+                    try:
+                        user_resp = requests.get(
+                            f"https://api.sleeper.app/v1/user/{sleeper_username}",
+                            timeout=15,
+                        ).json()
+
+                        sleeper_user_id = user_resp.get("user_id")
+
+                        if not sleeper_user_id:
+                            st.warning("Sleeper username not found.")
+                        else:
+                            leagues_resp = requests.get(
+                                f"https://api.sleeper.app/v1/user/{sleeper_user_id}/leagues/nfl/{season}",
+                                timeout=15,
+                            ).json()
+
+                            if not leagues_resp:
+                                st.warning("No Sleeper leagues found for this username/season.")
+                            else:
+                                league_options = {
+                                    league.get("name", "Unnamed League"): league.get("league_id")
+                                    for league in leagues_resp
+                                }
+
+                                selected_league_name = st.selectbox(
+                                    "Select League:",
+                                    list(league_options.keys()),
+                                    key="selected_sleeper_league",
+                                )
+
+                                selected_league_id = league_options[selected_league_name]
+
+                                save_col1, save_col2 = st.columns([1, 3])
+
+                                with save_col1:
+                                    if st.button("💾 Save League", key="save_sleeper_league"):
+                                        save_league(
+                                            sleeper_username,
+                                            selected_league_id,
+                                            selected_league_name,
+                                        )
+                                        st.success("League saved.")
+
+                                rosters_resp = requests.get(
+                                    f"https://api.sleeper.app/v1/league/{selected_league_id}/rosters",
+                                    timeout=15,
+                                ).json()
+
+                                users_resp = requests.get(
+                                    f"https://api.sleeper.app/v1/league/{selected_league_id}/users",
+                                    timeout=15,
+                                ).json()
+
+                                user_map = {
+                                    u.get("user_id"): u.get("display_name", "Unknown")
+                                    for u in users_resp
+                                }
+
+                                roster_rows = []
+                                detail_rosters = {}
+
+                                for roster in rosters_resp:
+                                    owner_id = roster.get("owner_id")
+                                    owner_name = user_map.get(owner_id, "Unknown")
+                                    roster_players = roster.get("players") or []
+
+                                    summary = roster_value_summary(
+                                        roster_players,
+                                        sleeper_lookup,
+                                        player_values_df,
+                                    )
+
+                                    detail_rosters[owner_name] = summary["Roster Rows"]
+
+                                    roster_rows.append(
+                                        {
+                                            "Team/User": owner_name,
+                                            "Roster ID": roster.get("roster_id"),
+                                            "Players": len(roster_players),
+                                            "Roster Value": summary["Roster Value"],
+                                            "QB Value": summary["QB Value"],
+                                            "RB Value": summary["RB Value"],
+                                            "WR Value": summary["WR Value"],
+                                            "TE Value": summary["TE Value"],
+                                            "Weakest Position": summary["Weakest Position"],
+                                            "Wins": roster.get("settings", {}).get("wins", 0),
+                                            "Losses": roster.get("settings", {}).get("losses", 0),
+                                            "Ties": roster.get("settings", {}).get("ties", 0),
+                                            "Top Players": summary["Top Players"],
+                                        }
+                                    )
+
+                                power_df = pd.DataFrame(roster_rows)
+
+                                if not power_df.empty:
+                                    power_df = power_df.sort_values(
+                                        "Roster Value",
+                                        ascending=False,
+                                    ).reset_index(drop=True)
+
+                                    power_df["Rank"] = range(1, len(power_df) + 1)
+                                    league_size = len(power_df)
+
+                                    power_df["Team Status"] = power_df.apply(
+                                        lambda r: label_team_status(
+                                            r["Roster Value"],
+                                            r["Rank"],
+                                            league_size,
+                                        ),
+                                        axis=1,
+                                    )
+
+                                    st.markdown("### 🏆 Team Power Rankings")
+                                    st.dataframe(
+                                        power_df[
+                                            [
+                                                "Rank",
+                                                "Team/User",
+                                                "Roster Value",
+                                                "QB Value",
+                                                "RB Value",
+                                                "WR Value",
+                                                "TE Value",
+                                                "Weakest Position",
+                                                "Team Status",
+                                                "Wins",
+                                                "Losses",
+                                                "Top Players",
+                                            ]
+                                        ],
+                                        use_container_width=True,
+                                        hide_index=True,
+                                    )
+
+                                    st.session_state["nfl_power_df"] = power_df
+                                    st.session_state["nfl_detail_rosters"] = detail_rosters
+
+                                    selected_team = st.selectbox(
+                                        "View Roster Details:",
+                                        list(detail_rosters.keys()),
+                                        key="selected_roster_detail",
+                                    )
+
+                                    roster_detail_df = detail_rosters.get(selected_team, pd.DataFrame())
+
+                                    if not roster_detail_df.empty:
+                                        st.dataframe(
+                                            roster_detail_df[
+                                                [
+                                                    "Player",
+                                                    "Team",
+                                                    "Position",
+                                                    "Age",
+                                                    "Projected PPR",
+                                                    "Redraft Value",
+                                                    "Dynasty Value",
+                                                    "Trade Value",
+                                                    "Dynasty Tag",
+                                                ]
+                                            ].sort_values("Trade Value", ascending=False),
+                                            use_container_width=True,
+                                            hide_index=True,
+                                        )
+
+                                    st.markdown("### 🤝 Suggested Trade Partners")
+
+                                    rec_rows = []
+
+                                    for _, team_a in power_df.iterrows():
+                                        need = team_a["Weakest Position"]
+
+                                        for _, team_b in power_df.iterrows():
+                                            if team_a["Team/User"] == team_b["Team/User"]:
+                                                continue
+
+                                            strength_col = f"{need} Value"
+                                            partner_strength = team_b.get(strength_col, 0)
+
+                                            if partner_strength >= power_df[strength_col].median():
+                                                rec_rows.append(
+                                                    {
+                                                        "Team Needing Help": team_a["Team/User"],
+                                                        "Weak Position": need,
+                                                        "Suggested Partner": team_b["Team/User"],
+                                                        "Partner Strength": round(float(partner_strength), 1),
+                                                    }
+                                                )
+
+                                    rec_df = pd.DataFrame(rec_rows)
+
+                                    if not rec_df.empty:
+                                        rec_df = rec_df.sort_values(
+                                            "Partner Strength",
+                                            ascending=False,
+                                        ).head(25)
+
+                                        st.dataframe(
+                                            rec_df,
+                                            use_container_width=True,
+                                            hide_index=True,
+                                        )
+
+                    except Exception as e:
+                        st.error(f"Sleeper sync error: {e}")
+
+            with nfl_tab4:
+                st.markdown("### 🧠 League AI")
+
+                power_df = st.session_state.get("nfl_power_df", pd.DataFrame())
+
+                if power_df.empty:
+                    st.info("Sync a Sleeper league first, then return here.")
+                else:
+                    best_team = power_df.iloc[0]
+                    worst_team = power_df.iloc[-1]
+
+                    ai_col1, ai_col2, ai_col3 = st.columns(3)
+
+                    with ai_col1:
+                        st.metric("Top Team", best_team["Team/User"], best_team["Roster Value"])
+
+                    with ai_col2:
+                        st.metric("Lowest Roster Value", worst_team["Team/User"], worst_team["Roster Value"])
+
+                    with ai_col3:
+                        league_avg = round(float(power_df["Roster Value"].mean()), 1)
+                        st.metric("League Avg Value", league_avg)
+
+                    st.markdown("#### League Read")
+
+                    for _, row in power_df.iterrows():
+                        team = row["Team/User"]
+                        status = row["Team Status"]
+                        weakness = row["Weakest Position"]
+                        value = row["Roster Value"]
+
+                        if status == "Contender":
+                            st.success(f"{team}: Contender. Push for win-now upgrades, especially at {weakness}. Current value: {value}.")
+                        elif status == "Rebuilder":
+                            st.warning(f"{team}: Rebuilder. Shop older assets and target young players/picks. Weakest room: {weakness}. Current value: {value}.")
+                        else:
+                            st.info(f"{team}: Middle pack. Needs a direction. Weakest room: {weakness}. Current value: {value}.")
+
+            with nfl_tab5:
+                st.markdown("### 💾 Saved Data")
+
+                saved_data_choice = st.radio(
+                    "View:",
+                    ["Trade History", "Saved Leagues"],
+                    horizontal=True,
+                    key="saved_data_choice",
+                )
+
+                if saved_data_choice == "Trade History":
+                    if os.path.exists(TRADE_HISTORY_FILE):
+                        history_df = pd.read_csv(TRADE_HISTORY_FILE)
+                        st.dataframe(history_df, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("No saved trades yet.")
+
+                if saved_data_choice == "Saved Leagues":
+                    if os.path.exists(SAVED_LEAGUES_FILE):
+                        leagues_df = pd.read_csv(SAVED_LEAGUES_FILE)
+                        st.dataframe(leagues_df, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("No saved leagues yet.")
 
 # ==========================================================
 # SPORT BRANCH 2: NCAA SOFTBALL
