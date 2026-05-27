@@ -2385,9 +2385,30 @@ if sport == "⚾ MLB Baseball":
             with nfl_tab3:
                 st.markdown("### 🔗 Sleeper League Sync")
 
+                sync_top_col1, sync_top_col2 = st.columns([3, 1])
+
+                with sync_top_col1:
+                    st.caption(f"Last refreshed: {datetime.now().strftime('%Y-%m-%d %I:%M:%S %p')}")
+
+                with sync_top_col2:
+                    if st.button("🔄 Refresh NFL Data", key="refresh_nfl_data_button"):
+                        st.cache_data.clear()
+                        st.rerun()
+
+                default_sleeper_username = "marcusmaximus06"
+
+                if os.path.exists(SAVED_LEAGUES_FILE):
+                    try:
+                        saved_leagues_preview = pd.read_csv(SAVED_LEAGUES_FILE)
+
+                        if not saved_leagues_preview.empty and "Username" in saved_leagues_preview.columns:
+                            default_sleeper_username = str(saved_leagues_preview.iloc[0]["Username"])
+                    except Exception:
+                        pass
+
                 sleeper_username = st.text_input(
                     "Sleeper Username:",
-                    value="marcusmaximus06",
+                    value=default_sleeper_username,
                     key="sleeper_username_main",
                 )
 
@@ -2396,6 +2417,31 @@ if sport == "⚾ MLB Baseball":
                     ["2025", "2024", "2026"],
                     key="sleeper_season_select",
                 )
+
+                saved_league_hint = None
+
+                if os.path.exists(SAVED_LEAGUES_FILE):
+                    try:
+                        saved_leagues_hint_df = pd.read_csv(SAVED_LEAGUES_FILE)
+
+                        if not saved_leagues_hint_df.empty:
+                            saved_labels = [
+                                f"{row['League Name']} | {row['Username']}"
+                                for _, row in saved_leagues_hint_df.iterrows()
+                            ]
+
+                            selected_saved_label = st.selectbox(
+                                "Saved League Shortcut:",
+                                ["Manual / Current Username"] + saved_labels,
+                                key="saved_league_shortcut_select",
+                            )
+
+                            if selected_saved_label != "Manual / Current Username":
+                                saved_index = saved_labels.index(selected_saved_label)
+                                saved_league_hint = saved_leagues_hint_df.iloc[saved_index].to_dict()
+                                st.caption(f"Saved league selected: {saved_league_hint.get('League Name')}")
+                    except Exception:
+                        saved_league_hint = None
 
                 if sleeper_username:
                     try:
@@ -2422,9 +2468,19 @@ if sport == "⚾ MLB Baseball":
                                     for league in leagues_resp
                                 }
 
+                                league_names = list(league_options.keys())
+                                default_league_index = 0
+
+                                if saved_league_hint:
+                                    saved_league_name = saved_league_hint.get("League Name")
+
+                                    if saved_league_name in league_names:
+                                        default_league_index = league_names.index(saved_league_name)
+
                                 selected_league_name = st.selectbox(
                                     "Select League:",
-                                    list(league_options.keys()),
+                                    league_names,
+                                    index=default_league_index,
                                     key="selected_sleeper_league",
                                 )
 
@@ -2511,25 +2567,35 @@ if sport == "⚾ MLB Baseball":
                                     )
 
                                     st.markdown("### 🏆 Team Power Rankings")
+                                    power_display_df = power_df[
+                                        [
+                                            "Rank",
+                                            "Team/User",
+                                            "Roster Value",
+                                            "QB Value",
+                                            "RB Value",
+                                            "WR Value",
+                                            "TE Value",
+                                            "Weakest Position",
+                                            "Team Status",
+                                            "Wins",
+                                            "Losses",
+                                            "Top Players",
+                                        ]
+                                    ]
+
                                     st.dataframe(
-                                        power_df[
-                                            [
-                                                "Rank",
-                                                "Team/User",
-                                                "Roster Value",
-                                                "QB Value",
-                                                "RB Value",
-                                                "WR Value",
-                                                "TE Value",
-                                                "Weakest Position",
-                                                "Team Status",
-                                                "Wins",
-                                                "Losses",
-                                                "Top Players",
-                                            ]
-                                        ],
+                                        power_display_df,
                                         use_container_width=True,
                                         hide_index=True,
+                                    )
+
+                                    st.download_button(
+                                        "⬇️ Download Power Rankings CSV",
+                                        data=power_display_df.to_csv(index=False).encode("utf-8"),
+                                        file_name=f"{selected_league_name}_power_rankings.csv",
+                                        mime="text/csv",
+                                        key="download_power_rankings_csv",
                                     )
 
                                     st.session_state["nfl_power_df"] = power_df
@@ -2544,22 +2610,32 @@ if sport == "⚾ MLB Baseball":
                                     roster_detail_df = detail_rosters.get(selected_team, pd.DataFrame())
 
                                     if not roster_detail_df.empty:
+                                        roster_export_df = roster_detail_df[
+                                            [
+                                                "Player",
+                                                "Team",
+                                                "Position",
+                                                "Age",
+                                                "Projected PPR",
+                                                "Redraft Value",
+                                                "Dynasty Value",
+                                                "Trade Value",
+                                                "Dynasty Tag",
+                                            ]
+                                        ].sort_values("Trade Value", ascending=False)
+
                                         st.dataframe(
-                                            roster_detail_df[
-                                                [
-                                                    "Player",
-                                                    "Team",
-                                                    "Position",
-                                                    "Age",
-                                                    "Projected PPR",
-                                                    "Redraft Value",
-                                                    "Dynasty Value",
-                                                    "Trade Value",
-                                                    "Dynasty Tag",
-                                                ]
-                                            ].sort_values("Trade Value", ascending=False),
+                                            roster_export_df,
                                             use_container_width=True,
                                             hide_index=True,
+                                        )
+
+                                        st.download_button(
+                                            "⬇️ Download Selected Roster CSV",
+                                            data=roster_export_df.to_csv(index=False).encode("utf-8"),
+                                            file_name=f"{selected_team}_roster_values.csv",
+                                            mime="text/csv",
+                                            key="download_selected_roster_csv",
                                         )
 
                                     st.markdown("### 🤝 Suggested Trade Partners")
@@ -2599,6 +2675,106 @@ if sport == "⚾ MLB Baseball":
                                             use_container_width=True,
                                             hide_index=True,
                                         )
+
+                                        st.download_button(
+                                            "⬇️ Download Trade Partner Suggestions CSV",
+                                            data=rec_df.to_csv(index=False).encode("utf-8"),
+                                            file_name=f"{selected_league_name}_trade_partner_suggestions.csv",
+                                            mime="text/csv",
+                                            key="download_trade_partner_suggestions_csv",
+                                        )
+
+                                    st.markdown("### 🎯 Player-Level Trade Ideas")
+
+                                    player_rec_rows = []
+
+                                    for _, team_a in power_df.iterrows():
+                                        team_a_name = team_a["Team/User"]
+                                        need = team_a["Weakest Position"]
+
+                                        team_a_roster = detail_rosters.get(team_a_name, pd.DataFrame())
+
+                                        if team_a_roster.empty:
+                                            continue
+
+                                        asset_pool = team_a_roster[
+                                            team_a_roster["Position"] != need
+                                        ].sort_values("Trade Value", ascending=False)
+
+                                        give_asset = "Pick / Bench Depth"
+                                        give_asset_value = 0.0
+
+                                        if not asset_pool.empty:
+                                            give_asset = asset_pool.iloc[0]["Player"]
+                                            give_asset_value = round(float(asset_pool.iloc[0]["Trade Value"]), 1)
+
+                                        for _, team_b in power_df.iterrows():
+                                            team_b_name = team_b["Team/User"]
+
+                                            if team_a_name == team_b_name:
+                                                continue
+
+                                            team_b_roster = detail_rosters.get(team_b_name, pd.DataFrame())
+
+                                            if team_b_roster.empty:
+                                                continue
+
+                                            target_pool = team_b_roster[
+                                                team_b_roster["Position"] == need
+                                            ].sort_values("Trade Value", ascending=False)
+
+                                            for _, target in target_pool.head(2).iterrows():
+                                                target_value = round(float(target["Trade Value"]), 1)
+
+                                                if target_value <= 0:
+                                                    continue
+
+                                                fairness_gap = round(target_value - give_asset_value, 1)
+
+                                                if abs(fairness_gap) <= 8:
+                                                    action = "Near-even framework"
+                                                elif fairness_gap > 8:
+                                                    action = "Add value/pick"
+                                                else:
+                                                    action = "Ask for extra back"
+
+                                                player_rec_rows.append(
+                                                    {
+                                                        "Team Needing Help": team_a_name,
+                                                        "Need": need,
+                                                        "Target Player": target["Player"],
+                                                        "Target Team": team_b_name,
+                                                        "Target Value": target_value,
+                                                        "Possible Asset": give_asset,
+                                                        "Asset Value": give_asset_value,
+                                                        "Gap": fairness_gap,
+                                                        "Suggestion": action,
+                                                    }
+                                                )
+
+                                    player_rec_df = pd.DataFrame(player_rec_rows)
+
+                                    if not player_rec_df.empty:
+                                        player_rec_df = player_rec_df.sort_values(
+                                            ["Team Needing Help", "Need", "Target Value"],
+                                            ascending=[True, True, False],
+                                        ).head(50)
+
+                                        st.dataframe(
+                                            player_rec_df,
+                                            use_container_width=True,
+                                            hide_index=True,
+                                        )
+
+                                        st.download_button(
+                                            "⬇️ Download Player Trade Ideas CSV",
+                                            data=player_rec_df.to_csv(index=False).encode("utf-8"),
+                                            file_name=f"{selected_league_name}_player_trade_ideas.csv",
+                                            mime="text/csv",
+                                            key="download_player_trade_ideas_csv",
+                                        )
+                                    else:
+                                        st.info("No player-level trade ideas available for this league yet.")
 
                     except Exception as e:
                         st.error(f"Sleeper sync error: {e}")
@@ -2655,6 +2831,13 @@ if sport == "⚾ MLB Baseball":
                     if os.path.exists(TRADE_HISTORY_FILE):
                         history_df = pd.read_csv(TRADE_HISTORY_FILE)
                         st.dataframe(history_df, use_container_width=True, hide_index=True)
+                        st.download_button(
+                            "⬇️ Download Trade History CSV",
+                            data=history_df.to_csv(index=False).encode("utf-8"),
+                            file_name="nfl_trade_history.csv",
+                            mime="text/csv",
+                            key="download_trade_history_csv",
+                        )
                     else:
                         st.info("No saved trades yet.")
 
@@ -2662,6 +2845,13 @@ if sport == "⚾ MLB Baseball":
                     if os.path.exists(SAVED_LEAGUES_FILE):
                         leagues_df = pd.read_csv(SAVED_LEAGUES_FILE)
                         st.dataframe(leagues_df, use_container_width=True, hide_index=True)
+                        st.download_button(
+                            "⬇️ Download Saved Leagues CSV",
+                            data=leagues_df.to_csv(index=False).encode("utf-8"),
+                            file_name="nfl_saved_leagues.csv",
+                            mime="text/csv",
+                            key="download_saved_leagues_csv",
+                        )
                     else:
                         st.info("No saved leagues yet.")
 
