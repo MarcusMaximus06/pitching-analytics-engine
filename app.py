@@ -2826,8 +2826,8 @@ elif sport == "🏈 NFL Football":
                         name = p.get("Player", "Unknown")
                         pos = p.get("Position", "UNK")
                         age = p.get("Age", None)
-                
-                        projected_ppr = nfl_base_projection(pos, name)
+
+                        projected_ppr = 10
                 
                         if value_mode == "Dynasty":
                             player_value = calculate_dynasty_value(pos, age, projected_ppr)
