@@ -2263,15 +2263,116 @@ if sport == "⚾ MLB Baseball":
 
             player_values_df = build_player_values(sleeper_players_df, value_mode)
 
-            nfl_tab1, nfl_tab2, nfl_tab3, nfl_tab4, nfl_tab5 = st.tabs(
+            nfl_tab0, nfl_tab1, nfl_tab2, nfl_tab3, nfl_tab4, nfl_tab5, nfl_tab6, nfl_tab7 = st.tabs(
                 [
+                    "🏟️ Command Center",
                     "📊 Player Values",
-                    "⚖️ Trade Calculator",
+                    "🃏 Player Cards",
+                    "⚖️ Trade Builder V2",
                     "🔗 Sleeper League Sync",
                     "🧠 League AI",
-                    "💾 Saved Data",
+                    "🧲 Waiver Finder",
+                    "💾 Saved Reports",
                 ]
             )
+
+            with nfl_tab0:
+                st.markdown("### 🏟️ League Command Center")
+
+                power_df = st.session_state.get("nfl_power_df", pd.DataFrame())
+                player_rec_df = st.session_state.get("nfl_player_rec_df", pd.DataFrame())
+                rec_df = st.session_state.get("nfl_rec_df", pd.DataFrame())
+
+                if power_df.empty:
+                    st.info("Sync a Sleeper league first in the Sleeper League Sync tab.")
+                else:
+                    top_team = power_df.iloc[0]
+                    bottom_team = power_df.iloc[-1]
+                    league_avg = round(float(power_df["Roster Value"].mean()), 1)
+
+                    cc1, cc2, cc3, cc4 = st.columns(4)
+
+                    with cc1:
+                        st.metric("League Leader", top_team["Team/User"], top_team["Roster Value"])
+
+                    with cc2:
+                        st.metric("League Average", league_avg)
+
+                    with cc3:
+                        st.metric("Best Buy-Low Team", bottom_team["Team/User"], bottom_team["Weakest Position"])
+
+                    with cc4:
+                        st.metric("Teams Synced", len(power_df))
+
+                    st.markdown("#### Power Snapshot")
+                    st.dataframe(
+                        power_df[
+                            [
+                                "Rank",
+                                "Team/User",
+                                "Roster Value",
+                                "Weakest Position",
+                                "Team Status",
+                                "Top Players",
+                            ]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                    st.markdown("#### Top Action Items")
+
+                    action_rows = []
+
+                    for _, row in power_df.iterrows():
+                        team_name = row["Team/User"]
+                        weakness = row["Weakest Position"]
+                        status = row["Team Status"]
+
+                        if status == "Contender":
+                            action = f"Buy a {weakness} upgrade for a playoff push."
+                        elif status == "Rebuilder":
+                            action = "Sell older assets and collect youth/picks."
+                        else:
+                            action = f"Pick a direction and patch {weakness} first."
+
+                        action_rows.append(
+                            {
+                                "Team": team_name,
+                                "Status": status,
+                                "Primary Need": weakness,
+                                "Recommended Action": action,
+                            }
+                        )
+
+                    action_df = pd.DataFrame(action_rows)
+                    st.dataframe(action_df, use_container_width=True, hide_index=True)
+
+                    if not player_rec_df.empty:
+                        st.markdown("#### Best Player-Level Trade Ideas")
+                        st.dataframe(
+                            player_rec_df.head(15),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                    report_parts = [power_df.to_csv(index=False)]
+
+                    if not player_rec_df.empty:
+                        report_parts.append("\n\nPLAYER TRADE IDEAS\n")
+                        report_parts.append(player_rec_df.to_csv(index=False))
+
+                    if not rec_df.empty:
+                        report_parts.append("\n\nTEAM TRADE PARTNERS\n")
+                        report_parts.append(rec_df.to_csv(index=False))
+
+                    st.download_button(
+                        "⬇️ Download Full Command Center Report CSV",
+                        data="".join(report_parts).encode("utf-8"),
+                        file_name="nfl_command_center_report.csv",
+                        mime="text/csv",
+                        key="download_command_center_report_csv",
+                    )
 
             with nfl_tab1:
                 st.markdown("### 📊 NFL Player Values")
@@ -2317,7 +2418,75 @@ if sport == "⚾ MLB Baseball":
                     )
 
             with nfl_tab2:
-                st.markdown("### ⚖️ Trade Calculator")
+                st.markdown("### 🃏 Player Cards")
+
+                if player_values_df.empty:
+                    st.warning("Player values are unavailable.")
+                else:
+                    card_options = [
+                        f"{r['Player']} ({r['Position']} - {r['Team']})"
+                        for _, r in player_values_df.iterrows()
+                    ]
+
+                    selected_card = st.selectbox(
+                        "Select Player:",
+                        card_options,
+                        key="nfl_player_card_select",
+                    )
+
+                    selected_name = selected_card.split(" (")[0]
+                    card_df = player_values_df[player_values_df["Player"] == selected_name]
+
+                    if not card_df.empty:
+                        card = card_df.iloc[0]
+
+                        c1, c2, c3, c4 = st.columns(4)
+
+                        with c1:
+                            st.metric("Trade Value", card["Trade Value"])
+
+                        with c2:
+                            st.metric("Projected PPR", card["Projected PPR"])
+
+                        with c3:
+                            st.metric("Age", card["Age"])
+
+                        with c4:
+                            st.metric("Tier", card["Value Tier"])
+
+                        st.markdown("#### Player Snapshot")
+                        st.dataframe(
+                            pd.DataFrame(
+                                [
+                                    {
+                                        "Player": card["Player"],
+                                        "Team": card["Team"],
+                                        "Position": card["Position"],
+                                        "Age": card["Age"],
+                                        "Redraft Value": card["Redraft Value"],
+                                        "Dynasty Value": card["Dynasty Value"],
+                                        "Trade Value": card["Trade Value"],
+                                        "Dynasty Tag": card["Dynasty Tag"],
+                                        "Status": card["Status"],
+                                        "Experience": card["Experience"],
+                                    }
+                                ]
+                            ),
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                        tag = str(card["Dynasty Tag"])
+
+                        if tag in ["Young Core", "Stable Asset"]:
+                            st.success("Suggested use: hold or buy unless the offer is clearly above market.")
+                        elif tag in ["Decline Risk", "Late Career"]:
+                            st.warning("Suggested use: consider selling if your team is not contending.")
+                        else:
+                            st.info("Suggested use: value depends on roster direction and league need.")
+
+            with nfl_tab3:
+                st.markdown("### ⚖️ Trade Builder V2")
 
                 if player_values_df.empty:
                     st.warning("Player values are unavailable.")
@@ -2343,8 +2512,39 @@ if sport == "⚾ MLB Baseball":
                             key="trade_team_b_assets",
                         )
 
-                    team_a_value = trade_side_value(team_a_assets, player_values_df)
-                    team_b_value = trade_side_value(team_b_assets, player_values_df)
+                    pick_values = {
+                        "None": 0.0,
+                        "2025 1st": 14.0,
+                        "2025 2nd": 7.0,
+                        "2025 3rd": 3.0,
+                        "2026 1st": 12.0,
+                        "2026 2nd": 6.0,
+                        "2026 3rd": 2.5,
+                    }
+
+                    pick_col1, pick_col2 = st.columns(2)
+
+                    with pick_col1:
+                        team_a_picks = st.multiselect(
+                            "Extra picks/assets Team A receives:",
+                            list(pick_values.keys()),
+                            default=["None"],
+                            key="trade_team_a_picks",
+                        )
+
+                    with pick_col2:
+                        team_b_picks = st.multiselect(
+                            "Extra picks/assets Team B receives:",
+                            list(pick_values.keys()),
+                            default=["None"],
+                            key="trade_team_b_picks",
+                        )
+
+                    team_a_pick_value = round(sum(pick_values.get(p, 0.0) for p in team_a_picks if p != "None"), 1)
+                    team_b_pick_value = round(sum(pick_values.get(p, 0.0) for p in team_b_picks if p != "None"), 1)
+
+                    team_a_value = round(trade_side_value(team_a_assets, player_values_df) + team_a_pick_value, 1)
+                    team_b_value = round(trade_side_value(team_b_assets, player_values_df) + team_b_pick_value, 1)
                     value_gap = round(team_a_value - team_b_value, 1)
 
                     metric_col1, metric_col2, metric_col3 = st.columns(3)
@@ -2358,12 +2558,18 @@ if sport == "⚾ MLB Baseball":
                     with metric_col3:
                         st.metric("Gap", value_gap)
 
+                    fairness_score = max(0, min(100, int(100 - (abs(value_gap) * 8))))
+                    st.progress(fairness_score / 100)
+                    st.caption(f"Fairness Meter: {fairness_score}/100")
+
                     if abs(value_gap) <= 3:
                         st.success("Balanced trade.")
-                    elif value_gap > 3:
-                        st.warning("Team A receives more value.")
+                    elif abs(value_gap) <= 8:
+                        st.warning("Close, but one side should add a small asset.")
+                    elif value_gap > 8:
+                        st.error("Team A receives much more value.")
                     else:
-                        st.warning("Team B receives more value.")
+                        st.error("Team B receives much more value.")
 
                     notes = st.text_area("Trade Notes:", key="trade_notes")
 
@@ -2372,8 +2578,8 @@ if sport == "⚾ MLB Baseball":
                             {
                                 "Saved At": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 "Mode": value_mode,
-                                "Team A Receives": " | ".join(team_a_assets),
-                                "Team B Receives": " | ".join(team_b_assets),
+                                "Team A Receives": " | ".join(team_a_assets + team_a_picks),
+                                "Team B Receives": " | ".join(team_b_assets + team_b_picks),
                                 "Team A Value": team_a_value,
                                 "Team B Value": team_b_value,
                                 "Gap": value_gap,
@@ -2382,7 +2588,7 @@ if sport == "⚾ MLB Baseball":
                         )
                         st.success("Trade saved.")
 
-            with nfl_tab3:
+            with nfl_tab4:
                 st.markdown("### 🔗 Sleeper League Sync")
 
                 sync_top_col1, sync_top_col2 = st.columns([3, 1])
@@ -2601,6 +2807,13 @@ if sport == "⚾ MLB Baseball":
                                     st.session_state["nfl_power_df"] = power_df
                                     st.session_state["nfl_detail_rosters"] = detail_rosters
 
+                                    rostered_player_ids = set()
+                                    for detail_df in detail_rosters.values():
+                                        if not detail_df.empty and "Player ID" in detail_df.columns:
+                                            rostered_player_ids.update(detail_df["Player ID"].astype(str).tolist())
+
+                                    st.session_state["nfl_rostered_player_ids"] = rostered_player_ids
+
                                     selected_team = st.selectbox(
                                         "View Roster Details:",
                                         list(detail_rosters.keys()),
@@ -2669,6 +2882,8 @@ if sport == "⚾ MLB Baseball":
                                             "Partner Strength",
                                             ascending=False,
                                         ).head(25)
+
+                                        st.session_state["nfl_rec_df"] = rec_df
 
                                         st.dataframe(
                                             rec_df,
@@ -2760,6 +2975,8 @@ if sport == "⚾ MLB Baseball":
                                             ascending=[True, True, False],
                                         ).head(50)
 
+                                        st.session_state["nfl_player_rec_df"] = player_rec_df
+
                                         st.dataframe(
                                             player_rec_df,
                                             use_container_width=True,
@@ -2779,7 +2996,7 @@ if sport == "⚾ MLB Baseball":
                     except Exception as e:
                         st.error(f"Sleeper sync error: {e}")
 
-            with nfl_tab4:
+            with nfl_tab5:
                 st.markdown("### 🧠 League AI")
 
                 power_df = st.session_state.get("nfl_power_df", pd.DataFrame())
@@ -2817,12 +3034,77 @@ if sport == "⚾ MLB Baseball":
                         else:
                             st.info(f"{team}: Middle pack. Needs a direction. Weakest room: {weakness}. Current value: {value}.")
 
-            with nfl_tab5:
-                st.markdown("### 💾 Saved Data")
+            with nfl_tab6:
+                st.markdown("### 🧲 Waiver Wire Finder")
+
+                if player_values_df.empty:
+                    st.warning("Player values are unavailable.")
+                else:
+                    rostered_ids = st.session_state.get("nfl_rostered_player_ids", set())
+
+                    waiver_df = player_values_df.copy()
+
+                    if rostered_ids:
+                        waiver_df = waiver_df[
+                            ~waiver_df["Player ID"].astype(str).isin([str(x) for x in rostered_ids])
+                        ]
+
+                    waiver_pos = st.selectbox(
+                        "Waiver Position:",
+                        ["All", "QB", "RB", "WR", "TE"],
+                        key="waiver_position_filter",
+                    )
+
+                    if waiver_pos != "All":
+                        waiver_df = waiver_df[waiver_df["Position"] == waiver_pos]
+
+                    min_value = st.slider(
+                        "Minimum Trade Value:",
+                        0.0,
+                        25.0,
+                        5.0,
+                        0.5,
+                        key="waiver_min_value",
+                    )
+
+                    waiver_df = waiver_df[waiver_df["Trade Value"] >= min_value]
+
+                    st.caption("Shows players not found on synced Sleeper rosters. Sync a league first for best results.")
+
+                    waiver_display = waiver_df[
+                        [
+                            "Player",
+                            "Team",
+                            "Position",
+                            "Age",
+                            "Projected PPR",
+                            "Trade Value",
+                            "Value Tier",
+                            "Dynasty Tag",
+                            "Status",
+                        ]
+                    ].head(100)
+
+                    st.dataframe(
+                        waiver_display,
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                    st.download_button(
+                        "⬇️ Download Waiver Finder CSV",
+                        data=waiver_display.to_csv(index=False).encode("utf-8"),
+                        file_name="nfl_waiver_finder.csv",
+                        mime="text/csv",
+                        key="download_waiver_finder_csv",
+                    )
+
+            with nfl_tab7:
+                st.markdown("### 💾 Saved Reports")
 
                 saved_data_choice = st.radio(
                     "View:",
-                    ["Trade History", "Saved Leagues"],
+                    ["Trade History", "Saved Leagues", "League Report"],
                     horizontal=True,
                     key="saved_data_choice",
                 )
@@ -2854,6 +3136,63 @@ if sport == "⚾ MLB Baseball":
                         )
                     else:
                         st.info("No saved leagues yet.")
+
+                if saved_data_choice == "League Report":
+                    power_df = st.session_state.get("nfl_power_df", pd.DataFrame())
+                    rec_df = st.session_state.get("nfl_rec_df", pd.DataFrame())
+                    player_rec_df = st.session_state.get("nfl_player_rec_df", pd.DataFrame())
+
+                    if power_df.empty:
+                        st.info("Sync a Sleeper league first, then this report will populate.")
+                    else:
+                        report_csv_parts = ["POWER RANKINGS\n", power_df.to_csv(index=False)]
+
+                        if not rec_df.empty:
+                            report_csv_parts.extend(["\nTEAM TRADE PARTNERS\n", rec_df.to_csv(index=False)])
+
+                        if not player_rec_df.empty:
+                            report_csv_parts.extend(["\nPLAYER TRADE IDEAS\n", player_rec_df.to_csv(index=False)])
+
+                        html_report = f"""
+                        <html>
+                        <head>
+                            <title>Hag Labs NFL League Report</title>
+                            <style>
+                                body {{ font-family: Arial, sans-serif; margin: 32px; }}
+                                h1, h2 {{ color: #111827; }}
+                                table {{ border-collapse: collapse; width: 100%; margin-bottom: 28px; }}
+                                th, td {{ border: 1px solid #d1d5db; padding: 8px; text-align: left; }}
+                                th {{ background: #f3f4f6; }}
+                            </style>
+                        </head>
+                        <body>
+                            <h1>Hag Labs NFL League Report</h1>
+                            <p>Generated: {datetime.now().strftime('%Y-%m-%d %I:%M:%S %p')}</p>
+                            <h2>Power Rankings</h2>
+                            {power_df.to_html(index=False)}
+                            <h2>Team Trade Partners</h2>
+                            {(rec_df.to_html(index=False) if not rec_df.empty else '<p>No team trade partners generated.</p>')}
+                            <h2>Player Trade Ideas</h2>
+                            {(player_rec_df.to_html(index=False) if not player_rec_df.empty else '<p>No player trade ideas generated.</p>')}
+                        </body>
+                        </html>
+                        """
+
+                        st.download_button(
+                            "⬇️ Download Full League Report CSV",
+                            data="".join(report_csv_parts).encode("utf-8"),
+                            file_name="nfl_full_league_report.csv",
+                            mime="text/csv",
+                            key="download_full_league_report_csv",
+                        )
+
+                        st.download_button(
+                            "⬇️ Download Full League Report HTML",
+                            data=html_report.encode("utf-8"),
+                            file_name="nfl_full_league_report.html",
+                            mime="text/html",
+                            key="download_full_league_report_html",
+                        )
 
 # ==========================================================
 # SPORT BRANCH 2: NCAA SOFTBALL
