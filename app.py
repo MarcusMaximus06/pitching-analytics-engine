@@ -2684,70 +2684,70 @@ elif sport == "🏈 NFL Football":
 
     if nfl_page == "🏆 NFL Fantasy Predictor":
 
-    st.title("🏆 NFL Fantasy Predictor")
-    st.caption("Sleeper PPR projections, rankings, tiers, and trade tools.")
-
-    value_mode = st.radio(
-        "Value Mode:",
-        ["Redraft", "Dynasty"],
-        horizontal=True
-    )
-
-    st.info(
-        "Value Guide: Projected PPR = estimated weekly points. "
-        "Redraft Value = win-now trade score. "
-        "Dynasty Value = long-term keeper score adjusted for age and position. "
-        "Trade Value = the active score used by the trade analyzer based on the selected mode."
-    )
-
-    st.markdown("### 🔗 Sleeper League Sync")
-
-    sleeper_username = st.text_input("Sleeper Username:")
-
-    if sleeper_username:
-        try:
-            user_resp = requests.get(
-                f"https://api.sleeper.app/v1/user/{sleeper_username}",
-                timeout=10
-            ).json()
-
-            sleeper_user_id = user_resp.get("user_id")
-
-            if sleeper_user_id:
-                leagues_resp = requests.get(
-                    f"https://api.sleeper.app/v1/user/{sleeper_user_id}/leagues/nfl/2025",
+        st.title("🏆 NFL Fantasy Predictor")
+        st.caption("Sleeper PPR projections, rankings, tiers, and trade tools.")
+    
+        value_mode = st.radio(
+            "Value Mode:",
+            ["Redraft", "Dynasty"],
+            horizontal=True
+        )
+    
+        st.info(
+            "Value Guide: Projected PPR = estimated weekly points. "
+            "Redraft Value = win-now trade score. "
+            "Dynasty Value = long-term keeper score adjusted for age and position. "
+            "Trade Value = the active score used by the trade analyzer based on the selected mode."
+        )
+    
+        st.markdown("### 🔗 Sleeper League Sync")
+    
+        sleeper_username = st.text_input("Sleeper Username:")
+    
+        if sleeper_username:
+            try:
+                user_resp = requests.get(
+                    f"https://api.sleeper.app/v1/user/{sleeper_username}",
                     timeout=10
                 ).json()
-
-                    if leagues_resp:
-                        league_options = {
-                            league.get("name", "Unnamed League"): league.get("league_id")
-                            for league in leagues_resp
-                        }
-
-                        selected_league_name = st.selectbox(
-                            "Select Sleeper League:",
-                            list(league_options.keys())
-                        )
-
-                        selected_league_id = league_options[selected_league_name]
-
-                        rosters_resp = requests.get(
-                            f"https://api.sleeper.app/v1/league/{selected_league_id}/rosters",
-                            timeout=10
-                        ).json()
-
-                        players_resp = requests.get(
-                            "https://api.sleeper.app/v1/players/nfl",
-                            timeout=20
-                        )
-
-                        sleeper_players = players_resp.json()
-                        
-                        users_resp = requests.get(
-                            f"https://api.sleeper.app/v1/league/{selected_league_id}/users",
-                            timeout=10
-                        ).json()
+    
+                sleeper_user_id = user_resp.get("user_id")
+    
+                if sleeper_user_id:
+                    leagues_resp = requests.get(
+                        f"https://api.sleeper.app/v1/user/{sleeper_user_id}/leagues/nfl/2025",
+                        timeout=10
+                    ).json()
+    
+                        if leagues_resp:
+                            league_options = {
+                                league.get("name", "Unnamed League"): league.get("league_id")
+                                for league in leagues_resp
+                            }
+    
+                            selected_league_name = st.selectbox(
+                                "Select Sleeper League:",
+                                list(league_options.keys())
+                            )
+    
+                            selected_league_id = league_options[selected_league_name]
+    
+                            rosters_resp = requests.get(
+                                f"https://api.sleeper.app/v1/league/{selected_league_id}/rosters",
+                                timeout=10
+                            ).json()
+    
+                            players_resp = requests.get(
+                                "https://api.sleeper.app/v1/players/nfl",
+                                timeout=20
+                            )
+    
+                            sleeper_players = players_resp.json()
+                            
+                            users_resp = requests.get(
+                                f"https://api.sleeper.app/v1/league/{selected_league_id}/users",
+                                timeout=10
+                            ).json()
 
                         user_map = {
                             u.get("user_id"): u.get("display_name", "Unknown")
