@@ -2706,7 +2706,7 @@ elif sport == "🏈 NFL Football":
     
             except Exception:
                 return {}
-                def calculate_age_modifier(position, age):
+                    def calculate_age_modifier(position, age):
             if age is None:
                 return 1.00
 
