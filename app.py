@@ -1801,13 +1801,16 @@ if sport == "⚾ MLB Baseball":
                         "Team": t_name,
                         "Runs/Game": round(rs, 2),
                         "Runs Allowed/Game": round(ra, 2),
-                        "Power Score": score
+                        "Power Score": score,
+                        "Why": "Strong run scoring plus run prevention drives this rank."
                     })
 
                 power_df = pd.DataFrame(power_rows).sort_values(
                     "Power Score",
                     ascending=False
                 ).head(10)
+
+                st.bar_chart(power_df[["Team", "Power Score"]].set_index("Team"))
 
                 st.dataframe(power_df, use_container_width=True, hide_index=True)
 
@@ -1834,7 +1837,8 @@ if sport == "⚾ MLB Baseball":
                         "Player": player_name,
                         "Team": pdata.get("Team", ""),
                         "Position": pdata.get("Position", "UTIL"),
-                        "Upside Score": round(upside, 1)
+                        "Upside Score": round(upside, 1),
+                        "Why": "Power, speed, and RBI profile create waiver upside."
                     })
 
                 waiver_df = pd.DataFrame(waiver_rows).sort_values(
@@ -1872,7 +1876,8 @@ if sport == "⚾ MLB Baseball":
                         "Player": player_name,
                         "Team": pdata.get("Team", ""),
                         "Position": pdata.get("Position", "UTIL"),
-                        "Trade Value": round(trade_value, 2)
+                        "Trade Value": round(trade_value, 2),
+                        "Why": "Per-game production profile is strong for fantasy trade value."
                     })
 
                 trade_df = pd.DataFrame(trade_rows).sort_values(
@@ -2334,6 +2339,22 @@ if sport == "⚾ MLB Baseball":
 
                 roster_df = pd.DataFrame(rows)
 
+                if not roster_df.empty and "Position" in roster_df.columns and "Trade Value" in roster_df.columns:
+                    roster_df["Position Rank"] = (
+                        roster_df.groupby("Position")["Trade Value"]
+                        .rank(method="first", ascending=False)
+                        .astype(int)
+                    )
+                    roster_df["Roster Role"] = roster_df.apply(
+                        lambda r: label_roster_role(
+                            r.get("Position", ""),
+                            int(r.get("Position Rank", 99)),
+                            float(r.get("Trade Value", 0)),
+                        ),
+                        axis=1,
+                    )
+                    roster_df["Why"] = roster_df.apply(explain_player_value, axis=1)
+
                 position_values = {
                     "QB": round(float(roster_df[roster_df["Position"] == "QB"]["Trade Value"].sum()), 1),
                     "RB": round(float(roster_df[roster_df["Position"] == "RB"]["Trade Value"].sum()), 1),
@@ -2366,6 +2387,43 @@ if sport == "⚾ MLB Baseball":
                 if roster_value <= 0:
                     return "Incomplete"
                 return "Middle Pack"
+
+            def explain_team_rank(row):
+                status = row.get("Team Status", "Unknown")
+                weakness = row.get("Weakest Position", "Unknown")
+                top_players = row.get("Top Players", "")
+                if status == "Contender":
+                    return f"High total roster value with enough core strength to buy a {weakness} upgrade."
+                if status == "Rebuilder":
+                    return f"Lower roster value; strongest path is selling vets and rebuilding around {top_players}."
+                if status == "Incomplete":
+                    return "Roster data is incomplete or missing value inputs."
+                return f"Middle-pack roster; biggest improvement path is fixing {weakness}."
+
+            def explain_trade_partner(need, partner_name, partner_strength):
+                return f"{partner_name} has above-league strength at {need}, making them a logical trade match."
+
+            def label_roster_role(position, pos_rank, trade_value):
+                if trade_value <= 0:
+                    return "Depth"
+                if pos_rank <= 1:
+                    return "Core Starter"
+                if pos_rank <= 3:
+                    return "Starter/Flex"
+                return "Depth"
+
+            def explain_player_value(row):
+                tag = str(row.get("Dynasty Tag", ""))
+                tier = str(row.get("Value Tier", ""))
+                age = row.get("Age", 0)
+                pos = row.get("Position", "")
+                if tag in ["Young Core", "Prime Asset"]:
+                    return f"{pos} with dynasty-friendly age/value profile."
+                if tag in ["Declining Vet", "Late Career", "Decline Risk"]:
+                    return f"{pos} has win-now utility but age risk lowers long-term value."
+                if tier == "Elite":
+                    return "Elite projection tier with strong trade-market value."
+                return "Useful value profile based on projection, age, and position."
 
             with st.spinner("Loading Sleeper player registry..."):
                 sleeper_players_df, sleeper_lookup = load_sleeper_players_full()
@@ -2426,6 +2484,20 @@ if sport == "⚾ MLB Baseball":
                     with cc4:
                         st.metric("Teams Synced", len(power_df))
 
+                    st.markdown("#### Visual League Charts")
+
+                    chart_col1, chart_col2 = st.columns(2)
+
+                    with chart_col1:
+                        roster_chart_df = power_df[["Team/User", "Roster Value"]].set_index("Team/User")
+                        st.bar_chart(roster_chart_df)
+
+                    with chart_col2:
+                        position_chart_df = power_df[
+                            ["Team/User", "QB Value", "RB Value", "WR Value", "TE Value"]
+                        ].set_index("Team/User")
+                        st.bar_chart(position_chart_df)
+
                     st.markdown("#### Power Snapshot")
                     st.dataframe(
                         power_df[
@@ -2464,6 +2536,7 @@ if sport == "⚾ MLB Baseball":
                                 "Status": status,
                                 "Primary Need": weakness,
                                 "Recommended Action": action,
+                                "Why": f"{team_name} is labeled {status} and currently needs {weakness} most.",
                             }
                         )
 
@@ -2520,6 +2593,15 @@ if sport == "⚾ MLB Baseball":
                             display_df["Player"].str.contains(search_text, case=False, na=False)
                         ]
 
+                    display_df = display_df.copy()
+                    display_df["Why"] = display_df.apply(explain_player_value, axis=1)
+
+                    st.markdown("#### Redraft vs Dynasty Value Gap")
+                    gap_chart_df = display_df.sort_values("Value Gap", ascending=False).head(15)[
+                        ["Player", "Value Gap"]
+                    ].set_index("Player")
+                    st.bar_chart(gap_chart_df)
+
                     st.dataframe(
                         display_df[
                             [
@@ -2530,9 +2612,11 @@ if sport == "⚾ MLB Baseball":
                                 "Projected PPR",
                                 "Redraft Value",
                                 "Dynasty Value",
+                                "Value Gap",
                                 "Trade Value",
                                 "Value Tier",
                                 "Dynasty Tag",
+                                "Why",
                             ]
                         ].head(250),
                         use_container_width=True,
@@ -2577,6 +2661,7 @@ if sport == "⚾ MLB Baseball":
                             st.metric("Tier", card["Value Tier"])
 
                         st.markdown("#### Player Snapshot")
+                        st.caption(explain_player_value(card))
                         st.dataframe(
                             pd.DataFrame(
                                 [
@@ -2894,6 +2979,8 @@ if sport == "⚾ MLB Baseball":
                                         axis=1,
                                     )
 
+                                    power_df["Why Ranked"] = power_df.apply(explain_team_rank, axis=1)
+
                                     st.markdown("### 🏆 Team Power Rankings")
                                     power_display_df = power_df[
                                         [
@@ -2906,6 +2993,7 @@ if sport == "⚾ MLB Baseball":
                                             "TE Value",
                                             "Weakest Position",
                                             "Team Status",
+                                            "Why Ranked",
                                             "Wins",
                                             "Losses",
                                             "Top Players",
@@ -2956,6 +3044,8 @@ if sport == "⚾ MLB Baseball":
                                                 "Dynasty Value",
                                                 "Trade Value",
                                                 "Dynasty Tag",
+                                                "Roster Role",
+                                                "Why",
                                             ]
                                         ].sort_values("Trade Value", ascending=False)
 
@@ -2994,6 +3084,11 @@ if sport == "⚾ MLB Baseball":
                                                         "Weak Position": need,
                                                         "Suggested Partner": team_b["Team/User"],
                                                         "Partner Strength": round(float(partner_strength), 1),
+                                                        "Why Suggested": explain_trade_partner(
+                                                            need,
+                                                            team_b["Team/User"],
+                                                            round(float(partner_strength), 1),
+                                                        ),
                                                     }
                                                 )
 
@@ -3086,6 +3181,7 @@ if sport == "⚾ MLB Baseball":
                                                         "Asset Value": give_asset_value,
                                                         "Gap": fairness_gap,
                                                         "Suggestion": action,
+                                                        "Why": f"{team_a_name} needs {need}; {team_b_name} has {target['Player']} as a targetable asset.",
                                                     }
                                                 )
 
