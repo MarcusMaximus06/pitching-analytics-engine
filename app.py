@@ -2702,7 +2702,7 @@ elif sport == "🏈 NFL Football":
 
                 if sleeper_user_id:
                     leagues_resp = requests.get(
-                        f"https://api.sleeper.app/v1/user/{sleeper_user_id}/leagues/nfl/2026",
+                        f"https://api.sleeper.app/v1/user/{sleeper_user_id}/leagues/nfl/2025",
                         timeout=10
                     ).json()
 
