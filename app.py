@@ -2700,7 +2700,7 @@ elif sport == "🏈 NFL Football":
         "Trade Value = the active score used by the trade analyzer based on the selected mode."
     )
         
-        st.markdown("### 🔗 Sleeper League Sync")
+    st.markdown("### 🔗 Sleeper League Sync")
 
         sleeper_username = st.text_input("Sleeper Username:")
 
