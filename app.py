@@ -2719,88 +2719,88 @@ elif sport == "🏈 NFL Football":
                         timeout=10
                     ).json()
     
-                        if leagues_resp:
-                            league_options = {
-                                league.get("name", "Unnamed League"): league.get("league_id")
-                                for league in leagues_resp
-                            }
-    
-                            selected_league_name = st.selectbox(
-                                "Select Sleeper League:",
-                                list(league_options.keys())
-                            )
-    
-                            selected_league_id = league_options[selected_league_name]
-    
-                            rosters_resp = requests.get(
-                                f"https://api.sleeper.app/v1/league/{selected_league_id}/rosters",
-                                timeout=10
-                            ).json()
-    
-                            players_resp = requests.get(
-                                "https://api.sleeper.app/v1/players/nfl",
-                                timeout=20
-                            )
-    
-                            sleeper_players = players_resp.json()
-                            
-                            users_resp = requests.get(
-                                f"https://api.sleeper.app/v1/league/{selected_league_id}/users",
-                                timeout=10
-                            ).json()
-
-                        user_map = {
-                            u.get("user_id"): u.get("display_name", "Unknown")
-                            for u in users_resp
+                    if leagues_resp:
+                        league_options = {
+                            league.get("name", "Unnamed League"): league.get("league_id")
+                            for league in leagues_resp
                         }
 
-                        roster_rows = []
-
-                        for roster in rosters_resp:
-                            owner_id = roster.get("owner_id")
-                            owner_name = user_map.get(owner_id, "Unknown")
-                            player_count = len(roster.get("players") or [])
-                            roster_players = roster.get("players") or []
-
-                            qb_count = 0
-                            rb_count = 0
-                            wr_count = 0
-                            te_count = 0
-
-                            for pid in roster_players:
-
-                                if pid.startswith("QB"):
-                                    qb_count += 1
-                                elif pid.startswith("RB"):
-                                    rb_count += 1
-                                elif pid.startswith("WR"):
-                                    wr_count += 1
-                                elif pid.startswith("TE"):
-                                    te_count += 1
-
-                            roster_rows.append({
-                                "Team/User": owner_name,
-                                "Roster ID": roster.get("roster_id"),
-                                "Players": player_count,
-                                "QB": qb_count,
-                                "RB": rb_count,
-                                "WR": wr_count,
-                                "TE": te_count,
-                                "Wins": roster.get("settings", {}).get("wins", 0),
-                                "Losses": roster.get("settings", {}).get("losses", 0),
-                                "Ties": roster.get("settings", {}).get("ties", 0)
-                            })
-
-                        st.dataframe(
-                            pd.DataFrame(roster_rows),
-                            use_container_width=True,
-                            hide_index=True
+                        selected_league_name = st.selectbox(
+                            "Select Sleeper League:",
+                            list(league_options.keys())
                         )
 
-                    else:
-                        st.warning("No 2026 Sleeper leagues found for this username.")
+                        selected_league_id = league_options[selected_league_name]
+
+                        rosters_resp = requests.get(
+                            f"https://api.sleeper.app/v1/league/{selected_league_id}/rosters",
+                            timeout=10
+                        ).json()
+
+                        players_resp = requests.get(
+                            "https://api.sleeper.app/v1/players/nfl",
+                            timeout=20
+                        )
+
+                        sleeper_players = players_resp.json()
+                        
+                        users_resp = requests.get(
+                            f"https://api.sleeper.app/v1/league/{selected_league_id}/users",
+                            timeout=10
+                        ).json()
+
+                    user_map = {
+                        u.get("user_id"): u.get("display_name", "Unknown")
+                        for u in users_resp
+                    }
+
+                    roster_rows = []
+
+                    for roster in rosters_resp:
+                        owner_id = roster.get("owner_id")
+                        owner_name = user_map.get(owner_id, "Unknown")
+                        player_count = len(roster.get("players") or [])
+                        roster_players = roster.get("players") or []
+
+                        qb_count = 0
+                        rb_count = 0
+                        wr_count = 0
+                        te_count = 0
+
+                        for pid in roster_players:
+
+                            if pid.startswith("QB"):
+                                qb_count += 1
+                            elif pid.startswith("RB"):
+                                rb_count += 1
+                            elif pid.startswith("WR"):
+                                wr_count += 1
+                            elif pid.startswith("TE"):
+                                te_count += 1
+
+                        roster_rows.append({
+                            "Team/User": owner_name,
+                            "Roster ID": roster.get("roster_id"),
+                            "Players": player_count,
+                            "QB": qb_count,
+                            "RB": rb_count,
+                            "WR": wr_count,
+                            "TE": te_count,
+                            "Wins": roster.get("settings", {}).get("wins", 0),
+                            "Losses": roster.get("settings", {}).get("losses", 0),
+                            "Ties": roster.get("settings", {}).get("ties", 0)
+                        })
+
+                    st.dataframe(
+                        pd.DataFrame(roster_rows),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
                 else:
-                    st.warning("Sleeper username not found.")
+                    st.warning("No 2026 Sleeper leagues found for this username.")
+            else:
+                st.warning("Sleeper username not found.")
                     
 # =====================================================
 # Sleeper Team Power Rankings
