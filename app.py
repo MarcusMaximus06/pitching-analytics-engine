@@ -2724,6 +2724,13 @@ elif sport == "🏈 NFL Football":
                             timeout=10
                         ).json()
 
+                        players_resp = requests.get(
+                            "https://api.sleeper.app/v1/players/nfl",
+                            timeout=20
+                        )
+
+                        sleeper_players = players_resp.json()
+                        
                         users_resp = requests.get(
                             f"https://api.sleeper.app/v1/league/{selected_league_id}/users",
                             timeout=10
