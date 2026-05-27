@@ -2707,8 +2707,9 @@ elif sport == "🏈 NFL Football":
             except Exception:
                 return {}
             def calculate_age_modifier(position, age):
-            if age is None:
-                return 1.00
+            
+                if age is None:
+                    return 1.00
 
             prime_age = {
                 "QB": 32,
