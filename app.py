@@ -2686,315 +2686,51 @@ elif sport == "🏈 NFL Football":
 
         st.title("🏆 NFL Fantasy Predictor")
         st.caption("Sleeper PPR projections, rankings, tiers, and trade tools.")
-    
+
         value_mode = st.radio(
             "Value Mode:",
             ["Redraft", "Dynasty"],
             horizontal=True
         )
-    
+
         st.info(
             "Value Guide: Projected PPR = estimated weekly points. "
             "Redraft Value = win-now trade score. "
             "Dynasty Value = long-term keeper score adjusted for age and position. "
             "Trade Value = the active score used by the trade analyzer based on the selected mode."
         )
-    
-        st.markdown("### 🔗 Sleeper League Sync")
-    
-        sleeper_username = st.text_input("Sleeper Username:")
-    
-        if sleeper_username:
-            try:
-                user_resp = requests.get(
-                    f"https://api.sleeper.app/v1/user/{sleeper_username}",
-                    timeout=10
-                ).json()
-    
-                sleeper_user_id = user_resp.get("user_id")
-    
-                if sleeper_user_id:
-                    leagues_resp = requests.get(
-                        f"https://api.sleeper.app/v1/user/{sleeper_user_id}/leagues/nfl/2025",
-                        timeout=10
-                    ).json()
-    
-                    if leagues_resp:
-                        league_options = {
-                            league.get("name", "Unnamed League"): league.get("league_id")
-                            for league in leagues_resp
-                        }
 
-                        selected_league_name = st.selectbox(
-                            "Select Sleeper League:",
-                            list(league_options.keys())
-                        )
-
-                        selected_league_id = league_options[selected_league_name]
-
-                        rosters_resp = requests.get(
-                            f"https://api.sleeper.app/v1/league/{selected_league_id}/rosters",
-                            timeout=10
-                        ).json()
-
-                        players_resp = requests.get(
-                            "https://api.sleeper.app/v1/players/nfl",
-                            timeout=20
-                        )
-
-                        sleeper_players = players_resp.json()
-                        
-                        users_resp = requests.get(
-                            f"https://api.sleeper.app/v1/league/{selected_league_id}/users",
-                            timeout=10
-                        ).json()
-
-                    user_map = {
-                        u.get("user_id"): u.get("display_name", "Unknown")
-                        for u in users_resp
-                    }
-
-                    roster_rows = []
-
-                    for roster in rosters_resp:
-                        owner_id = roster.get("owner_id")
-                        owner_name = user_map.get(owner_id, "Unknown")
-                        player_count = len(roster.get("players") or [])
-                        roster_players = roster.get("players") or []
-
-                        qb_count = 0
-                        rb_count = 0
-                        wr_count = 0
-                        te_count = 0
-
-                        for pid in roster_players:
-
-                            if pid.startswith("QB"):
-                                qb_count += 1
-                            elif pid.startswith("RB"):
-                                rb_count += 1
-                            elif pid.startswith("WR"):
-                                wr_count += 1
-                            elif pid.startswith("TE"):
-                                te_count += 1
-
-                        roster_rows.append({
-                            "Team/User": owner_name,
-                            "Roster ID": roster.get("roster_id"),
-                            "Players": player_count,
-                            "QB": qb_count,
-                            "RB": rb_count,
-                            "WR": wr_count,
-                            "TE": te_count,
-                            "Wins": roster.get("settings", {}).get("wins", 0),
-                            "Losses": roster.get("settings", {}).get("losses", 0),
-                            "Ties": roster.get("settings", {}).get("ties", 0)
-                        })
-
-                    st.dataframe(
-                        pd.DataFrame(roster_rows),
-                        use_container_width=True,
-                        hide_index=True
-                    )
-
-                else:
-                    st.warning("No 2026 Sleeper leagues found for this username.")
-        else:
-            st.warning("Sleeper username not found.")
-                    
-# =====================================================
-# Sleeper Team Power Rankings
-# =====================================================
-
-                player_lookup = {}
-                
-                for pid, pdata in sleeper_players.items():
-                    player_lookup[str(pid)] = {
-                        "Player": pdata.get("Name", "Unknown"),
-                        "Position": pdata.get("Position", "UNK"),
-                        "Team": pdata.get("Team", "FA"),
-                        "Age": pdata.get("Age", None)
-                    }
-                
-                power_rows = []
-                
-                for roster in rosters_resp:
-                    owner_id = roster.get("owner_id")
-                    owner_name = user_map.get(owner_id, "Unknown")
-                    roster_players = roster.get("players") or []
-                
-                    total_value = 0
-                    qb_value = 0
-                    rb_value = 0
-                    wr_value = 0
-                    te_value = 0
-                    player_names = []
-                
-                    for pid in roster_players:
-                        p = player_lookup.get(str(pid))
-                
-                        if not p:
-                            continue
-                
-                        name = p.get("Player", "Unknown")
-                        pos = p.get("Position", "UNK")
-                        age = p.get("Age", None)
-
-                        projected_ppr = 10
-                
-                        if value_mode == "Dynasty":
-                            player_value = calculate_dynasty_value(pos, age, projected_ppr)
-                        else:
-                            player_value = calculate_redraft_value(pos, age, projected_ppr)
-                
-                        total_value += player_value
-                        player_names.append(name)
-                
-                        if pos == "QB":
-                            qb_value += player_value
-                        elif pos == "RB":
-                            rb_value += player_value
-                        elif pos == "WR":
-                            wr_value += player_value
-                        elif pos == "TE":
-                            te_value += player_value
-                
-                    weakest_position = min(
-                        {
-                            "QB": qb_value,
-                            "RB": rb_value,
-                            "WR": wr_value,
-                            "TE": te_value
-                        },
-                        key={
-                            "QB": qb_value,
-                            "RB": rb_value,
-                            "WR": wr_value,
-                            "TE": te_value
-                        }.get
-                    )
-                
-                    if total_value >= 230:
-                        team_status = "Contender"
-                    elif total_value >= 180:
-                        team_status = "Middle Pack"
-                    else:
-                        team_status = "Rebuilder"
-                
-                    power_rows.append({
-                        "Team/User": owner_name,
-                        "Roster Value": round(total_value, 1),
-                        "QB Value": round(qb_value, 1),
-                        "RB Value": round(rb_value, 1),
-                        "WR Value": round(wr_value, 1),
-                        "TE Value": round(te_value, 1),
-                        "Weakest Position": weakest_position,
-                        "Team Status": team_status,
-                        "Top Players": ", ".join(player_names[:5])
-                    })
-                
-                if power_rows:
-                    power_df = pd.DataFrame(power_rows)
-                    power_df = power_df.sort_values("Roster Value", ascending=False)
-
-                    st.markdown("### 🤝 Suggested Trade Partners")
-
-                    recommendations = []
-
-                    for _, team_a in power_df.iterrows():
-
-                        for _, team_b in power_df.iterrows():
-
-                            if team_a["Team/User"] == team_b["Team/User"]:
-                                continue
-
-                            need = team_a["Weakest Position"]
-
-                            partner_strength = team_b[f"{need} Value"]
-
-                            if partner_strength >= 40:
-
-                                recommendations.append({
-                                    "Team Needing Help": team_a["Team/User"],
-                                    "Weak Position": need,
-                                    "Suggested Partner": team_b["Team/User"],
-                                    "Partner Strength": round(partner_strength, 1)
-                                })
-
-                    rec_df = pd.DataFrame(recommendations)
-
-                    if not rec_df.empty:
-
-                        rec_df = rec_df.sort_values(
-                            "Partner Strength",
-                            ascending=False
-                        ).head(15)
-
-                        st.dataframe(
-                            rec_df,
-                            use_container_width=True,
-                            hide_index=True
-                        )
-                
-                    st.markdown("### 🏆 Sleeper Team Power Rankings")
-                    st.caption("Ranks every synced Sleeper roster using the currently selected Redraft/Dynasty value mode.")
-                
-                    st.dataframe(
-                        power_df,
-                        use_container_width=True,
-                        hide_index=True
-                    )
-            except Exception as e:
-                st.error(f"Sleeper sync error: {e}")
-    
         @st.cache_data(ttl=CACHE_TTL_DAILY)
         def load_sleeper_players():
             try:
                 url = "https://api.sleeper.app/v1/players/nfl"
                 resp = requests.get(url, timeout=20).json()
-    
+
                 players = {}
-    
+
                 for pid, pdata in resp.items():
                     if not pdata.get("active"):
                         continue
-    
+
                     pos = pdata.get("position", "UNK")
                     if pos not in ["QB", "RB", "WR", "TE"]:
                         continue
-    
+
                     name = f"{pdata.get('first_name', '')} {pdata.get('last_name', '')}".strip()
                     team = pdata.get("team", "FA")
                     age = pdata.get("age", None)
-    
-                    players[pid] = {
+
+                    players[str(pid)] = {
                         "Name": name,
                         "Position": pos,
                         "Team": team,
                         "Age": age
                     }
-    
+
                 return players
-    
+
             except Exception:
                 return {}
-            def calculate_age_modifier(position, age):
-            
-                if age is None:
-                    return 1.00
-
-            prime_age = {
-                "QB": 32,
-                "RB": 26,
-                "WR": 28,
-                "TE": 29
-            }.get(position, 27)
-
-            if age <= prime_age:
-                return 1.00
-
-            decline = (age - prime_age) * 0.025
-            return max(0.82, 1.00 - decline)
 
         def safe_age(age):
             try:
@@ -3005,6 +2741,8 @@ elif sport == "🏈 NFL Football":
                 return None
 
         def calculate_redraft_value(position, age, projected_ppr):
+            projected_ppr = float(projected_ppr or 0)
+
             scarcity = {
                 "QB": 0.92,
                 "RB": 1.20,
@@ -3023,7 +2761,6 @@ elif sport == "🏈 NFL Football":
 
         def calculate_dynasty_value(position, age, projected_ppr):
             age = safe_age(age)
-
             value = calculate_redraft_value(position, age, projected_ppr)
 
             if age is None:
@@ -3044,7 +2781,7 @@ elif sport == "🏈 NFL Football":
                 value *= max(0.55, 1 - age_penalty)
 
             return round(value, 1)
-            
+
         def nfl_base_projection(pos, name):
             elite_names = [
                 "Josh Allen", "Jalen Hurts", "Lamar Jackson", "Patrick Mahomes",
@@ -3053,7 +2790,7 @@ elif sport == "🏈 NFL Football":
                 "Tyreek Hill", "Puka Nacua", "A.J. Brown",
                 "Travis Kelce", "Sam LaPorta", "Trey McBride", "George Kittle"
             ]
-    
+
             strong_names = [
                 "Joe Burrow", "C.J. Stroud", "Dak Prescott", "Anthony Richardson",
                 "Jahmyr Gibbs", "Jonathan Taylor", "Kyren Williams", "De'Von Achane",
@@ -3061,37 +2798,254 @@ elif sport == "🏈 NFL Football":
                 "DK Metcalf", "DeVonta Smith", "Jaylen Waddle",
                 "Mark Andrews", "Dalton Kincaid", "Evan Engram"
             ]
-    
+
             base = {
                 "QB": 17.0,
                 "RB": 11.5,
                 "WR": 10.5,
                 "TE": 7.5
             }.get(pos, 5.0)
-    
+
             if name in elite_names:
                 base *= 1.30
             elif name in strong_names:
                 base *= 1.15
-    
-            return base
-    
+
+            return round(base, 1)
+
         with st.spinner("Fetching live Sleeper player registry..."):
             sleeper_players = load_sleeper_players()
-    
+
+        st.markdown("### 🔗 Sleeper League Sync")
+
+        sleeper_username = st.text_input("Sleeper Username:")
+
+        if sleeper_username:
+            try:
+                user_resp = requests.get(
+                    f"https://api.sleeper.app/v1/user/{sleeper_username}",
+                    timeout=10
+                ).json()
+
+                sleeper_user_id = user_resp.get("user_id")
+
+                if sleeper_user_id:
+                    leagues_resp = requests.get(
+                        f"https://api.sleeper.app/v1/user/{sleeper_user_id}/leagues/nfl/2025",
+                        timeout=10
+                    ).json()
+
+                    if leagues_resp:
+                        league_options = {
+                            league.get("name", "Unnamed League"): league.get("league_id")
+                            for league in leagues_resp
+                        }
+
+                        selected_league_name = st.selectbox(
+                            "Select Sleeper League:",
+                            list(league_options.keys())
+                        )
+
+                        selected_league_id = league_options[selected_league_name]
+
+                        rosters_resp = requests.get(
+                            f"https://api.sleeper.app/v1/league/{selected_league_id}/rosters",
+                            timeout=10
+                        ).json()
+
+                        users_resp = requests.get(
+                            f"https://api.sleeper.app/v1/league/{selected_league_id}/users",
+                            timeout=10
+                        ).json()
+
+                        user_map = {
+                            u.get("user_id"): u.get("display_name", "Unknown")
+                            for u in users_resp
+                        }
+
+                        roster_rows = []
+
+                        for roster in rosters_resp:
+                            owner_id = roster.get("owner_id")
+                            owner_name = user_map.get(owner_id, "Unknown")
+                            roster_players = roster.get("players") or []
+
+                            qb_count = 0
+                            rb_count = 0
+                            wr_count = 0
+                            te_count = 0
+
+                            for pid in roster_players:
+                                p = sleeper_players.get(str(pid), {})
+                                pos = p.get("Position", "UNK")
+
+                                if pos == "QB":
+                                    qb_count += 1
+                                elif pos == "RB":
+                                    rb_count += 1
+                                elif pos == "WR":
+                                    wr_count += 1
+                                elif pos == "TE":
+                                    te_count += 1
+
+                            roster_rows.append({
+                                "Team/User": owner_name,
+                                "Roster ID": roster.get("roster_id"),
+                                "Players": len(roster_players),
+                                "QB": qb_count,
+                                "RB": rb_count,
+                                "WR": wr_count,
+                                "TE": te_count,
+                                "Wins": roster.get("settings", {}).get("wins", 0),
+                                "Losses": roster.get("settings", {}).get("losses", 0),
+                                "Ties": roster.get("settings", {}).get("ties", 0)
+                            })
+
+                        st.dataframe(
+                            pd.DataFrame(roster_rows),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                        player_lookup = sleeper_players
+                        power_rows = []
+
+                        for roster in rosters_resp:
+                            owner_id = roster.get("owner_id")
+                            owner_name = user_map.get(owner_id, "Unknown")
+                            roster_players = roster.get("players") or []
+
+                            total_value = 0
+                            qb_value = 0
+                            rb_value = 0
+                            wr_value = 0
+                            te_value = 0
+                            player_names = []
+
+                            for pid in roster_players:
+                                p = player_lookup.get(str(pid))
+
+                                if not p:
+                                    continue
+
+                                name = p.get("Name", "Unknown")
+                                pos = p.get("Position", "UNK")
+                                age = p.get("Age", None)
+                                projected_ppr = nfl_base_projection(pos, name)
+
+                                if value_mode == "Dynasty":
+                                    player_value = calculate_dynasty_value(pos, age, projected_ppr)
+                                else:
+                                    player_value = calculate_redraft_value(pos, age, projected_ppr)
+
+                                total_value += player_value
+                                player_names.append(name)
+
+                                if pos == "QB":
+                                    qb_value += player_value
+                                elif pos == "RB":
+                                    rb_value += player_value
+                                elif pos == "WR":
+                                    wr_value += player_value
+                                elif pos == "TE":
+                                    te_value += player_value
+
+                            position_values = {
+                                "QB": qb_value,
+                                "RB": rb_value,
+                                "WR": wr_value,
+                                "TE": te_value
+                            }
+
+                            weakest_position = min(position_values, key=position_values.get)
+
+                            if total_value >= 230:
+                                team_status = "Contender"
+                            elif total_value >= 180:
+                                team_status = "Middle Pack"
+                            else:
+                                team_status = "Rebuilder"
+
+                            power_rows.append({
+                                "Team/User": owner_name,
+                                "Roster Value": round(total_value, 1),
+                                "QB Value": round(qb_value, 1),
+                                "RB Value": round(rb_value, 1),
+                                "WR Value": round(wr_value, 1),
+                                "TE Value": round(te_value, 1),
+                                "Weakest Position": weakest_position,
+                                "Team Status": team_status,
+                                "Top Players": ", ".join(player_names[:5])
+                            })
+
+                        if power_rows:
+                            power_df = pd.DataFrame(power_rows)
+                            power_df = power_df.sort_values("Roster Value", ascending=False)
+
+                            st.markdown("### 🏆 Sleeper Team Power Rankings")
+                            st.caption("Ranks every synced Sleeper roster using the currently selected Redraft/Dynasty value mode.")
+
+                            st.dataframe(
+                                power_df,
+                                use_container_width=True,
+                                hide_index=True
+                            )
+
+                            recommendations = []
+
+                            for _, team_a in power_df.iterrows():
+                                for _, team_b in power_df.iterrows():
+                                    if team_a["Team/User"] == team_b["Team/User"]:
+                                        continue
+
+                                    need = team_a["Weakest Position"]
+                                    partner_strength = team_b[f"{need} Value"]
+
+                                    if partner_strength >= 40:
+                                        recommendations.append({
+                                            "Team Needing Help": team_a["Team/User"],
+                                            "Weak Position": need,
+                                            "Suggested Partner": team_b["Team/User"],
+                                            "Partner Strength": round(partner_strength, 1)
+                                        })
+
+                            rec_df = pd.DataFrame(recommendations)
+
+                            if not rec_df.empty:
+                                rec_df = rec_df.sort_values(
+                                    "Partner Strength",
+                                    ascending=False
+                                ).head(15)
+
+                                st.markdown("### 🤝 Suggested Trade Partners")
+
+                                st.dataframe(
+                                    rec_df,
+                                    use_container_width=True,
+                                    hide_index=True
+                                )
+
+                    else:
+                        st.warning("No 2025 Sleeper leagues found for this username.")
+                else:
+                    st.warning("Sleeper username not found.")
+
+            except Exception as e:
+                st.error(f"Sleeper sync error: {e}")
+
         if not sleeper_players:
             st.warning("Could not load Sleeper NFL players.")
         else:
             rows = []
-    
+
             for pid, p in sleeper_players.items():
                 name = p.get("Name", "Unknown")
                 pos = p.get("Position", "UNK")
                 team = p.get("Team", "FA")
                 age = p.get("Age", None)
-    
-                projected_ppr = 10
-    
+
+                projected_ppr = nfl_base_projection(pos, name)
+
                 if pos == "QB":
                     floor = projected_ppr * 0.75
                     ceiling = projected_ppr * 1.35
@@ -3104,7 +3058,7 @@ elif sport == "🏈 NFL Football":
                 else:
                     floor = projected_ppr * 0.55
                     ceiling = projected_ppr * 1.75
-    
+
                 if projected_ppr >= 18:
                     tier = "Elite"
                 elif projected_ppr >= 14:
@@ -3115,7 +3069,10 @@ elif sport == "🏈 NFL Football":
                     tier = "Depth"
                 else:
                     tier = "Bench"
-    
+
+                redraft_value = calculate_redraft_value(pos, age, projected_ppr)
+                dynasty_value = calculate_dynasty_value(pos, age, projected_ppr)
+
                 rows.append({
                     "Player": name,
                     "Team": team,
@@ -3125,13 +3082,9 @@ elif sport == "🏈 NFL Football":
                     "Floor": round(floor, 1),
                     "Ceiling": round(ceiling, 1),
                     "Tier": tier,
-                    "Redraft Value": calculate_redraft_value(pos, age, projected_ppr),
-                    "Dynasty Value": calculate_dynasty_value(pos, age, projected_ppr),
-                    "Value Gap": round(
-                        calculate_dynasty_value(pos, age, projected_ppr)
-                        - calculate_redraft_value(pos, age, projected_ppr),
-                        1
-                    ),
+                    "Redraft Value": redraft_value,
+                    "Dynasty Value": dynasty_value,
+                    "Value Gap": round(dynasty_value - redraft_value, 1),
                     "Dynasty Tag": (
                         "Young Core" if age and age <= 24 else
                         "Prime Asset" if age and age <= 28 else
@@ -3139,103 +3092,101 @@ elif sport == "🏈 NFL Football":
                         "Declining Vet"
                     )
                 })
-    
+
             nfl_df = pd.DataFrame(rows)
 
-            st.info(
-                "Value Guide: Projected PPR = estimated weekly points. "
-                "Redraft Value = win-now trade score. "
-                "Dynasty Value = long-term keeper score adjusted for age and position. "
-                "Trade Value = the active score used by the trade analyzer based on the selected mode."
-            )
-            
             if value_mode == "Dynasty":
                 nfl_df["Trade Value"] = nfl_df["Dynasty Value"]
             else:
                 nfl_df["Trade Value"] = nfl_df["Redraft Value"]
-    
+
             st.markdown("### 🔮 NFL Player Projections")
-    
+
             c1, c2, c3 = st.columns(3)
-    
+
             with c1:
                 position_filter = st.selectbox(
                     "Filter by position:",
                     ["All", "QB", "RB", "WR", "TE"]
                 )
-    
+
             with c2:
                 tier_filter = st.selectbox(
                     "Filter by tier:",
                     ["All", "Elite", "Strong Starter", "Starter/Flex", "Depth", "Bench"]
                 )
-    
+
             with c3:
                 player_search = st.text_input("Search NFL players:")
-    
+
             filtered_df = nfl_df.copy()
-    
+
             if position_filter != "All":
                 filtered_df = filtered_df[filtered_df["Position"] == position_filter]
-    
+
             if tier_filter != "All":
                 filtered_df = filtered_df[filtered_df["Tier"] == tier_filter]
-    
+
             if player_search:
                 filtered_df = filtered_df[
                     filtered_df["Player"].str.contains(player_search, case=False, na=False)
                 ]
-    
+
             filtered_df = filtered_df.sort_values("Trade Value", ascending=False)
-    
+
             st.dataframe(
                 filtered_df,
                 use_container_width=True,
                 hide_index=True
             )
-    
+
             st.markdown("---")
             st.markdown("### ⚖️ NFL Trade Analyzer")
-    
+
             trade_players = sorted(nfl_df["Player"].dropna().unique().tolist())
-    
+
             t1, t2 = st.columns(2)
-    
+
             with t1:
                 team_a = st.multiselect("Team A Receives:", trade_players, key="nfl_trade_a")
-    
+
             with t2:
                 team_b = st.multiselect("Team B Receives:", trade_players, key="nfl_trade_b")
-    
+
             if st.button("Analyze NFL Trade"):
                 a_df = nfl_df[nfl_df["Player"].isin(team_a)]
                 b_df = nfl_df[nfl_df["Player"].isin(team_b)]
-    
+
                 a_total = a_df["Trade Value"].sum()
                 b_total = b_df["Trade Value"].sum()
                 diff = abs(a_total - b_total)
-    
+
                 r1, r2 = st.columns(2)
-    
+
+                trade_cols = [
+                    "Player", "Team", "Position", "Projected PPR",
+                    "Redraft Value", "Dynasty Value", "Trade Value",
+                    "Value Gap", "Dynasty Tag", "Tier"
+                ]
+
                 with r1:
                     st.metric("Team A Receives", f"{a_total:.1f} Value")
                     if not a_df.empty:
-                        st.dataframe(a_df[["Player", "Team", "Position", "Projected PPR", "Redraft Value", "Dynasty Value", "Trade Value", "Value Gap", "Dynasty Tag", "Tier"]], hide_index=True)
-    
+                        st.dataframe(a_df[trade_cols], hide_index=True)
+
                 with r2:
                     st.metric("Team B Receives", f"{b_total:.1f} Value")
                     if not b_df.empty:
-                        st.dataframe(b_df[["Player", "Team", "Position", "Projected PPR", "Redraft Value", "Dynasty Value", "Trade Value", "Value Gap", "Dynasty Tag", "Tier"]], hide_index=True)
-    
+                        st.dataframe(b_df[trade_cols], hide_index=True)
+
                 if a_total > b_total + 3:
                     st.success(f"Team A wins this trade by {diff:.1f} trade value points.")
                 elif b_total > a_total + 3:
                     st.success(f"Team B wins this trade by {diff:.1f} trade value points.")
                 else:
                     st.info(f"This trade is balanced. Difference: {diff:.1f} trade value points.")
-    
-            st.stop()
-                
+
+        st.stop()
         if nfl_page == "🏈 NFL Simulation Engine":
             st.title("🏈 NFL Ensemble Simulation Engine")
             st.markdown("### 📊 Elo + Split EPA Power Ratings")
