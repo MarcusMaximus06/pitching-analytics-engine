@@ -2865,7 +2865,18 @@ elif sport == "🏈 NFL Football":
                     "Ceiling": round(ceiling, 1),
                     "Tier": tier,
                     "Redraft Value": calculate_redraft_value(pos, age, projected_ppr),
-                    "Dynasty Value": calculate_dynasty_value(pos, age, projected_ppr)
+                    "Dynasty Value": calculate_dynasty_value(pos, age, projected_ppr),
+                    "Value Gap": round(
+                        calculate_dynasty_value(pos, age, projected_ppr)
+                        - calculate_redraft_value(pos, age, projected_ppr),
+                        1
+                    ),
+                    "Dynasty Tag": (
+                        "Young Core" if age and age <= 24 else
+                        "Prime Asset" if age and age <= 28 else
+                        "Win-Now Vet" if age and age <= 31 else
+                        "Declining Vet"
+                    )
                 })
     
             nfl_df = pd.DataFrame(rows)
@@ -2947,12 +2958,12 @@ elif sport == "🏈 NFL Football":
                 with r1:
                     st.metric("Team A Receives", f"{a_total:.1f} Value")
                     if not a_df.empty:
-                        st.dataframe(a_df[["Player", "Team", "Position", "Projected PPR", "Trade Value", "Tier"]], hide_index=True)
+                        st.dataframe(a_df[["Player", "Team", "Position", "Projected PPR", "Redraft Value", "Dynasty Value", "Trade Value", "Value Gap", "Dynasty Tag", "Tier"]], hide_index=True)
     
                 with r2:
                     st.metric("Team B Receives", f"{b_total:.1f} Value")
                     if not b_df.empty:
-                        st.dataframe(b_df[["Player", "Team", "Position", "Projected PPR", "Trade Value", "Tier"]], hide_index=True)
+                        st.dataframe(b_df[["Player", "Team", "Position", "Projected PPR", "Redraft Value", "Dynasty Value", "Trade Value", "Value Gap", "Dynasty Tag", "Tier"]], hide_index=True)
     
                 if a_total > b_total + 3:
                     st.success(f"Team A wins this trade by {diff:.1f} trade value points.")
