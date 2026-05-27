@@ -2113,7 +2113,7 @@ def calculate_fantasy_trade_value(position, age, projected_ppr):
 # ==========================================================
 # SPORT BRANCH 2: NCAA SOFTBALL
 # ==========================================================
-elif sport == "🥎 NCAA Softball":
+if sport == "🥎 NCAA Softball":
     st.title("🥎 NCAA Softball Simulation Engine")
     st.markdown("### 📊 Log5 Win Probability Tracker & Schedule Difficulty Calibration")
     st.caption("*Scrapes live WarrenNolan standings, team pitching ERAs, and SOS Ranks to simulate 7-inning matchups and auto-grade past bets.*")
