@@ -2735,15 +2735,21 @@ elif sport == "🏈 NFL Football":
             decline = (age - prime_age) * 0.025
             return max(0.82, 1.00 - decline)
 
-        def calculate_fantasy_trade_value(position, age, projected_ppr):
+        def safe_age(age):
+            try:
+                if age is None:
+                    return None
+                return float(age)
+            except Exception:
+                return None
+
+        def calculate_redraft_value(position, age, projected_ppr):
             scarcity = {
                 "QB": 0.92,
                 "RB": 1.20,
                 "WR": 1.08,
                 "TE": 1.15
             }.get(position, 1.0)
-
-            age_mod = calculate_age_modifier(position, age)
 
             usage_bonus = {
                 "QB": projected_ppr * 0.03,
@@ -2752,7 +2758,31 @@ elif sport == "🏈 NFL Football":
                 "TE": projected_ppr * 0.05
             }.get(position, 0)
 
-            return round((projected_ppr * scarcity * age_mod) + usage_bonus, 1)
+            return round((projected_ppr * scarcity) + usage_bonus, 1)
+
+        def calculate_dynasty_value(position, age, projected_ppr):
+            age = safe_age(age)
+
+            value = calculate_redraft_value(position, age, projected_ppr)
+
+            if age is None:
+                return value
+
+            prime_age = {
+                "QB": 30,
+                "RB": 24,
+                "WR": 26,
+                "TE": 27
+            }.get(position, 26)
+
+            if age <= prime_age:
+                youth_boost = (prime_age - age) * 0.08
+                value *= (1 + youth_boost)
+            else:
+                age_penalty = (age - prime_age) * 0.09
+                value *= max(0.55, 1 - age_penalty)
+
+            return round(value, 1)
             
         def nfl_base_projection(pos, name):
             elite_names = [
@@ -2834,10 +2864,22 @@ elif sport == "🏈 NFL Football":
                     "Floor": round(floor, 1),
                     "Ceiling": round(ceiling, 1),
                     "Tier": tier,
-                    "Trade Value": calculate_fantasy_trade_value(pos, age, projected_ppr)
+                    "Redraft Value": calculate_redraft_value(pos, age, projected_ppr),
+                    "Dynasty Value": calculate_dynasty_value(pos, age, projected_ppr)
                 })
     
             nfl_df = pd.DataFrame(rows)
+
+            value_mode = st.radio(
+                "Value Mode:",
+                ["Redraft", "Dynasty"],
+                horizontal=True
+            )
+
+            if value_mode == "Dynasty":
+                nfl_df["Trade Value"] = nfl_df["Dynasty Value"]
+            else:
+                nfl_df["Trade Value"] = nfl_df["Redraft Value"]
     
             st.markdown("### 🔮 NFL Player Projections")
     
