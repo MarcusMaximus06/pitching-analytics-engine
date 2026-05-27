@@ -2008,16 +2008,27 @@ AGE_CURVE = {
 }
 
 def calculate_age_modifier(position, age):
+    if age is None:
+        return 1.00
 
-    prime_age = AGE_CURVE.get(position, 27)
+    try:
+        age = float(age)
+    except Exception:
+        return 1.00
+
+    prime_age = {
+        "QB": 32,
+        "RB": 26,
+        "WR": 28,
+        "TE": 29
+    }.get(position, 27)
 
     if age <= prime_age:
         return 1.00
 
     decline = (age - prime_age) * 0.025
-
     return max(0.82, 1.00 - decline)
-
+    
 def calculate_usage_bonus(position, projected_ppr):
 
     if position == "RB":
