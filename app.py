@@ -1762,7 +1762,7 @@ if sport == "⚾ MLB Baseball":
             st.caption("Calculates Rest-of-Season (ROS) projections natively via MLB API data logs.")
 
             with st.spinner("Compiling League-Wide Player Database..."):
-                _, p_stats, h_stats = fetch_mlb_api_data()
+                team_stats, p_stats, h_stats = fetch_mlb_api_data()
             
             if not p_stats or not h_stats:
                 st.error("🚨 Could not sync with MLB Stats API.")
@@ -2959,7 +2959,7 @@ if sport == "⚾ MLB Baseball":
                                             key="download_selected_roster_csv",
                                         )
 
-                                    st.markdown("### 🤝 Suggested Trade Partners")
+                                    st.markdown("### 🤝 Trade Partner Targets")
 
                                     rec_rows = []
 
@@ -3996,6 +3996,20 @@ elif sport == "🏈 NFL Football":
         with st.spinner("Fetching live Sleeper player registry..."):
             sleeper_players = load_sleeper_players()
 
+        st.markdown("## 🏈 League Command Center")
+        st.caption("Sync your Sleeper league, view roster power rankings, identify weak spots, and find trade partners.")
+
+        nfl_cc1, nfl_cc2, nfl_cc3 = st.columns(3)
+
+        with nfl_cc1:
+            st.metric("Mode", value_mode)
+
+        with nfl_cc2:
+            st.metric("Data Source", "Sleeper")
+
+        with nfl_cc3:
+            st.metric("Tools", "Rankings + Trades")
+
         st.markdown("### 🔗 Sleeper League Sync")
 
         sleeper_username = st.text_input("Sleeper Username:")
@@ -4162,7 +4176,7 @@ elif sport == "🏈 NFL Football":
                             power_df = pd.DataFrame(power_rows)
                             power_df = power_df.sort_values("Roster Value", ascending=False)
 
-                            st.markdown("### 🏆 Sleeper Team Power Rankings")
+                            st.markdown("### 📊 Power Rankings")
                             st.caption("Ranks every synced Sleeper roster using the currently selected Redraft/Dynasty value mode.")
 
                             st.dataframe(
@@ -4197,12 +4211,19 @@ elif sport == "🏈 NFL Football":
                                     ascending=False
                                 ).head(15)
 
-                                st.markdown("### 🤝 Suggested Trade Partners")
+                                st.markdown("### 🤝 Trade Partner Targets")
 
                                 st.dataframe(
                                     rec_df,
                                     use_container_width=True,
                                     hide_index=True
+                                )
+
+                                st.download_button(
+                                    "⬇️ Export Trade Partner Targets CSV",
+                                    data=rec_df.to_csv(index=False).encode("utf-8"),
+                                    file_name="nfl_trade_partner_targets.csv",
+                                    mime="text/csv"
                                 )
 
                     else:
