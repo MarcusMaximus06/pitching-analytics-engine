@@ -2740,11 +2740,32 @@ elif sport == "🏈 NFL Football":
                             owner_id = roster.get("owner_id")
                             owner_name = user_map.get(owner_id, "Unknown")
                             player_count = len(roster.get("players") or [])
+                            roster_players = roster.get("players") or []
+
+                            qb_count = 0
+                            rb_count = 0
+                            wr_count = 0
+                            te_count = 0
+
+                            for pid in roster_players:
+
+                                if pid.startswith("QB"):
+                                    qb_count += 1
+                                elif pid.startswith("RB"):
+                                    rb_count += 1
+                                elif pid.startswith("WR"):
+                                    wr_count += 1
+                                elif pid.startswith("TE"):
+                                    te_count += 1
 
                             roster_rows.append({
                                 "Team/User": owner_name,
                                 "Roster ID": roster.get("roster_id"),
                                 "Players": player_count,
+                                "QB": qb_count,
+                                "RB": rb_count,
+                                "WR": wr_count,
+                                "TE": te_count,
                                 "Wins": roster.get("settings", {}).get("wins", 0),
                                 "Losses": roster.get("settings", {}).get("losses", 0),
                                 "Ties": roster.get("settings", {}).get("ties", 0)
