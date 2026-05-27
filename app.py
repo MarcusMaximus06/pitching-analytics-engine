@@ -2683,11 +2683,11 @@ elif sport == "🏈 NFL Football":
     st.sidebar.markdown("---")
 
     if nfl_page == "🏆 NFL Fantasy Predictor":
-    
-        st.title("🏆 NFL Fantasy Predictor")
-        st.caption("Sleeper PPR projections, rankings, tiers, and trade tools.")
 
-        value_mode = st.radio(
+    st.title("🏆 NFL Fantasy Predictor")
+    st.caption("Sleeper PPR projections, rankings, tiers, and trade tools.")
+
+    value_mode = st.radio(
         "Value Mode:",
         ["Redraft", "Dynasty"],
         horizontal=True
@@ -2699,25 +2699,25 @@ elif sport == "🏈 NFL Football":
         "Dynasty Value = long-term keeper score adjusted for age and position. "
         "Trade Value = the active score used by the trade analyzer based on the selected mode."
     )
-        
+
     st.markdown("### 🔗 Sleeper League Sync")
 
     sleeper_username = st.text_input("Sleeper Username:")
 
-        if sleeper_username:
-            try:
-                user_resp = requests.get(
-                    f"https://api.sleeper.app/v1/user/{sleeper_username}",
+    if sleeper_username:
+        try:
+            user_resp = requests.get(
+                f"https://api.sleeper.app/v1/user/{sleeper_username}",
+                timeout=10
+            ).json()
+
+            sleeper_user_id = user_resp.get("user_id")
+
+            if sleeper_user_id:
+                leagues_resp = requests.get(
+                    f"https://api.sleeper.app/v1/user/{sleeper_user_id}/leagues/nfl/2025",
                     timeout=10
                 ).json()
-
-                sleeper_user_id = user_resp.get("user_id")
-
-                if sleeper_user_id:
-                    leagues_resp = requests.get(
-                        f"https://api.sleeper.app/v1/user/{sleeper_user_id}/leagues/nfl/2025",
-                        timeout=10
-                    ).json()
 
                     if leagues_resp:
                         league_options = {
