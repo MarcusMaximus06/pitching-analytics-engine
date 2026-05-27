@@ -1811,6 +1811,13 @@ if sport == "⚾ MLB Baseball":
 
                 st.dataframe(power_df, use_container_width=True, hide_index=True)
 
+                st.download_button(
+                    "⬇️ Export MLB Power Rankings CSV",
+                    data=power_df.to_csv(index=False).encode("utf-8"),
+                    file_name="mlb_power_rankings.csv",
+                    mime="text/csv"
+                )
+
                 st.markdown("### 🧲 Waiver Wire Finder")
 
                 waiver_rows = []
@@ -1874,6 +1881,13 @@ if sport == "⚾ MLB Baseball":
                 ).head(25)
 
                 st.dataframe(trade_df, use_container_width=True, hide_index=True)
+
+                st.download_button(
+                    "⬇️ Export MLB Trade Value Board CSV",
+                    data=trade_df.to_csv(index=False).encode("utf-8"),
+                    file_name="mlb_trade_value_board.csv",
+                    mime="text/csv"
+                )
 
                 st.markdown("---")
 
@@ -4183,6 +4197,13 @@ elif sport == "🏈 NFL Football":
                                 power_df,
                                 use_container_width=True,
                                 hide_index=True
+                            )
+
+                            st.download_button(
+                                "⬇️ Export NFL Power Rankings CSV",
+                                data=power_df.to_csv(index=False).encode("utf-8"),
+                                file_name="nfl_power_rankings.csv",
+                                mime="text/csv"
                             )
 
                             recommendations = []
