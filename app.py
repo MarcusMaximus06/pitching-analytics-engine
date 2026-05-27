@@ -2687,6 +2687,19 @@ elif sport == "🏈 NFL Football":
         st.title("🏆 NFL Fantasy Predictor")
         st.caption("Sleeper PPR projections, rankings, tiers, and trade tools.")
 
+        value_mode = st.radio(
+        "Value Mode:",
+        ["Redraft", "Dynasty"],
+        horizontal=True
+    )
+
+    st.info(
+        "Value Guide: Projected PPR = estimated weekly points. "
+        "Redraft Value = win-now trade score. "
+        "Dynasty Value = long-term keeper score adjusted for age and position. "
+        "Trade Value = the active score used by the trade analyzer based on the selected mode."
+    )
+        
         st.markdown("### 🔗 Sleeper League Sync")
 
         sleeper_username = st.text_input("Sleeper Username:")
@@ -3128,12 +3141,6 @@ elif sport == "🏈 NFL Football":
                 })
     
             nfl_df = pd.DataFrame(rows)
-
-            value_mode = st.radio(
-                "Value Mode:",
-                ["Redraft", "Dynasty"],
-                horizontal=True
-            )
 
             st.info(
                 "Value Guide: Projected PPR = estimated weekly points. "
