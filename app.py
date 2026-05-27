@@ -3269,7 +3269,7 @@ if sport == "⚾ MLB Baseball":
 
                     waiver_pos = st.selectbox(
                         "Waiver Position:",
-                        ["All", "QB", "RB", "WR", "TE"],
+                        ["All", "QB", "RB", "WR", "TE", "K"],
                         key="waiver_position_filter",
                     )
 
@@ -4015,7 +4015,11 @@ elif sport == "🏈 NFL Football":
                         "Name": name,
                         "Position": pos,
                         "Team": team,
-                        "Age": age
+                        "Age": age,
+                        "Headshot URL": nfl_headshot_url(str(pid)),
+                        "Status": nfl_player_status_label(pdata.get("injury_status") or pdata.get("status")),
+                        "Years Exp": pdata.get("years_exp", None),
+                        "College": pdata.get("college", "")
                     }
 
                 return players
@@ -4030,6 +4034,17 @@ elif sport == "🏈 NFL Football":
                 return float(age)
             except Exception:
                 return None
+
+        def nfl_headshot_url(player_id):
+            if not player_id:
+                return None
+            return f"https://sleepercdn.com/content/nfl/players/{player_id}.jpg"
+
+        def nfl_player_status_label(status):
+            if not status:
+                return "Active"
+            return str(status)
+
 
         def calculate_redraft_value(position, age, projected_ppr):
             projected_ppr = float(projected_ppr or 0)
@@ -4422,6 +4437,47 @@ elif sport == "🏈 NFL Football":
                                 mime="text/csv"
                             )
 
+                            st.markdown("### 📈 Roster Value Chart")
+                            fig_power = go.Figure()
+                            fig_power.add_trace(go.Bar(
+                                x=power_df["Team/User"],
+                                y=power_df["Roster Value"],
+                                name="Roster Value"
+                            ))
+                            fig_power.update_layout(
+                                height=360,
+                                xaxis_title="Team",
+                                yaxis_title="Roster Value"
+                            )
+                            st.plotly_chart(fig_power, use_container_width=True)
+
+                            st.markdown("### 📊 Position Strength Chart")
+                            strength_team = st.selectbox(
+                                "Select team for position strength chart:",
+                                power_df["Team/User"].tolist(),
+                                key="nfl_position_strength_team"
+                            )
+                            strength_row = power_df[power_df["Team/User"] == strength_team].iloc[0]
+                            strength_df = pd.DataFrame({
+                                "Position": ["QB", "RB", "WR", "TE", "K"],
+                                "Value": [
+                                    strength_row["QB Value"],
+                                    strength_row["RB Value"],
+                                    strength_row["WR Value"],
+                                    strength_row["TE Value"],
+                                    strength_row.get("K Value", 0),
+                                ]
+                            })
+                            fig_strength = go.Figure()
+                            fig_strength.add_trace(go.Bar(
+                                x=strength_df["Position"],
+                                y=strength_df["Value"],
+                                name="Position Value"
+                            ))
+                            fig_strength.update_layout(height=320)
+                            st.plotly_chart(fig_strength, use_container_width=True)
+
+
                             recommendations = []
 
                             for _, team_a in power_df.iterrows():
@@ -4433,18 +4489,36 @@ elif sport == "🏈 NFL Football":
                                     partner_strength = team_b[f"{need} Value"]
 
                                     partner_name = team_b["Team/User"]
+                                    needy_team = team_a["Team/User"]
                                     target_names = team_targets.get(partner_name, {}).get(need, [])[:4]
-                                    threshold = 18 if need == "K" else 30
+
+                                    team_a_strengths = {
+                                        "QB": team_a.get("QB Value", 0),
+                                        "RB": team_a.get("RB Value", 0),
+                                        "WR": team_a.get("WR Value", 0),
+                                        "TE": team_a.get("TE Value", 0),
+                                        "K": team_a.get("K Value", 0),
+                                    }
+                                    surplus_position = max(
+                                        {k: v for k, v in team_a_strengths.items() if k != need},
+                                        key=lambda k: team_a_strengths[k]
+                                    )
+                                    offer_names = team_targets.get(needy_team, {}).get(surplus_position, [])[:4]
+
+                                    threshold = 8 if need == "K" else 18
 
                                     if partner_strength >= threshold and target_names:
                                         recommendations.append({
                                             "Mode": value_mode,
-                                            "Team Needing Help": team_a["Team/User"],
+                                            "Team Needing Help": needy_team,
                                             "Need": need,
                                             "Suggested Partner": partner_name,
                                             "Suggested Player Targets": ", ".join(target_names),
+                                            "Suggested Offer From Needy Team": ", ".join(offer_names),
+                                            "Offer Position": surplus_position,
                                             "Partner Strength": round(partner_strength, 1),
-                                            "Why": f"{partner_name} is strong at {need} and {team_a['Team/User']} is weakest there."
+                                            "Fairness Hint": "Use one target plus one offer candidate as the starting point.",
+                                            "Why": f"{partner_name} is strong at {need}; {needy_team} can shop surplus {surplus_position} depth."
                                         })
 
                             rec_df = pd.DataFrame(recommendations)
@@ -4519,10 +4593,15 @@ elif sport == "🏈 NFL Football":
                 dynasty_value = calculate_dynasty_value(pos, age, projected_ppr)
 
                 rows.append({
+                    "Player ID": pid,
+                    "Headshot URL": nfl_headshot_url(pid),
                     "Player": name,
                     "Team": team,
                     "Position": pos,
                     "Age": age,
+                    "Status": p.get("Status", "Active"),
+                    "Years Exp": p.get("Years Exp", None),
+                    "College": p.get("College", ""),
                     "Projected PPR": round(projected_ppr, 1),
                     "Floor": round(floor, 1),
                     "Ceiling": round(ceiling, 1),
@@ -4634,6 +4713,21 @@ elif sport == "🏈 NFL Football":
                 detail_df = pd.DataFrame(detail_rows).sort_values(["Position", "Active Value"], ascending=[True, False]) if detail_rows else pd.DataFrame()
                 if not detail_df.empty:
                     st.dataframe(detail_df, use_container_width=True, hide_index=True)
+
+                    st.markdown("#### 🪪 Roster Cards")
+                    card_positions = ["QB", "RB", "WR", "TE", "K"]
+                    for card_pos in card_positions:
+                        pos_cards = detail_df[detail_df["Position"] == card_pos].head(6)
+                        if not pos_cards.empty:
+                            st.markdown(f"**{card_pos}**")
+                            cols = st.columns(min(3, len(pos_cards)))
+                            for idx, (_, card_player) in enumerate(pos_cards.iterrows()):
+                                with cols[idx % len(cols)]:
+                                    card_id = str(card_player.get("Player ID", ""))
+                                    card_img = nfl_headshot_url(card_id)
+                                    if card_img:
+                                        st.image(card_img, width=90)
+                                    st.caption(f"{card_player.get('Player')} • {card_player.get('Trade Value')}")
                     st.download_button(
                         "⬇️ Export Selected Roster CSV",
                         data=detail_df.to_csv(index=False).encode("utf-8"),
@@ -4666,6 +4760,23 @@ elif sport == "🏈 NFL Football":
                     weekly_stats
                 )
 
+                lab_player_id = player_row.get("Player ID")
+                lab_headshot = player_row.get("Headshot URL") or nfl_headshot_url(lab_player_id)
+
+                profile_col, summary_col = st.columns([1, 5])
+                with profile_col:
+                    if lab_headshot:
+                        st.image(lab_headshot, width=150)
+                with summary_col:
+                    st.markdown(f"## {selected_lab_player}")
+                    st.caption(f"{player_row.get('Team', 'FA')} • {player_row.get('Position')} • Age {player_row.get('Age', 'N/A')} • {player_row.get('Status', 'Active')}")
+
+                    if st.button("⭐ Add to Watchlist", key=f"watch_{selected_lab_player}"):
+                        if "nfl_watchlist" not in st.session_state:
+                            st.session_state["nfl_watchlist"] = []
+                        if selected_lab_player not in st.session_state["nfl_watchlist"]:
+                            st.session_state["nfl_watchlist"].append(selected_lab_player)
+
                 m1, m2, m3, m4 = st.columns(4)
                 with m1:
                     st.metric("Current PPG", snapshot.get("Current PPG", 0))
@@ -4696,12 +4807,47 @@ elif sport == "🏈 NFL Football":
                     )
                     st.plotly_chart(fig_lab, use_container_width=True)
 
+                    st.markdown("#### Future Projection Curve")
+                    future_projection = float(snapshot.get("Future Projection", 0) or 0)
+                    projection_curve = pd.DataFrame({
+                        "Window": ["Now", "Short Term", "Rest of Season", "Long Term"],
+                        "Projected PPG": [
+                            float(snapshot.get("Current PPG", 0) or 0),
+                            round(future_projection * 0.96, 2),
+                            round(future_projection, 2),
+                            round(future_projection * (1.06 if snapshot.get("Age", 99) and snapshot.get("Age", 99) <= 25 else 0.92), 2)
+                        ]
+                    })
+                    fig_future = go.Figure()
+                    fig_future.add_trace(go.Scatter(
+                        x=projection_curve["Window"],
+                        y=projection_curve["Projected PPG"],
+                        mode="lines+markers",
+                        name="Projection"
+                    ))
+                    fig_future.update_layout(height=320)
+                    st.plotly_chart(fig_future, use_container_width=True)
+
                 st.download_button(
                     "⬇️ Export NFL Player Lab Snapshot CSV",
                     data=pd.DataFrame([snapshot]).to_csv(index=False).encode("utf-8"),
                     file_name="nfl_player_lab_snapshot.csv",
                     mime="text/csv"
                 )
+
+                st.markdown("#### ⭐ Watchlist")
+                watchlist = st.session_state.get("nfl_watchlist", [])
+                if watchlist:
+                    watch_df = nfl_df[nfl_df["Player"].isin(watchlist)].copy()
+                    st.dataframe(watch_df, use_container_width=True, hide_index=True)
+                    st.download_button(
+                        "⬇️ Export Watchlist CSV",
+                        data=watch_df.to_csv(index=False).encode("utf-8"),
+                        file_name="nfl_watchlist.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.info("No watchlist players yet.")
             else:
                 st.info("No players available for this position.")
 
