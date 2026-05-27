@@ -2986,6 +2986,13 @@ elif sport == "🏈 NFL Football":
                 horizontal=True
             )
 
+            st.info(
+                "Value Guide: Projected PPR = estimated weekly points. "
+                "Redraft Value = win-now trade score. "
+                "Dynasty Value = long-term keeper score adjusted for age and position. "
+                "Trade Value = the active score used by the trade analyzer based on the selected mode."
+            )
+            
             if value_mode == "Dynasty":
                 nfl_df["Trade Value"] = nfl_df["Dynasty Value"]
             else:
