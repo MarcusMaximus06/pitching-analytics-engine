@@ -1752,9 +1752,9 @@ if sport == "⚾ MLB Baseball":
     
     elif page == "🏆 Fantasy Sports Predictor":
         st.title("🏆 Season-Long Fantasy Hub")
-        st.markdown("### 🏈 NFL (Sleeper PPR) & ⚾ MLB (Standard Points)")
+        st.markdown("### ⚾ MLB Fantasy Command Center")
         
-        fantasy_sport = st.radio("Select Active Fantasy Sport:", ["⚾ MLB Trade Analyzer & Projections", "🏈 NFL Sleeper PPR Trade Engine"])
+        fantasy_sport = st.radio("Select Active Fantasy Sport:", ["⚾ MLB Trade Analyzer & Projections"])
         st.markdown("---")
         
         if fantasy_sport == "⚾ MLB Trade Analyzer & Projections":
@@ -1768,7 +1768,115 @@ if sport == "⚾ MLB Baseball":
                 st.error("🚨 Could not sync with MLB Stats API.")
                 
             else:
+                
                 st.info("MLB Trade Analyzer loaded.")
+
+                st.markdown("---")
+                st.markdown("## 🏆 League Command Center")
+
+                cc1, cc2, cc3, cc4 = st.columns(4)
+
+                with cc1:
+                    st.metric("Tracked Players", len(h_stats) + len(p_stats))
+
+                with cc2:
+                    st.metric("Pitchers", len(p_stats))
+
+                with cc3:
+                    st.metric("Batters", len(h_stats))
+
+                with cc4:
+                    st.metric("Projection Engine", "ACTIVE")
+
+                st.markdown("### 📊 MLB Power Rankings")
+
+                power_rows = []
+
+                for t_name, vals in team_stats.items():
+                    rs = vals.get("RS_per_G", 0)
+                    ra = vals.get("RA_per_G", 0)
+                    score = round((rs * 2) - ra, 2)
+
+                    power_rows.append({
+                        "Team": t_name,
+                        "Runs/Game": round(rs, 2),
+                        "Runs Allowed/Game": round(ra, 2),
+                        "Power Score": score
+                    })
+
+                power_df = pd.DataFrame(power_rows).sort_values(
+                    "Power Score",
+                    ascending=False
+                ).head(10)
+
+                st.dataframe(power_df, use_container_width=True, hide_index=True)
+
+                st.markdown("### 🧲 Waiver Wire Finder")
+
+                waiver_rows = []
+
+                for player_name, pdata in list(h_stats.items())[:150]:
+
+                    hr = pdata.get("HR", 0)
+                    sb = pdata.get("SB", 0)
+                    rbi = pdata.get("RBI", 0)
+
+                    upside = (hr * 4) + (sb * 3) + (rbi * 0.5)
+
+                    waiver_rows.append({
+                        "Player": player_name,
+                        "Team": pdata.get("Team", ""),
+                        "Position": pdata.get("Position", "UTIL"),
+                        "Upside Score": round(upside, 1)
+                    })
+
+                waiver_df = pd.DataFrame(waiver_rows).sort_values(
+                    "Upside Score",
+                    ascending=False
+                ).head(15)
+
+                st.dataframe(waiver_df, use_container_width=True, hide_index=True)
+
+                csv_data = waiver_df.to_csv(index=False).encode("utf-8")
+
+                st.download_button(
+                    "⬇️ Export Waiver Targets CSV",
+                    data=csv_data,
+                    file_name="mlb_waiver_targets.csv",
+                    mime="text/csv"
+                )
+
+                st.markdown("### 🤝 Trade Value Board")
+
+                trade_rows = []
+
+                for player_name, pdata in list(h_stats.items())[:200]:
+
+                    games = max(1, pdata.get("G", 1))
+
+                    trade_value = (
+                        pdata.get("HR", 0) * 5
+                        + pdata.get("RBI", 0) * 1.2
+                        + pdata.get("SB", 0) * 4
+                        + pdata.get("H", 0) * 0.6
+                    ) / games
+
+                    trade_rows.append({
+                        "Player": player_name,
+                        "Team": pdata.get("Team", ""),
+                        "Position": pdata.get("Position", "UTIL"),
+                        "Trade Value": round(trade_value, 2)
+                    })
+
+                trade_df = pd.DataFrame(trade_rows).sort_values(
+                    "Trade Value",
+                    ascending=False
+                ).head(25)
+
+                st.dataframe(trade_df, use_container_width=True, hide_index=True)
+
+                st.markdown("---")
+
 
                 st.markdown("---")
                 st.markdown("### 🔮 MLB Fantasy Projection Lab")
