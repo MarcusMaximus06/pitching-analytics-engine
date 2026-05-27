@@ -1988,6 +1988,63 @@ if sport == "⚾ MLB Baseball":
             else:
                 player_list = [f"{data['Name']} ({data['Pos']} - {data['Team']})" for pid, data in sleeper_players.items() if data['Pos'] in ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']]
                 player_list = sorted(list(set(player_list)))
+
+# =========================================================
+# NFL FANTASY VALUE ENGINE
+# =========================================================
+
+POSITION_SCARCITY = {
+    "QB": 0.92,
+    "RB": 1.20,
+    "WR": 1.08,
+    "TE": 1.15
+}
+
+AGE_CURVE = {
+    "QB": 32,
+    "RB": 26,
+    "WR": 28,
+    "TE": 29
+}
+
+def calculate_age_modifier(position, age):
+
+    prime_age = AGE_CURVE.get(position, 27)
+
+    if age <= prime_age:
+        return 1.00
+
+    decline = (age - prime_age) * 0.025
+
+    return max(0.82, 1.00 - decline)
+
+def calculate_usage_bonus(position, projected_ppr):
+
+    if position == "RB":
+        return projected_ppr * 0.08
+
+    if position == "WR":
+        return projected_ppr * 0.06
+
+    if position == "TE":
+        return projected_ppr * 0.05
+
+    return projected_ppr * 0.03
+
+def calculate_fantasy_trade_value(position, age, projected_ppr):
+
+    scarcity = POSITION_SCARCITY.get(position, 1.0)
+
+    age_mod = calculate_age_modifier(position, age)
+
+    usage_bonus = calculate_usage_bonus(position, projected_ppr)
+
+    value = (
+        (projected_ppr * scarcity * age_mod)
+        + usage_bonus
+    )
+
+    return round(value, 1)
             
             st.markdown("### ⚖️ Trade Simulator")
             col1, col2 = st.columns(2)
