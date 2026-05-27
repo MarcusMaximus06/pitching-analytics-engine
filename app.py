@@ -2046,69 +2046,69 @@ def calculate_fantasy_trade_value(position, age, projected_ppr):
 
     return round(value, 1)
             
-            st.markdown("### ⚖️ Trade Simulator")
-            col1, col2 = st.columns(2)
-            with col1:
-                team_a_nfl = st.multiselect("Team A Receives:", player_list, key="nfl_team_a")
-            with col2:
-                team_b_nfl = st.multiselect("Team B Receives:", player_list, key="nfl_team_b")
-                
-            st.markdown("#### 🎯 PPR Value Assignment")
-            st.caption("Assign your projected PPR Points (or Dynasty Value metric) for the selected assets.")
+        st.markdown("### ⚖️ Trade Simulator")
+        col1, col2 = st.columns(2)
+        with col1:
+            team_a_nfl = st.multiselect("Team A Receives:", player_list, key="nfl_team_a")
+        with col2:
+            team_b_nfl = st.multiselect("Team B Receives:", player_list, key="nfl_team_b")
             
-            c1, c2 = st.columns(2)
-            a_val = 0
-            b_val = 0
-            with c1:
-                for p in team_a_nfl:
-                    val = st.number_input(f"Value for {p}:", value=200, step=10, key=f"val_{p}_a")
-                    a_val += val
-            with c2:
-                for p in team_b_nfl:
-                    val = st.number_input(f"Value for {p}:", value=200, step=10, key=f"val_{p}_b")
-                    b_val += val
+        st.markdown("#### 🎯 PPR Value Assignment")
+        st.caption("Assign your projected PPR Points (or Dynasty Value metric) for the selected assets.")
+        
+        c1, c2 = st.columns(2)
+        a_val = 0
+        b_val = 0
+        with c1:
+            for p in team_a_nfl:
+                val = st.number_input(f"Value for {p}:", value=200, step=10, key=f"val_{p}_a")
+                a_val += val
+        with c2:
+            for p in team_b_nfl:
+                val = st.number_input(f"Value for {p}:", value=200, step=10, key=f"val_{p}_b")
+                b_val += val
+                
+        if st.button("⚖️ Calculate NFL Trade Edge"):
+            if team_a_nfl or team_b_nfl:
+                st.markdown("---")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Team A Total Value", f"{a_val} PPR Pts")
+                with col2:
+                    st.metric("Team B Total Value", f"{b_val} PPR Pts")
                     
-            if st.button("⚖️ Calculate NFL Trade Edge"):
-                if team_a_nfl or team_b_nfl:
-                    st.markdown("---")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric("Team A Total Value", f"{a_val} PPR Pts")
-                    with col2:
-                        st.metric("Team B Total Value", f"{b_val} PPR Pts")
-                        
-                    diff = abs(a_val - b_val)
-                    if a_val > b_val + 20:
-                        st.success(f"📈 **Team A** wins this trade by **{diff}** points.")
-                    elif b_val > a_val + 20:
-                        st.success(f"📈 **Team B** wins this trade by **{diff}** points.")
-                    else:
-                        st.info(f"🤝 This trade is highly balanced (Differential: {diff}).")
+                diff = abs(a_val - b_val)
+                if a_val > b_val + 20:
+                    st.success(f"📈 **Team A** wins this trade by **{diff}** points.")
+                elif b_val > a_val + 20:
+                    st.success(f"📈 **Team B** wins this trade by **{diff}** points.")
                 else:
-                    st.warning("Select players to analyze.")
-                    
-            st.markdown("---")
-            st.subheader("📡 Sleeper League Sync")
-            username = st.text_input("Enter Sleeper Username to view active leagues:", value="marcusmaximus06")
-            if st.button("Sync Rosters"):
-                with st.spinner("Pinging Sleeper API..."):
-                    try:
-                        user_resp = requests.get(f"https://api.sleeper.app/v1/user/{username}", timeout=15).json()
-                        if user_resp and 'user_id' in user_resp:
-                            user_id = user_resp['user_id']
-                            leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2026", timeout=15).json()
-                            if not leagues:
-                                leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2025", timeout=15).json()
-                            if leagues:
-                                st.success(f"✅ Synced {len(leagues)} leagues for {username}!")
-                                for league in leagues:
-                                    st.write(f"🏆 **{league['name']}**")
-                            else:
-                                st.info("No active NFL leagues found for this user.")
+                    st.info(f"🤝 This trade is highly balanced (Differential: {diff}).")
+            else:
+                st.warning("Select players to analyze.")
+                
+        st.markdown("---")
+        st.subheader("📡 Sleeper League Sync")
+        username = st.text_input("Enter Sleeper Username to view active leagues:", value="marcusmaximus06")
+        if st.button("Sync Rosters"):
+            with st.spinner("Pinging Sleeper API..."):
+                try:
+                    user_resp = requests.get(f"https://api.sleeper.app/v1/user/{username}", timeout=15).json()
+                    if user_resp and 'user_id' in user_resp:
+                        user_id = user_resp['user_id']
+                        leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2026", timeout=15).json()
+                        if not leagues:
+                            leagues = requests.get(f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/2025", timeout=15).json()
+                        if leagues:
+                            st.success(f"✅ Synced {len(leagues)} leagues for {username}!")
+                            for league in leagues:
+                                st.write(f"🏆 **{league['name']}**")
                         else:
-                            st.error("User not found on Sleeper.")
-                    except Exception as e:
-                        st.error("Failed to connect to Sleeper API. The connection may have been blocked or timed out.")
+                            st.info("No active NFL leagues found for this user.")
+                    else:
+                        st.error("User not found on Sleeper.")
+                except Exception as e:
+                    st.error("Failed to connect to Sleeper API. The connection may have been blocked or timed out.")
 
 # ==========================================================
 # SPORT BRANCH 2: NCAA SOFTBALL
