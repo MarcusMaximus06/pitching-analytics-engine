@@ -2706,7 +2706,42 @@ elif sport == "🏈 NFL Football":
     
             except Exception:
                 return {}
-    
+                def calculate_age_modifier(position, age):
+            if age is None:
+                return 1.00
+
+            prime_age = {
+                "QB": 32,
+                "RB": 26,
+                "WR": 28,
+                "TE": 29
+            }.get(position, 27)
+
+            if age <= prime_age:
+                return 1.00
+
+            decline = (age - prime_age) * 0.025
+            return max(0.82, 1.00 - decline)
+
+        def calculate_fantasy_trade_value(position, age, projected_ppr):
+            scarcity = {
+                "QB": 0.92,
+                "RB": 1.20,
+                "WR": 1.08,
+                "TE": 1.15
+            }.get(position, 1.0)
+
+            age_mod = calculate_age_modifier(position, age)
+
+            usage_bonus = {
+                "QB": projected_ppr * 0.03,
+                "RB": projected_ppr * 0.08,
+                "WR": projected_ppr * 0.06,
+                "TE": projected_ppr * 0.05
+            }.get(position, 0)
+
+            return round((projected_ppr * scarcity * age_mod) + usage_bonus, 1)
+            
         def nfl_base_projection(pos, name):
             elite_names = [
                 "Josh Allen", "Jalen Hurts", "Lamar Jackson", "Patrick Mahomes",
@@ -2786,7 +2821,8 @@ elif sport == "🏈 NFL Football":
                     "Projected PPR": round(projected_ppr, 1),
                     "Floor": round(floor, 1),
                     "Ceiling": round(ceiling, 1),
-                    "Tier": tier
+                    "Tier": tier,
+                    "Trade Value": calculate_fantasy_trade_value(pos, age, projected_ppr)
                 })
     
             nfl_df = pd.DataFrame(rows)
@@ -2823,7 +2859,7 @@ elif sport == "🏈 NFL Football":
                     filtered_df["Player"].str.contains(player_search, case=False, na=False)
                 ]
     
-            filtered_df = filtered_df.sort_values("Projected PPR", ascending=False)
+            filtered_df = filtered_df.sort_values("Trade Value", ascending=False)
     
             st.dataframe(
                 filtered_df,
@@ -2848,28 +2884,28 @@ elif sport == "🏈 NFL Football":
                 a_df = nfl_df[nfl_df["Player"].isin(team_a)]
                 b_df = nfl_df[nfl_df["Player"].isin(team_b)]
     
-                a_total = a_df["Projected PPR"].sum()
-                b_total = b_df["Projected PPR"].sum()
+                a_total = a_df["Trade Value"].sum()
+                b_total = b_df["Trade Value"].sum()
                 diff = abs(a_total - b_total)
     
                 r1, r2 = st.columns(2)
     
                 with r1:
-                    st.metric("Team A Receives", f"{a_total:.1f} PPR")
+                    st.metric("Team A Receives", f"{a_total:.1f} Value")
                     if not a_df.empty:
-                        st.dataframe(a_df[["Player", "Team", "Position", "Projected PPR", "Tier"]], hide_index=True)
+                        st.dataframe(a_df[["Player", "Team", "Position", "Projected PPR", "Trade Value", "Tier"]], hide_index=True)
     
                 with r2:
-                    st.metric("Team B Receives", f"{b_total:.1f} PPR")
+                    st.metric("Team B Receives", f"{b_total:.1f} Value")
                     if not b_df.empty:
-                        st.dataframe(b_df[["Player", "Team", "Position", "Projected PPR", "Tier"]], hide_index=True)
+                        st.dataframe(b_df[["Player", "Team", "Position", "Projected PPR", "Trade Value", "Tier"]], hide_index=True)
     
                 if a_total > b_total + 3:
-                    st.success(f"Team A wins this trade by {diff:.1f} projected PPR points.")
+                    st.success(f"Team A wins this trade by {diff:.1f} trade value points.")
                 elif b_total > a_total + 3:
-                    st.success(f"Team B wins this trade by {diff:.1f} projected PPR points.")
+                    st.success(f"Team B wins this trade by {diff:.1f} trade value points.")
                 else:
-                    st.info(f"This trade is balanced. Difference: {diff:.1f} projected PPR points.")
+                    st.info(f"This trade is balanced. Difference: {diff:.1f} trade value points.")
     
             st.stop()
                 
