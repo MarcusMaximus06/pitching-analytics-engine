@@ -2799,8 +2799,8 @@ elif sport == "🏈 NFL Football":
 
                 else:
                     st.warning("No 2026 Sleeper leagues found for this username.")
-            else:
-                st.warning("Sleeper username not found.")
+        else:
+            st.warning("Sleeper username not found.")
                     
 # =====================================================
 # Sleeper Team Power Rankings
