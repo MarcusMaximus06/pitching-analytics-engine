@@ -417,19 +417,104 @@ def build_exact_trade_suggestions(power_df, player_df):
     return pd.DataFrame(rows).drop_duplicates().head(25)
 
 
-def hag_weekly_player_score(row):
+NFL_MATCHUP_ADJUSTMENTS = {
+    "ARI": 1.03, "ATL": 1.00, "BAL": 0.96, "BUF": 0.97, "CAR": 1.05, "CHI": 1.00,
+    "CIN": 1.04, "CLE": 0.95, "DAL": 0.98, "DEN": 0.96, "DET": 0.99, "GB": 1.00,
+    "HOU": 0.99, "IND": 1.03, "JAX": 1.04, "KC": 0.97, "LV": 1.05, "LAC": 0.99,
+    "LAR": 1.00, "MIA": 1.02, "MIN": 0.97, "NE": 1.01, "NO": 1.02, "NYG": 1.04,
+    "NYJ": 0.95, "PHI": 0.96, "PIT": 0.97, "SEA": 1.01, "SF": 0.95, "TB": 1.01,
+    "TEN": 1.05, "WAS": 1.06, "FA": 1.00
+}
+
+NFL_GAME_ENVIRONMENT = {
+    "ARI": 1.00, "ATL": 1.02, "BAL": 1.01, "BUF": 1.00, "CAR": 0.97, "CHI": 0.98,
+    "CIN": 1.03, "CLE": 0.98, "DAL": 1.03, "DEN": 0.99, "DET": 1.04, "GB": 1.00,
+    "HOU": 1.02, "IND": 1.01, "JAX": 1.00, "KC": 1.04, "LV": 0.98, "LAC": 1.00,
+    "LAR": 1.01, "MIA": 1.04, "MIN": 1.02, "NE": 0.96, "NO": 1.00, "NYG": 0.97,
+    "NYJ": 0.96, "PHI": 1.03, "PIT": 0.98, "SEA": 1.00, "SF": 1.03, "TB": 1.01,
+    "TEN": 0.97, "WAS": 1.00, "FA": 1.00
+}
+
+
+def hag_matchup_label(factor):
     try:
-        projected = float(row.get("Projected PPR", 0) or 0)
+        f = float(factor)
+    except Exception:
+        f = 1.0
+    if f >= 1.07:
+        return "Great matchup"
+    if f >= 1.03:
+        return "Good matchup"
+    if f <= 0.93:
+        return "Very tough matchup"
+    if f <= 0.97:
+        return "Tough matchup"
+    return "Neutral matchup"
+
+
+def hag_status_factor(status):
+    s = str(status or "Active").lower()
+    if "out" in s or "ir" in s or "pup" in s:
+        return 0.0
+    if "doubt" in s:
+        return 0.35
+    if "question" in s:
+        return 0.85
+    return 1.0
+
+
+def hag_apply_matchup_adjustments(df, opponent_team="Neutral", game_environment="Neutral", manual_boost=0.0):
+    if df is None or df.empty:
+        return df
+
+    out = df.copy()
+    opp = opponent_team if opponent_team != "Neutral" else "FA"
+    env = game_environment if game_environment != "Neutral" else "FA"
+
+    matchup_factor = NFL_MATCHUP_ADJUSTMENTS.get(opp, 1.00)
+    environment_factor = NFL_GAME_ENVIRONMENT.get(env, 1.00)
+
+    try:
+        boost_factor = 1 + (float(manual_boost) / 100)
+    except Exception:
+        boost_factor = 1.0
+
+    out["Matchup Factor"] = round(matchup_factor, 2)
+    out["Environment Factor"] = round(environment_factor, 2)
+    out["Status Factor"] = out["Status"].apply(hag_status_factor) if "Status" in out.columns else 1.0
+    out["Matchup Label"] = hag_matchup_label(matchup_factor)
+
+    for col in ["Projected PPR", "Floor", "Ceiling"]:
+        if col in out.columns:
+            out[f"Adjusted {col}"] = (
+                pd.to_numeric(out[col], errors="coerce").fillna(0)
+                * matchup_factor
+                * environment_factor
+                * boost_factor
+                * pd.to_numeric(out["Status Factor"], errors="coerce").fillna(1.0)
+            ).round(1)
+
+    out["Weekly Adjustment"] = round(((matchup_factor * environment_factor * boost_factor) - 1) * 100, 1)
+    return out
+
+
+def hag_weekly_player_score(row):
+    projected_key = "Adjusted Projected PPR" if "Adjusted Projected PPR" in row.index else "Projected PPR"
+    floor_key = "Adjusted Floor" if "Adjusted Floor" in row.index else "Floor"
+    ceiling_key = "Adjusted Ceiling" if "Adjusted Ceiling" in row.index else "Ceiling"
+
+    try:
+        projected = float(row.get(projected_key, 0) or 0)
     except Exception:
         projected = 0.0
 
     try:
-        floor = float(row.get("Floor", projected * 0.65) or 0)
+        floor = float(row.get(floor_key, projected * 0.65) or 0)
     except Exception:
         floor = projected * 0.65
 
     try:
-        ceiling = float(row.get("Ceiling", projected * 1.35) or 0)
+        ceiling = float(row.get(ceiling_key, projected * 1.35) or 0)
     except Exception:
         ceiling = projected * 1.35
 
@@ -464,11 +549,13 @@ def hag_weekly_confidence(row):
 def hag_start_sit_reason(row):
     player = row.get("Player", "Player")
     pos = row.get("Position", "")
-    projected = row.get("Projected PPR", 0)
-    floor = row.get("Floor", 0)
-    ceiling = row.get("Ceiling", 0)
+    projected = row.get("Adjusted Projected PPR", row.get("Projected PPR", 0))
+    floor = row.get("Adjusted Floor", row.get("Floor", 0))
+    ceiling = row.get("Adjusted Ceiling", row.get("Ceiling", 0))
     confidence = row.get("Confidence", "Medium")
-    return f"{player} is the stronger {pos} option with {projected} projected PPR, {floor} floor, {ceiling} ceiling, and {confidence} confidence."
+    matchup = row.get("Matchup Label", "Neutral matchup")
+    adjustment = row.get("Weekly Adjustment", 0)
+    return f"{player} is the stronger {pos} option with {projected} adjusted PPR, {floor} adjusted floor, {ceiling} adjusted ceiling, {confidence} confidence, and a {matchup.lower()} ({adjustment:+.1f}%)."
 
 
 def hag_build_start_sit_df(player_rows):
@@ -3831,6 +3918,26 @@ if sport == "⚾ MLB Baseball":
                     player_pool_df = player_values_df.copy()
                     player_pool_df = player_pool_df[player_pool_df["Position"].isin(["QB", "RB", "WR", "TE", "K"])].copy()
 
+                    st.markdown("#### 🏟️ Weekly Matchup Adjustment")
+                    adj_col1, adj_col2, adj_col3 = st.columns(3)
+                    nfl_team_options = ["Neutral"] + sorted([t for t in NFL_MATCHUP_ADJUSTMENTS.keys() if t != "FA"])
+
+                    with adj_col1:
+                        opponent_team = st.selectbox("Opponent defense:", nfl_team_options, key="weekly_opponent_defense")
+                    with adj_col2:
+                        game_environment = st.selectbox("Game environment/team pace:", nfl_team_options, key="weekly_game_environment")
+                    with adj_col3:
+                        manual_weekly_boost = st.slider("Manual weekly boost/penalty:", -20, 20, 0, 1, key="weekly_manual_boost")
+
+                    player_pool_df = hag_apply_matchup_adjustments(
+                        player_pool_df,
+                        opponent_team=opponent_team,
+                        game_environment=game_environment,
+                        manual_boost=manual_weekly_boost,
+                    )
+
+                    st.caption("Adjusted projections apply opponent defense, game environment, injury/status risk, and any manual boost/penalty.")
+
                     if weekly_tool == "Weekly Command Center":
                         st.markdown("#### 🧭 Weekly Command Center")
                         st.caption("One-page weekly view: optimized lineup, top waiver upgrades, and drop candidates.")
@@ -3852,6 +3959,12 @@ if sport == "⚾ MLB Baseball":
                             if selected_roster_df.empty:
                                 st.warning("No roster data available for this team.")
                             else:
+                                selected_roster_df = hag_apply_matchup_adjustments(
+                                    selected_roster_df,
+                                    opponent_team=opponent_team,
+                                    game_environment=game_environment,
+                                    manual_boost=manual_weekly_boost,
+                                )
                                 starters_df, bench_df = hag_optimize_lineup(selected_roster_df)
                                 drop_df = hag_build_drop_candidates(selected_roster_df)
 
@@ -3871,7 +3984,8 @@ if sport == "⚾ MLB Baseball":
                                 w1, w2, w3 = st.columns(3)
 
                                 with w1:
-                                    projected_total = round(float(starters_df["Projected PPR"].sum()), 1) if not starters_df.empty and "Projected PPR" in starters_df.columns else 0
+                                    projected_total_col = "Adjusted Projected PPR" if "Adjusted Projected PPR" in starters_df.columns else "Projected PPR"
+                                    projected_total = round(float(starters_df[projected_total_col].sum()), 1) if not starters_df.empty and projected_total_col in starters_df.columns else 0
                                     st.metric("Optimized Lineup", f"{projected_total} PPR")
 
                                 with w2:
@@ -3885,8 +3999,8 @@ if sport == "⚾ MLB Baseball":
                                 st.markdown("##### Suggested Starting Lineup")
                                 starter_cols = [
                                     "Lineup Slot", "Player", "Team", "Position",
-                                    "Projected PPR", "Weekly Score", "Start Score %",
-                                    "Trade Value", "Why"
+                                    "Projected PPR", "Adjusted Projected PPR", "Weekly Score", "Start Score %",
+                                    "Matchup Label", "Weekly Adjustment", "Trade Value", "Why"
                                 ]
                                 starter_cols = [c for c in starter_cols if c in starters_df.columns]
                                 st.dataframe(starters_df[starter_cols], use_container_width=True, hide_index=True)
@@ -3899,8 +4013,8 @@ if sport == "⚾ MLB Baseball":
 
                                 st.markdown("##### Drop Candidate Watchlist")
                                 drop_cols = [
-                                    "Player", "Team", "Position", "Projected PPR",
-                                    "Weekly Score", "Drop Risk %", "Drop Tier", "Why"
+                                    "Player", "Team", "Position", "Projected PPR", "Adjusted Projected PPR",
+                                    "Weekly Score", "Matchup Label", "Weekly Adjustment", "Drop Risk %", "Drop Tier", "Why"
                                 ]
                                 drop_cols = [c for c in drop_cols if c in drop_df.columns]
                                 st.dataframe(drop_df[drop_cols].head(15), use_container_width=True, hide_index=True)
@@ -3944,8 +4058,13 @@ if sport == "⚾ MLB Baseball":
                                 "Team",
                                 "Position",
                                 "Projected PPR",
+                                "Adjusted Projected PPR",
                                 "Floor",
+                                "Adjusted Floor",
                                 "Ceiling",
+                                "Adjusted Ceiling",
+                                "Matchup Label",
+                                "Weekly Adjustment",
                                 "Start Score %",
                                 "Confidence",
                                 "Trade Value",
@@ -4022,8 +4141,13 @@ if sport == "⚾ MLB Baseball":
                             "Position",
                             "Age",
                             "Projected PPR",
+                            "Adjusted Projected PPR",
                             "Floor",
+                            "Adjusted Floor",
                             "Ceiling",
+                            "Adjusted Ceiling",
+                            "Matchup Label",
+                            "Weekly Adjustment",
                             "Add Score %",
                             "Add Tier",
                             "Trade Value",
@@ -4070,6 +4194,12 @@ if sport == "⚾ MLB Baseball":
                             if selected_roster_df.empty:
                                 st.warning("No roster data available for this team.")
                             else:
+                                selected_roster_df = hag_apply_matchup_adjustments(
+                                    selected_roster_df,
+                                    opponent_team=opponent_team,
+                                    game_environment=game_environment,
+                                    manual_boost=manual_weekly_boost,
+                                )
                                 starters_df, bench_df = hag_optimize_lineup(selected_roster_df)
 
                                 if starters_df.empty:
