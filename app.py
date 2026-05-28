@@ -544,6 +544,99 @@ def hag_optimize_lineup(roster_df):
     return starters_df, bench_df
 
 
+def hag_build_drop_candidates(roster_df):
+    if roster_df is None or roster_df.empty:
+        return pd.DataFrame()
+
+    df = roster_df.copy()
+    df["Weekly Score"] = df.apply(hag_weekly_player_score, axis=1)
+
+    max_score = float(df["Weekly Score"].max()) if float(df["Weekly Score"].max()) > 0 else 1.0
+    df["Drop Risk %"] = df["Weekly Score"].apply(lambda x: int(round(100 - ((float(x) / max_score) * 100))))
+    df["Drop Tier"] = df["Drop Risk %"].apply(
+        lambda s: "High Drop Candidate" if s >= 70 else "Possible Drop" if s >= 50 else "Hold"
+    )
+    df["Why"] = df.apply(
+        lambda r: f"{r.get('Player')} has a {r.get('Drop Risk %')}% drop-risk score based on low weekly score relative to this roster.",
+        axis=1
+    )
+
+    return df.sort_values(["Drop Risk %", "Weekly Score"], ascending=[False, True])
+
+
+def hag_build_waiver_upgrade_matches(roster_df, waiver_df):
+    if roster_df is None or roster_df.empty or waiver_df is None or waiver_df.empty:
+        return pd.DataFrame()
+
+    roster = roster_df.copy()
+    waivers = waiver_df.copy()
+
+    roster["Weekly Score"] = roster.apply(hag_weekly_player_score, axis=1)
+    waivers["Weekly Score"] = waivers.apply(hag_weekly_player_score, axis=1)
+
+    drop_df = hag_build_drop_candidates(roster)
+    rows = []
+
+    for _, add_row in waivers.sort_values("Weekly Score", ascending=False).head(40).iterrows():
+        add_pos = add_row.get("Position")
+
+        comparable_drops = drop_df[
+            (drop_df["Position"] == add_pos)
+            | ((add_pos in ["RB", "WR", "TE"]) & (drop_df["Position"].isin(["RB", "WR", "TE"])))
+        ].head(6)
+
+        for _, drop_row in comparable_drops.iterrows():
+            gain = round(float(add_row.get("Weekly Score", 0)) - float(drop_row.get("Weekly Score", 0)), 2)
+
+            if gain <= 0:
+                continue
+
+            rows.append({
+                "Add Player": add_row.get("Player"),
+                "Add Pos": add_pos,
+                "Add Team": add_row.get("Team"),
+                "Drop Player": drop_row.get("Player"),
+                "Drop Pos": drop_row.get("Position"),
+                "Projected Gain": gain,
+                "Upgrade Score %": int(max(1, min(100, round(gain * 10)))),
+                "Why": f"Adds {add_row.get('Player')} over {drop_row.get('Player')} for a projected weekly gain of {gain}."
+            })
+
+    return pd.DataFrame(rows).sort_values("Projected Gain", ascending=False).head(25) if rows else pd.DataFrame()
+
+
+def hag_trade_impact_summary(team_roster_df, outgoing_players, incoming_players, all_players_df):
+    if team_roster_df is None or team_roster_df.empty:
+        return pd.DataFrame()
+
+    current_roster = team_roster_df.copy()
+    incoming_df = all_players_df[all_players_df["Player"].isin(incoming_players)].copy() if incoming_players else pd.DataFrame()
+
+    after_roster = current_roster[~current_roster["Player"].isin(outgoing_players)].copy()
+
+    if not incoming_df.empty:
+        after_roster = pd.concat([after_roster, incoming_df], ignore_index=True)
+
+    before_starters, _ = hag_optimize_lineup(current_roster)
+    after_starters, _ = hag_optimize_lineup(after_roster)
+
+    before_total = round(float(before_starters["Projected PPR"].sum()), 1) if not before_starters.empty and "Projected PPR" in before_starters.columns else 0
+    after_total = round(float(after_starters["Projected PPR"].sum()), 1) if not after_starters.empty and "Projected PPR" in after_starters.columns else 0
+
+    before_value = round(float(current_roster["Trade Value"].sum()), 1) if "Trade Value" in current_roster.columns else 0
+    after_value = round(float(after_roster["Trade Value"].sum()), 1) if "Trade Value" in after_roster.columns else 0
+
+    return pd.DataFrame([{
+        "Before Lineup PPR": before_total,
+        "After Lineup PPR": after_total,
+        "Weekly PPR Change": round(after_total - before_total, 1),
+        "Before Roster Value": before_value,
+        "After Roster Value": after_value,
+        "Roster Value Change": round(after_value - before_value, 1),
+        "Impact Label": "Positive" if after_total > before_total else "Neutral" if after_total == before_total else "Negative",
+    }])
+
+
 # ==========================================================
 # MASTER SPORT ROUTER
 # ==========================================================
@@ -3727,7 +3820,7 @@ if sport == "⚾ MLB Baseball":
 
                 weekly_tool = st.radio(
                     "Tool:",
-                    ["Start/Sit Helper", "Waiver Wire Engine", "Roster Optimizer"],
+                    ["Weekly Command Center", "Start/Sit Helper", "Waiver Wire Engine", "Roster Optimizer"],
                     horizontal=True,
                     key="nfl_weekly_tool_select",
                 )
@@ -3738,7 +3831,98 @@ if sport == "⚾ MLB Baseball":
                     player_pool_df = player_values_df.copy()
                     player_pool_df = player_pool_df[player_pool_df["Position"].isin(["QB", "RB", "WR", "TE", "K"])].copy()
 
-                    if weekly_tool == "Start/Sit Helper":
+                    if weekly_tool == "Weekly Command Center":
+                        st.markdown("#### 🧭 Weekly Command Center")
+                        st.caption("One-page weekly view: optimized lineup, top waiver upgrades, and drop candidates.")
+
+                        detail_rosters = st.session_state.get("nfl_detail_rosters", {})
+                        rostered_ids = st.session_state.get("nfl_rostered_player_ids", set())
+
+                        if not detail_rosters:
+                            st.info("Sync a Sleeper league first, then return here.")
+                        else:
+                            weekly_team = st.selectbox(
+                                "Select roster:",
+                                list(detail_rosters.keys()),
+                                key="weekly_command_team",
+                            )
+
+                            selected_roster_df = detail_rosters.get(weekly_team, pd.DataFrame())
+
+                            if selected_roster_df.empty:
+                                st.warning("No roster data available for this team.")
+                            else:
+                                starters_df, bench_df = hag_optimize_lineup(selected_roster_df)
+                                drop_df = hag_build_drop_candidates(selected_roster_df)
+
+                                waiver_pool = player_pool_df.copy()
+                                if rostered_ids:
+                                    waiver_pool = waiver_pool[
+                                        ~waiver_pool["Player ID"].astype(str).isin([str(x) for x in rostered_ids])
+                                    ]
+
+                                waiver_pool["Weekly Score"] = waiver_pool.apply(hag_weekly_player_score, axis=1)
+                                max_waiver_score = float(waiver_pool["Weekly Score"].max()) if not waiver_pool.empty and float(waiver_pool["Weekly Score"].max()) > 0 else 1.0
+                                waiver_pool["Add Score %"] = waiver_pool["Weekly Score"].apply(lambda x: int(round((float(x) / max_waiver_score) * 100)))
+                                waiver_pool["Why Add"] = waiver_pool.apply(hag_waiver_reason, axis=1)
+
+                                upgrades_df = hag_build_waiver_upgrade_matches(selected_roster_df, waiver_pool)
+
+                                w1, w2, w3 = st.columns(3)
+
+                                with w1:
+                                    projected_total = round(float(starters_df["Projected PPR"].sum()), 1) if not starters_df.empty and "Projected PPR" in starters_df.columns else 0
+                                    st.metric("Optimized Lineup", f"{projected_total} PPR")
+
+                                with w2:
+                                    top_add = waiver_pool.sort_values("Add Score %", ascending=False).iloc[0] if not waiver_pool.empty else None
+                                    st.metric("Top Waiver Add", top_add["Player"] if top_add is not None else "None")
+
+                                with w3:
+                                    top_drop = drop_df.iloc[0] if not drop_df.empty else None
+                                    st.metric("Top Drop Candidate", top_drop["Player"] if top_drop is not None else "None")
+
+                                st.markdown("##### Suggested Starting Lineup")
+                                starter_cols = [
+                                    "Lineup Slot", "Player", "Team", "Position",
+                                    "Projected PPR", "Weekly Score", "Start Score %",
+                                    "Trade Value", "Why"
+                                ]
+                                starter_cols = [c for c in starter_cols if c in starters_df.columns]
+                                st.dataframe(starters_df[starter_cols], use_container_width=True, hide_index=True)
+
+                                if not upgrades_df.empty:
+                                    st.markdown("##### Waiver Upgrade Matches")
+                                    st.dataframe(upgrades_df, use_container_width=True, hide_index=True)
+                                else:
+                                    st.info("No clear waiver upgrade found from the current pool.")
+
+                                st.markdown("##### Drop Candidate Watchlist")
+                                drop_cols = [
+                                    "Player", "Team", "Position", "Projected PPR",
+                                    "Weekly Score", "Drop Risk %", "Drop Tier", "Why"
+                                ]
+                                drop_cols = [c for c in drop_cols if c in drop_df.columns]
+                                st.dataframe(drop_df[drop_cols].head(15), use_container_width=True, hide_index=True)
+
+                                combined_report = []
+                                combined_report.append("STARTING LINEUP\n")
+                                combined_report.append(starters_df[starter_cols].to_csv(index=False))
+                                if not upgrades_df.empty:
+                                    combined_report.append("\nWAIVER UPGRADES\n")
+                                    combined_report.append(upgrades_df.to_csv(index=False))
+                                combined_report.append("\nDROP WATCHLIST\n")
+                                combined_report.append(drop_df[drop_cols].head(25).to_csv(index=False))
+
+                                st.download_button(
+                                    "⬇️ Download Weekly Command Center CSV",
+                                    data="".join(combined_report).encode("utf-8"),
+                                    file_name="nfl_weekly_command_center.csv",
+                                    mime="text/csv",
+                                    key="download_weekly_command_center_csv",
+                                )
+
+                    elif weekly_tool == "Start/Sit Helper":
                         st.markdown("#### ✅ Start/Sit Helper")
                         st.caption("Compare two or more players. Start Score % uses projected PPR, floor, ceiling, and selected redraft/dynasty value mode.")
 
@@ -5658,6 +5842,46 @@ elif sport == "🏈 NFL Football":
                     st.success(f"Team B has the edge. Fairness: {fairness_pct}% ({fairness_label}).")
                 else:
                     st.info(f"This trade is balanced. Fairness: {fairness_pct}% ({fairness_label}).")
+
+                detail_rosters = st.session_state.get("nfl_detail_rosters", {})
+                if detail_rosters:
+                    st.markdown("#### Roster Impact Simulator")
+                    impact_team = st.selectbox(
+                        "Which synced roster is making this trade?",
+                        list(detail_rosters.keys()),
+                        key="trade_impact_team_select",
+                    )
+
+                    perspective = st.radio(
+                        "This roster receives:",
+                        ["Team A side", "Team B side"],
+                        horizontal=True,
+                        key="trade_impact_perspective",
+                    )
+
+                    if perspective == "Team A side":
+                        outgoing_players = team_b
+                        incoming_players = team_a
+                    else:
+                        outgoing_players = team_a
+                        incoming_players = team_b
+
+                    impact_df = hag_trade_impact_summary(
+                        detail_rosters.get(impact_team, pd.DataFrame()),
+                        outgoing_players,
+                        incoming_players,
+                        nfl_df,
+                    )
+
+                    if not impact_df.empty:
+                        st.dataframe(impact_df, use_container_width=True, hide_index=True)
+                        impact = impact_df.iloc[0]
+                        if impact["Weekly PPR Change"] > 0:
+                            st.success(f"Positive weekly impact: +{impact['Weekly PPR Change']} projected PPR.")
+                        elif impact["Weekly PPR Change"] < 0:
+                            st.warning(f"Negative weekly impact: {impact['Weekly PPR Change']} projected PPR.")
+                        else:
+                            st.info("Neutral weekly lineup impact.")
 
         st.stop()
         if nfl_page == "🏈 NFL Simulation Engine":
