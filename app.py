@@ -122,6 +122,147 @@ requests.Session.request = custom_request
 
 st.set_page_config(page_title=APP_PAGE_TITLE, layout="wide")
 
+
+# ==========================================================
+# NFL UI / ANALYTICS HELPERS
+# ==========================================================
+NFL_FANTASY_RELEVANT_NAMES = {
+    "Josh Allen","Lamar Jackson","Patrick Mahomes","Jalen Hurts","Joe Burrow","C.J. Stroud",
+    "Dak Prescott","Anthony Richardson","Justin Herbert","Brock Purdy","Jordan Love","Kyler Murray",
+    "Caleb Williams","Jayden Daniels","Drake Maye","Bo Nix","Trevor Lawrence","Tua Tagovailoa",
+    "Bijan Robinson","Christian McCaffrey","Saquon Barkley","Breece Hall","Jahmyr Gibbs","Jonathan Taylor",
+    "De'Von Achane","Derrick Henry","Kyren Williams","Josh Jacobs","Kenneth Walker","James Cook",
+    "Alvin Kamara","Bucky Irving","Ashton Jeanty","Omarion Hampton","Cam Skattebo","RJ Harvey",
+    "Justin Jefferson","Ja'Marr Chase","CeeDee Lamb","Amon-Ra St. Brown","Puka Nacua","Malik Nabers",
+    "Nico Collins","A.J. Brown","Garrett Wilson","Brian Thomas","Drake London","Marvin Harrison",
+    "Mike Evans","Davante Adams","Tee Higgins","Rashee Rice","Ladd McConkey","Xavier Worthy",
+    "Brock Bowers","Trey McBride","George Kittle","Sam LaPorta","Travis Kelce","Mark Andrews",
+    "T.J. Hockenson","David Njoku","Evan Engram","Dalton Kincaid","Taysom Hill",
+    "Brandon Aubrey","Justin Tucker","Jake Elliott","Harrison Butker","Cameron Dicker","Ka'imi Fairbairn",
+    "Eddy Pineiro","Younghoe Koo","Tyler Bass","Jake Moody"
+}
+
+def nfl_clean_display_df(df, max_rows=80):
+    if df is None or not isinstance(df, pd.DataFrame):
+        return df
+
+    out = df.copy()
+
+    for bad_col in ["Headshot URL", "headshot_url", "HeadshotURL"]:
+        if bad_col in out.columns:
+            out = out.drop(columns=[bad_col])
+
+    if "Team" in out.columns:
+        out["Team"] = out["Team"].fillna("FA").replace({None: "FA", "None": "FA", "nan": "FA"})
+
+    if "Player" in out.columns and "Position" in out.columns:
+        relevant_positions = ["QB", "RB", "WR", "TE", "K"]
+        out = out[out["Position"].isin(relevant_positions)]
+
+        if "Status" in out.columns:
+            out = out[out["Status"].fillna("Active").astype(str).isin(["Active", "Questionable", "Doubtful", "Out", "IR", "PUP"])]
+
+        # Keep obvious fantasy players, top values, and all rostered/synced guys.
+        if "Trade Value" in out.columns:
+            out = out.sort_values("Trade Value", ascending=False)
+        elif "Dynasty Value" in out.columns:
+            out = out.sort_values("Dynasty Value", ascending=False)
+        elif "Redraft Value" in out.columns:
+            out = out.sort_values("Redraft Value", ascending=False)
+
+        out = out.head(max_rows)
+
+    return out
+
+
+def nfl_percentile_bar(label, value, max_value=100):
+    pct = int(max(1, min(99, (float(value) / max_value) * 100 if max_value else 1)))
+
+    if pct >= 85:
+        color = "#22c55e"
+    elif pct >= 70:
+        color = "#84cc16"
+    elif pct >= 50:
+        color = "#facc15"
+    else:
+        color = "#ef4444"
+
+    st.markdown(f"**{label}: {pct}th percentile**")
+    st.markdown(
+        f"""
+        <div style="background-color:#1f2937;border-radius:8px;height:14px;width:100%;margin-bottom:14px;">
+            <div style="background-color:{color};width:{pct}%;height:14px;border-radius:8px;"></div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def render_nfl_player_card(player, info):
+    name = player or "Unknown"
+    info = info or {}
+
+    player_id = str(info.get("player_id") or info.get("Player ID") or info.get("id") or "")
+    headshot = info.get("headshot_url") or info.get("Headshot URL") or (f"https://sleepercdn.com/content/nfl/players/{player_id}.jpg" if player_id else "")
+    team = info.get("team") or info.get("Team") or "FA"
+    pos = info.get("position") or info.get("Position") or "N/A"
+    age = info.get("age") or info.get("Age") or "N/A"
+    value = info.get("Trade Value") or info.get("trade_value") or info.get("Dynasty Value") or info.get("Redraft Value") or "N/A"
+    status = info.get("status") or info.get("Status") or "Active"
+
+    c1, c2 = st.columns([0.45, 2.2])
+    with c1:
+        if headshot:
+            st.image(headshot, width=72)
+    with c2:
+        st.markdown(f"**{name}**")
+        st.caption(f"{team} • {pos} • Age {age} • {status}")
+        st.caption(f"Value: {value}")
+
+
+def build_exact_trade_suggestions(power_df, player_df):
+    if power_df is None or player_df is None or power_df.empty or player_df.empty:
+        return pd.DataFrame()
+
+    pdf = nfl_clean_display_df(player_df, max_rows=300)
+    rows = []
+
+    if "Team/User" not in power_df.columns or "Weakest Position" not in power_df.columns:
+        return pd.DataFrame()
+
+    for _, team_row in power_df.iterrows():
+        need_team = team_row.get("Team/User")
+        need_pos = team_row.get("Weakest Position")
+
+        targets = pdf[pdf.get("Position", pd.Series(dtype=str)).eq(need_pos)].head(8)
+
+        for _, target in targets.iterrows():
+            target_name = target.get("Player")
+            target_value = float(target.get("Trade Value", target.get("Dynasty Value", target.get("Redraft Value", 0))) or 0)
+
+            offer_pool = pdf[
+                (pdf.get("Position", pd.Series(dtype=str)) != need_pos)
+                & (pdf.get("Trade Value", pdf.get("Dynasty Value", pdf.get("Redraft Value", 0))).astype(float).between(max(0, target_value - 3), target_value + 3))
+            ].head(5)
+
+            for _, offer in offer_pool.iterrows():
+                offer_name = offer.get("Player")
+                offer_value = float(offer.get("Trade Value", offer.get("Dynasty Value", offer.get("Redraft Value", 0))) or 0)
+                fairness = max(0, 100 - abs(target_value - offer_value) * 10)
+
+                rows.append({
+                    "Team Needing Help": need_team,
+                    "Need": need_pos,
+                    "Offer": offer_name,
+                    "Target": target_name,
+                    "Offer Value": round(offer_value, 1),
+                    "Target Value": round(target_value, 1),
+                    "Fairness Score": round(fairness, 0),
+                    "Impact": f"Adds {need_pos} help while keeping value within {abs(target_value - offer_value):.1f} pts."
+                })
+
+    return pd.DataFrame(rows).drop_duplicates().head(25)
+
 # ==========================================================
 # MASTER SPORT ROUTER
 # ==========================================================
@@ -4543,6 +4684,25 @@ elif sport == "🏈 NFL Football":
                                     file_name="nfl_trade_partner_targets.csv",
                                     mime="text/csv"
                                 )
+
+                                st.markdown("### 🎯 Exact Trade Suggestions")
+                                exact_trade_df = build_exact_trade_suggestions(power_df, filtered_df if "filtered_df" in locals() else pd.DataFrame())
+
+                                if not exact_trade_df.empty:
+                                    st.dataframe(
+                                        exact_trade_df,
+                                        use_container_width=True,
+                                        hide_index=True
+                                    )
+
+                                    st.download_button(
+                                        "⬇️ Export Exact Trade Suggestions CSV",
+                                        data=exact_trade_df.to_csv(index=False).encode("utf-8"),
+                                        file_name="nfl_exact_trade_suggestions.csv",
+                                        mime="text/csv"
+                                    )
+                                else:
+                                    st.info("Exact trade suggestions will appear after player values and roster rankings are loaded.")
 
                     else:
                         st.warning("No 2025 Sleeper leagues found for this username.")
