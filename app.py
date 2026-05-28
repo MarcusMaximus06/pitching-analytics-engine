@@ -2602,6 +2602,9 @@ if sport == "⚾ MLB Baseball":
                     ].set_index("Player")
                     st.bar_chart(gap_chart_df)
 
+                    if "Headshot URL" in display_df.columns:
+                        display_df = display_df.drop(columns=["Headshot URL"])
+
                     st.dataframe(
                         display_df[
                             [
@@ -4007,7 +4010,7 @@ elif sport == "🏈 NFL Football":
                         continue
 
                     name = f"{pdata.get('first_name', '')} {pdata.get('last_name', '')}".strip()
-                    team = pdata.get("team", "FA")
+                    team = pdata.get("team") or "FA"
                     age = pdata.get("age", None)
 
                     players[str(pid)] = {
