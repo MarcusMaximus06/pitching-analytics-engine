@@ -240,10 +240,11 @@ def hag_fairness_label(score):
 
 
 def hag_value_scale_explainer():
-    with st.expander("ℹ️ How to read Hag Labs value scores"):
+    with st.expander("ℹ️ How to read Hag Labs scores"):
         st.markdown("""
-        **Raw model values** are still used internally, but the app also converts them into a simpler **0–100 score**.
+        **Hag Labs now shows fantasy values as 0–100 scores whenever possible.**
 
+        **Player/roster scores**
         - **90–100:** Elite
         - **80–89:** Strong Starter
         - **70–79:** Starter
@@ -251,7 +252,19 @@ def hag_value_scale_explainer():
         - **45–59:** Bench Value
         - **Below 45:** Low Value
 
-        For trades, **Fairness Score** shows how close the two sides are in value:
+        **Roster Strength %**
+        - Shows how strong a roster is compared with the strongest synced team.
+        - Example: **82%** means that roster is about 82% as strong as the top roster in that league view.
+
+        **Position Strength %**
+        - Shows how strong each position group is compared with the strongest position group on that selected team.
+        - Example: **RB 100%** means RB is that team's strongest group. **TE 38%** means TE is much weaker.
+
+        **Partner Fit %**
+        - Shows how strong a possible trade partner is at the position you need.
+        - Example: **92% Partner Fit** means that partner is one of the better teams to target for that position.
+
+        **Fairness Score**
         - **95–100:** Very Fair
         - **85–94:** Fair
         - **70–84:** Slight Edge
@@ -3399,17 +3412,30 @@ if sport == "⚾ MLB Baseball":
                                             ascending=False,
                                         ).head(25)
 
-                                        st.session_state["nfl_rec_df"] = rec_df
+                                        max_partner_strength = float(rec_df["Partner Strength"].max()) if not rec_df.empty and float(rec_df["Partner Strength"].max()) > 0 else 1.0
+                                        rec_df["Partner Fit %"] = rec_df["Partner Strength"].apply(
+                                            lambda x: int(round((float(x) / max_partner_strength) * 100))
+                                        )
+                                        rec_df["Partner Fit Label"] = rec_df["Partner Fit %"].apply(hag_value_label)
+                                        rec_df["What This Means"] = rec_df.apply(
+                                            lambda r: f"{r['Suggested Partner']} is a {r['Partner Fit %']}% fit because their {r['Weak Position']} group is strong relative to the other possible partners.",
+                                            axis=1
+                                        )
 
+                                        display_rec_df = rec_df.drop(columns=["Partner Strength"])
+
+                                        st.session_state["nfl_rec_df"] = display_rec_df
+
+                                        st.caption("Partner Fit % replaces raw Partner Strength. It compares trade partners for the position your team needs.")
                                         st.dataframe(
-                                            rec_df,
+                                            display_rec_df,
                                             use_container_width=True,
                                             hide_index=True,
                                         )
 
                                         st.download_button(
                                             "⬇️ Download Trade Partner Suggestions CSV",
-                                            data=rec_df.to_csv(index=False).encode("utf-8"),
+                                            data=(display_rec_df if "display_rec_df" in locals() else rec_df).to_csv(index=False).encode("utf-8"),
                                             file_name=f"{selected_league_name}_trade_partner_suggestions.csv",
                                             mime="text/csv",
                                             key="download_trade_partner_suggestions_csv",
@@ -3492,6 +3518,23 @@ if sport == "⚾ MLB Baseball":
                                             ascending=[True, True, False],
                                         ).head(50)
 
+                                        if "Target Value" in player_rec_df.columns and "Asset Value" in player_rec_df.columns:
+                                            max_trade_value = max(
+                                                float(player_rec_df["Target Value"].max()) if float(player_rec_df["Target Value"].max()) > 0 else 1.0,
+                                                float(player_rec_df["Asset Value"].max()) if float(player_rec_df["Asset Value"].max()) > 0 else 1.0,
+                                            )
+                                            player_rec_df["Target Score %"] = player_rec_df["Target Value"].apply(lambda x: int(round((float(x) / max_trade_value) * 100)))
+                                            player_rec_df["Asset Score %"] = player_rec_df["Asset Value"].apply(lambda x: int(round((float(x) / max_trade_value) * 100)))
+                                            player_rec_df["Trade Fairness %"] = player_rec_df.apply(
+                                                lambda r: hag_fairness_score(r.get("Asset Value", 0), r.get("Target Value", 0)),
+                                                axis=1
+                                            )
+                                            player_rec_df["Fairness Label"] = player_rec_df["Trade Fairness %"].apply(hag_fairness_label)
+                                            player_rec_df["Plain English"] = player_rec_df.apply(
+                                                lambda r: f"Target is {r['Target Score %']}% value; offered asset is {r['Asset Score %']}%; trade fairness is {r['Trade Fairness %']}% ({r['Fairness Label']}).",
+                                                axis=1
+                                            )
+
                                         st.session_state["nfl_player_rec_df"] = player_rec_df
 
                                         st.dataframe(
@@ -3527,7 +3570,7 @@ if sport == "⚾ MLB Baseball":
                     ai_col1, ai_col2, ai_col3 = st.columns(3)
 
                     with ai_col1:
-                        st.metric("Top Team", best_team["Team/User"], best_team["Roster Value"])
+                        st.metric("Top Team", best_team["Team/User"], f"{best_team.get('Roster Strength %', 100)}% strength")
 
                     with ai_col2:
                         st.metric("Lowest Roster Value", worst_team["Team/User"], worst_team["Roster Value"])
@@ -4720,12 +4763,22 @@ elif sport == "🏈 NFL Football":
                             power_df = pd.DataFrame(power_rows)
                             power_df = power_df.sort_values("Roster Value", ascending=False)
 
+                            max_roster_value = float(power_df["Roster Value"].max()) if not power_df.empty and float(power_df["Roster Value"].max()) > 0 else 1.0
+                            power_df["Roster Strength %"] = power_df["Roster Value"].apply(lambda x: int(round((float(x) / max_roster_value) * 100)))
+
+                            for _pos_col in ["QB Value", "RB Value", "WR Value", "TE Value", "K Value"]:
+                                if _pos_col in power_df.columns:
+                                    _max_pos = float(power_df[_pos_col].max()) if float(power_df[_pos_col].max()) > 0 else 1.0
+                                    power_df[_pos_col.replace(" Value", " Strength %")] = power_df[_pos_col].apply(
+                                        lambda x: int(round((float(x) / _max_pos) * 100))
+                                    )
+
                             st.markdown("### 📊 Power Rankings")
-                            st.caption("Ranks every synced Sleeper roster using the currently selected Redraft/Dynasty value mode.")
+                            st.caption("Roster Strength % compares each synced roster to the strongest roster in this league view. Raw value columns are kept for model detail.")
 
                             power_df = hag_add_scaled_columns(
                                 power_df,
-                                raw_columns=["Total Value", "QB Value", "RB Value", "WR Value", "TE Value", "K Value"]
+                                raw_columns=["Roster Value", "QB Value", "RB Value", "WR Value", "TE Value", "K Value"]
                             )
 
                             st.dataframe(
@@ -4741,17 +4794,19 @@ elif sport == "🏈 NFL Football":
                                 mime="text/csv"
                             )
 
-                            st.markdown("### 📈 Roster Value Chart")
+                            st.markdown("### 📈 Roster Strength Chart")
+                            st.caption("Shows each team as a percentage of the top synced roster. The best roster is 100%.")
                             fig_power = go.Figure()
                             fig_power.add_trace(go.Bar(
                                 x=power_df["Team/User"],
-                                y=power_df["Roster Value"],
-                                name="Roster Value"
+                                y=power_df["Roster Strength %"],
+                                name="Roster Strength %"
                             ))
                             fig_power.update_layout(
                                 height=360,
                                 xaxis_title="Team",
-                                yaxis_title="Roster Value"
+                                yaxis_title="Roster Strength %",
+                                yaxis=dict(range=[0, 105], ticksuffix="%")
                             )
                             st.plotly_chart(fig_power, use_container_width=True)
 
@@ -4762,24 +4817,33 @@ elif sport == "🏈 NFL Football":
                                 key="nfl_position_strength_team"
                             )
                             strength_row = power_df[power_df["Team/User"] == strength_team].iloc[0]
+                            strength_raw_values = [
+                                float(strength_row["QB Value"]),
+                                float(strength_row["RB Value"]),
+                                float(strength_row["WR Value"]),
+                                float(strength_row["TE Value"]),
+                                float(strength_row.get("K Value", 0)),
+                            ]
+                            strength_max = max(strength_raw_values) if max(strength_raw_values) > 0 else 1.0
                             strength_df = pd.DataFrame({
                                 "Position": ["QB", "RB", "WR", "TE", "K"],
-                                "Value": [
-                                    strength_row["QB Value"],
-                                    strength_row["RB Value"],
-                                    strength_row["WR Value"],
-                                    strength_row["TE Value"],
-                                    strength_row.get("K Value", 0),
-                                ]
+                                "Raw Value": strength_raw_values,
+                                "Position Strength %": [int(round((v / strength_max) * 100)) for v in strength_raw_values],
                             })
+                            st.caption("Position Strength % compares each position group to this team's strongest position group.")
                             fig_strength = go.Figure()
                             fig_strength.add_trace(go.Bar(
                                 x=strength_df["Position"],
-                                y=strength_df["Value"],
-                                name="Position Value"
+                                y=strength_df["Position Strength %"],
+                                name="Position Strength %"
                             ))
-                            fig_strength.update_layout(height=320)
+                            fig_strength.update_layout(
+                                height=320,
+                                yaxis_title="Position Strength %",
+                                yaxis=dict(range=[0, 105], ticksuffix="%")
+                            )
                             st.plotly_chart(fig_strength, use_container_width=True)
+                            st.dataframe(strength_df, use_container_width=True, hide_index=True)
 
 
                             recommendations = []
