@@ -416,6 +416,134 @@ def build_exact_trade_suggestions(power_df, player_df):
 
     return pd.DataFrame(rows).drop_duplicates().head(25)
 
+
+def hag_weekly_player_score(row):
+    try:
+        projected = float(row.get("Projected PPR", 0) or 0)
+    except Exception:
+        projected = 0.0
+
+    try:
+        floor = float(row.get("Floor", projected * 0.65) or 0)
+    except Exception:
+        floor = projected * 0.65
+
+    try:
+        ceiling = float(row.get("Ceiling", projected * 1.35) or 0)
+    except Exception:
+        ceiling = projected * 1.35
+
+    try:
+        trade_value = float(row.get("Trade Value", 0) or 0)
+    except Exception:
+        trade_value = 0.0
+
+    weekly_score = (projected * 0.55) + (floor * 0.20) + (ceiling * 0.15) + (trade_value * 0.10)
+    return round(weekly_score, 2)
+
+
+def hag_weekly_confidence(row):
+    try:
+        floor = float(row.get("Floor", 0) or 0)
+        ceiling = float(row.get("Ceiling", 0) or 0)
+        projected = float(row.get("Projected PPR", 0) or 0)
+    except Exception:
+        return "Medium"
+
+    spread = ceiling - floor
+
+    if projected <= 0:
+        return "Low"
+    if spread <= projected * 0.55:
+        return "High"
+    if spread <= projected * 0.85:
+        return "Medium"
+    return "Low"
+
+
+def hag_start_sit_reason(row):
+    player = row.get("Player", "Player")
+    pos = row.get("Position", "")
+    projected = row.get("Projected PPR", 0)
+    floor = row.get("Floor", 0)
+    ceiling = row.get("Ceiling", 0)
+    confidence = row.get("Confidence", "Medium")
+    return f"{player} is the stronger {pos} option with {projected} projected PPR, {floor} floor, {ceiling} ceiling, and {confidence} confidence."
+
+
+def hag_build_start_sit_df(player_rows):
+    if player_rows is None or player_rows.empty:
+        return pd.DataFrame()
+
+    out = player_rows.copy()
+    out["Weekly Score"] = out.apply(hag_weekly_player_score, axis=1)
+
+    max_score = float(out["Weekly Score"].max()) if float(out["Weekly Score"].max()) > 0 else 1.0
+    out["Start Score %"] = out["Weekly Score"].apply(lambda x: int(round((float(x) / max_score) * 100)))
+    out["Confidence"] = out.apply(hag_weekly_confidence, axis=1)
+    out["Recommendation"] = out["Start Score %"].apply(
+        lambda s: "Start" if s >= 85 else "Lean Start" if s >= 70 else "Bench / Depth"
+    )
+    out["Why"] = out.apply(hag_start_sit_reason, axis=1)
+    return out.sort_values("Start Score %", ascending=False)
+
+
+def hag_waiver_reason(row):
+    pos = row.get("Position", "")
+    score = row.get("Add Score %", 0)
+    projected = row.get("Projected PPR", 0)
+    tier = row.get("Value Tier", row.get("Tier", ""))
+    status = row.get("Status", "Active")
+    return f"{score}% add score: {pos} with {projected} projected PPR, {tier} value profile, and {status} status."
+
+
+def hag_optimize_lineup(roster_df):
+    if roster_df is None or roster_df.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    df = roster_df.copy()
+    if "Weekly Score" not in df.columns:
+        df["Weekly Score"] = df.apply(hag_weekly_player_score, axis=1)
+
+    starters = []
+    used_idx = set()
+
+    lineup_slots = [
+        ("QB", ["QB"], 1),
+        ("RB", ["RB"], 2),
+        ("WR", ["WR"], 2),
+        ("TE", ["TE"], 1),
+        ("FLEX", ["RB", "WR", "TE"], 1),
+        ("K", ["K"], 1),
+    ]
+
+    for slot, positions, count in lineup_slots:
+        pool = df[
+            df["Position"].isin(positions)
+            & ~df.index.isin(used_idx)
+        ].sort_values("Weekly Score", ascending=False)
+
+        for idx, row in pool.head(count).iterrows():
+            row_dict = row.to_dict()
+            row_dict["Lineup Slot"] = slot
+            row_dict["Start Score %"] = hag_value_score(row_dict.get("Weekly Score", 0), max(float(df["Weekly Score"].max()), 1))
+            row_dict["Why"] = f"Best available {slot} option by weekly score."
+            starters.append(row_dict)
+            used_idx.add(idx)
+
+    starters_df = pd.DataFrame(starters)
+    bench_df = df[~df.index.isin(used_idx)].copy().sort_values("Weekly Score", ascending=False)
+
+    if not bench_df.empty:
+        bench_df["Lineup Slot"] = "Bench"
+        bench_df["Start Score %"] = bench_df["Weekly Score"].apply(
+            lambda x: hag_value_score(x, max(float(df["Weekly Score"].max()), 1))
+        )
+        bench_df["Why"] = "Bench option ranked by weekly score."
+
+    return starters_df, bench_df
+
+
 # ==========================================================
 # MASTER SPORT ROUTER
 # ==========================================================
@@ -2763,7 +2891,7 @@ if sport == "⚾ MLB Baseball":
                     "⚖️ Trade Builder V2",
                     "🔗 Sleeper League Sync",
                     "🧠 League AI",
-                    "🧲 Waiver Finder",
+                    "🧰 Weekly Tools",
                     "💾 Saved Reports",
                 ]
             )
@@ -3595,69 +3723,225 @@ if sport == "⚾ MLB Baseball":
                             st.info(f"{team}: Middle pack. Needs a direction. Weakest room: {weakness}. Current value: {value}.")
 
             with nfl_tab6:
-                st.markdown("### 🧲 Waiver Wire Finder")
+                st.markdown("### 🧰 Weekly Fantasy Tools")
+
+                weekly_tool = st.radio(
+                    "Tool:",
+                    ["Start/Sit Helper", "Waiver Wire Engine", "Roster Optimizer"],
+                    horizontal=True,
+                    key="nfl_weekly_tool_select",
+                )
 
                 if player_values_df.empty:
                     st.warning("Player values are unavailable.")
                 else:
-                    rostered_ids = st.session_state.get("nfl_rostered_player_ids", set())
+                    player_pool_df = player_values_df.copy()
+                    player_pool_df = player_pool_df[player_pool_df["Position"].isin(["QB", "RB", "WR", "TE", "K"])].copy()
 
-                    waiver_df = player_values_df.copy()
+                    if weekly_tool == "Start/Sit Helper":
+                        st.markdown("#### ✅ Start/Sit Helper")
+                        st.caption("Compare two or more players. Start Score % uses projected PPR, floor, ceiling, and selected redraft/dynasty value mode.")
 
-                    if rostered_ids:
-                        waiver_df = waiver_df[
-                            ~waiver_df["Player ID"].astype(str).isin([str(x) for x in rostered_ids])
-                        ]
+                        start_sit_players = sorted(player_pool_df["Player"].dropna().unique().tolist())
 
-                    waiver_pos = st.selectbox(
-                        "Waiver Position:",
-                        ["All", "QB", "RB", "WR", "TE", "K"],
-                        key="waiver_position_filter",
-                    )
+                        compare_players = st.multiselect(
+                            "Select players to compare:",
+                            start_sit_players,
+                            key="weekly_start_sit_players",
+                        )
 
-                    if waiver_pos != "All":
-                        waiver_df = waiver_df[waiver_df["Position"] == waiver_pos]
+                        if compare_players:
+                            compare_df = player_pool_df[player_pool_df["Player"].isin(compare_players)].copy()
+                            start_sit_df = hag_build_start_sit_df(compare_df)
 
-                    min_value = st.slider(
-                        "Minimum Trade Value:",
-                        0.0,
-                        25.0,
-                        5.0,
-                        0.5,
-                        key="waiver_min_value",
-                    )
+                            display_cols = [
+                                "Recommendation",
+                                "Player",
+                                "Team",
+                                "Position",
+                                "Projected PPR",
+                                "Floor",
+                                "Ceiling",
+                                "Start Score %",
+                                "Confidence",
+                                "Trade Value",
+                                "Why",
+                            ]
 
-                    waiver_df = waiver_df[waiver_df["Trade Value"] >= min_value]
+                            display_cols = [c for c in display_cols if c in start_sit_df.columns]
 
-                    st.caption("Shows players not found on synced Sleeper rosters. Sync a league first for best results.")
+                            best_row = start_sit_df.iloc[0]
+                            st.success(f"Start: {best_row['Player']} — {best_row['Start Score %']}% start score.")
 
-                    waiver_display = waiver_df[
-                        [
+                            st.dataframe(
+                                start_sit_df[display_cols],
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+
+                            st.download_button(
+                                "⬇️ Download Start/Sit CSV",
+                                data=start_sit_df[display_cols].to_csv(index=False).encode("utf-8"),
+                                file_name="nfl_start_sit_helper.csv",
+                                mime="text/csv",
+                                key="download_start_sit_csv",
+                            )
+                        else:
+                            st.info("Select at least two players to compare.")
+
+                    elif weekly_tool == "Waiver Wire Engine":
+                        st.markdown("#### 🧲 Waiver Wire Engine")
+
+                        rostered_ids = st.session_state.get("nfl_rostered_player_ids", set())
+
+                        waiver_df = player_pool_df.copy()
+
+                        if rostered_ids:
+                            waiver_df = waiver_df[
+                                ~waiver_df["Player ID"].astype(str).isin([str(x) for x in rostered_ids])
+                            ]
+
+                        waiver_pos = st.selectbox(
+                            "Waiver Position:",
+                            ["All", "QB", "RB", "WR", "TE", "K"],
+                            key="waiver_position_filter",
+                        )
+
+                        if waiver_pos != "All":
+                            waiver_df = waiver_df[waiver_df["Position"] == waiver_pos]
+
+                        min_add_score = st.slider(
+                            "Minimum Add Score %",
+                            0,
+                            100,
+                            45,
+                            5,
+                            key="waiver_min_add_score",
+                        )
+
+                        waiver_df["Weekly Score"] = waiver_df.apply(hag_weekly_player_score, axis=1)
+                        max_add_score = float(waiver_df["Weekly Score"].max()) if not waiver_df.empty and float(waiver_df["Weekly Score"].max()) > 0 else 1.0
+                        waiver_df["Add Score %"] = waiver_df["Weekly Score"].apply(lambda x: int(round((float(x) / max_add_score) * 100)))
+                        waiver_df["Add Tier"] = waiver_df["Add Score %"].apply(hag_value_label)
+                        waiver_df["Why Add"] = waiver_df.apply(hag_waiver_reason, axis=1)
+
+                        waiver_df = waiver_df[waiver_df["Add Score %"] >= min_add_score].sort_values(
+                            "Add Score %",
+                            ascending=False,
+                        )
+
+                        st.caption("Players already found on synced Sleeper rosters are removed after league sync. Add Score % is normalized to the best available waiver option in the current filter.")
+
+                        waiver_display_cols = [
                             "Player",
                             "Team",
                             "Position",
                             "Age",
                             "Projected PPR",
+                            "Floor",
+                            "Ceiling",
+                            "Add Score %",
+                            "Add Tier",
                             "Trade Value",
                             "Value Tier",
                             "Dynasty Tag",
                             "Status",
+                            "Why Add",
                         ]
-                    ].head(100)
 
-                    st.dataframe(
-                        waiver_display,
-                        use_container_width=True,
-                        hide_index=True,
-                    )
+                        waiver_display_cols = [c for c in waiver_display_cols if c in waiver_df.columns]
+                        waiver_display = waiver_df[waiver_display_cols].head(100)
 
-                    st.download_button(
-                        "⬇️ Download Waiver Finder CSV",
-                        data=waiver_display.to_csv(index=False).encode("utf-8"),
-                        file_name="nfl_waiver_finder.csv",
-                        mime="text/csv",
-                        key="download_waiver_finder_csv",
-                    )
+                        st.dataframe(
+                            waiver_display,
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                        st.download_button(
+                            "⬇️ Download Waiver Engine CSV",
+                            data=waiver_display.to_csv(index=False).encode("utf-8"),
+                            file_name="nfl_waiver_engine.csv",
+                            mime="text/csv",
+                            key="download_waiver_engine_csv",
+                        )
+
+                    elif weekly_tool == "Roster Optimizer":
+                        st.markdown("#### 🧠 Roster Optimizer")
+                        st.caption("Builds a suggested weekly lineup from a synced Sleeper roster: QB, 2 RB, 2 WR, TE, FLEX, K.")
+
+                        detail_rosters = st.session_state.get("nfl_detail_rosters", {})
+
+                        if not detail_rosters:
+                            st.info("Sync a Sleeper league first, then return here.")
+                        else:
+                            optimizer_team = st.selectbox(
+                                "Select roster:",
+                                list(detail_rosters.keys()),
+                                key="weekly_optimizer_team",
+                            )
+
+                            selected_roster_df = detail_rosters.get(optimizer_team, pd.DataFrame())
+
+                            if selected_roster_df.empty:
+                                st.warning("No roster data available for this team.")
+                            else:
+                                starters_df, bench_df = hag_optimize_lineup(selected_roster_df)
+
+                                if starters_df.empty:
+                                    st.info("Could not build a lineup from this roster.")
+                                else:
+                                    starter_cols = [
+                                        "Lineup Slot",
+                                        "Player",
+                                        "Team",
+                                        "Position",
+                                        "Projected PPR",
+                                        "Floor",
+                                        "Ceiling",
+                                        "Weekly Score",
+                                        "Start Score %",
+                                        "Trade Value",
+                                        "Why",
+                                    ]
+                                    starter_cols = [c for c in starter_cols if c in starters_df.columns]
+
+                                    projected_total = round(float(starters_df["Projected PPR"].sum()), 1) if "Projected PPR" in starters_df.columns else 0
+
+                                    st.metric("Projected Lineup Total", f"{projected_total} PPR")
+                                    st.dataframe(
+                                        starters_df[starter_cols],
+                                        use_container_width=True,
+                                        hide_index=True,
+                                    )
+
+                                    st.download_button(
+                                        "⬇️ Download Optimized Lineup CSV",
+                                        data=starters_df[starter_cols].to_csv(index=False).encode("utf-8"),
+                                        file_name="nfl_optimized_lineup.csv",
+                                        mime="text/csv",
+                                        key="download_optimized_lineup_csv",
+                                    )
+
+                                    if not bench_df.empty:
+                                        st.markdown("#### Bench Ranking")
+                                        bench_cols = [
+                                            "Lineup Slot",
+                                            "Player",
+                                            "Team",
+                                            "Position",
+                                            "Projected PPR",
+                                            "Weekly Score",
+                                            "Start Score %",
+                                            "Trade Value",
+                                            "Why",
+                                        ]
+                                        bench_cols = [c for c in bench_cols if c in bench_df.columns]
+                                        st.dataframe(
+                                            bench_df[bench_cols].head(25),
+                                            use_container_width=True,
+                                            hide_index=True,
+                                        )
 
             with nfl_tab7:
                 st.markdown("### 💾 Saved Reports")
@@ -5334,34 +5618,46 @@ elif sport == "🏈 NFL Football":
                     "Value Gap", "Dynasty Tag", "Tier"
                 ]
 
+                max_side_value = max(float(a_total), float(b_total), 1.0)
+                a_score = hag_value_score(a_total, max_side_value)
+                b_score = hag_value_score(b_total, max_side_value)
+                fairness_pct = hag_fairness_score(a_total, b_total)
+                fairness_label = hag_fairness_label(fairness_pct)
+
                 with r1:
-                    st.metric("Team A Receives", f"{a_total:.1f} Value")
+                    st.metric("Team A Receives", f"{a_score}/100")
+                    st.caption(f"Raw model value: {a_total:.1f}")
                     if not a_df.empty:
-                        st.dataframe(a_df[trade_cols], hide_index=True)
+                        a_display = hag_add_scaled_columns(a_df[trade_cols])
+                        st.dataframe(a_display, hide_index=True)
                         st.download_button(
                             "⬇️ Export Team A Trade Side CSV",
-                            data=a_df[trade_cols].to_csv(index=False).encode("utf-8"),
+                            data=a_display.to_csv(index=False).encode("utf-8"),
                             file_name="nfl_trade_team_a.csv",
                             mime="text/csv"
                         )
 
                 with r2:
-                    st.metric("Team B Receives", f"{b_total:.1f} Value")
+                    st.metric("Team B Receives", f"{b_score}/100")
+                    st.caption(f"Raw model value: {b_total:.1f}")
                     if not b_df.empty:
-                        st.dataframe(b_df[trade_cols], hide_index=True)
+                        b_display = hag_add_scaled_columns(b_df[trade_cols])
+                        st.dataframe(b_display, hide_index=True)
                         st.download_button(
                             "⬇️ Export Team B Trade Side CSV",
-                            data=b_df[trade_cols].to_csv(index=False).encode("utf-8"),
+                            data=b_display.to_csv(index=False).encode("utf-8"),
                             file_name="nfl_trade_team_b.csv",
                             mime="text/csv"
                         )
 
+                st.metric("Trade Fairness", f"{fairness_pct}%", fairness_label)
+
                 if a_total > b_total + 3:
-                    st.success(f"Team A wins this trade by {diff:.1f} trade value points.")
+                    st.success(f"Team A has the edge. Fairness: {fairness_pct}% ({fairness_label}).")
                 elif b_total > a_total + 3:
-                    st.success(f"Team B wins this trade by {diff:.1f} trade value points.")
+                    st.success(f"Team B has the edge. Fairness: {fairness_pct}% ({fairness_label}).")
                 else:
-                    st.info(f"This trade is balanced. Difference: {diff:.1f} trade value points.")
+                    st.info(f"This trade is balanced. Fairness: {fairness_pct}% ({fairness_label}).")
 
         st.stop()
         if nfl_page == "🏈 NFL Simulation Engine":
