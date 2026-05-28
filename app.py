@@ -4665,14 +4665,19 @@ elif sport == "🏈 NFL Football":
 
             filtered_df = filtered_df.sort_values("Trade Value", ascending=False)
 
+            nfl_player_values_display_df = filtered_df.drop(
+                columns=[c for c in ["Headshot URL", "headshot_url", "HeadshotURL"] if c in filtered_df.columns],
+                errors="ignore"
+            )
+
             st.dataframe(
-                filtered_df,
+                nfl_player_values_display_df,
                 use_container_width=True,
                 hide_index=True
             )
             st.download_button(
                 "⬇️ Export NFL Player Values CSV",
-                data=filtered_df.drop(columns=[c for c in ["Headshot URL", "headshot_url", "HeadshotURL"] if c in filtered_df.columns]).to_csv(index=False).encode("utf-8"),
+                data=nfl_player_values_display_df.to_csv(index=False).encode("utf-8"),
                 file_name="nfl_player_values.csv",
                 mime="text/csv"
             )
