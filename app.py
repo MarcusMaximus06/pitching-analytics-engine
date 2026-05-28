@@ -4969,6 +4969,48 @@ elif sport == "🏈 NFL Football":
                 st.markdown("#### Player Profile Details")
                 st.dataframe(pd.DataFrame([snapshot]), use_container_width=True, hide_index=True)
 
+                st.markdown("#### 📈 Projection Trend")
+
+                current_ppg = float(snapshot.get("Current PPG", 0) or 0)
+                future_projection = float(snapshot.get("Future Projection", 0) or 0)
+                redraft_value = float(snapshot.get("Redraft Value", 0) or 0)
+                dynasty_value = float(snapshot.get("Dynasty Value", 0) or 0)
+
+                projection_curve = pd.DataFrame({
+                    "Window": ["Historical", "Current", "Future"],
+                    "Value": [
+                        float(snapshot.get("Historical Fantasy Points", 0) or 0),
+                        current_ppg,
+                        future_projection
+                    ]
+                })
+
+                fig_projection = go.Figure()
+                fig_projection.add_trace(go.Scatter(
+                    x=projection_curve["Window"],
+                    y=projection_curve["Value"],
+                    mode="lines+markers",
+                    name="Fantasy Value"
+                ))
+
+                fig_projection.update_layout(
+                    height=340,
+                    xaxis_title="Window",
+                    yaxis_title="Fantasy Points / PPG",
+                    paper_bgcolor="#0e1117",
+                    plot_bgcolor="#0e1117",
+                    font=dict(color="white")
+                )
+
+                st.plotly_chart(fig_projection, use_container_width=True)
+
+                st.markdown("#### 🧬 NFL Savant-Style Percentiles")
+
+                nfl_percentile_bar("Usage", current_ppg, 25)
+                nfl_percentile_bar("Efficiency", redraft_value, 30)
+                nfl_percentile_bar("Upside", future_projection, 30)
+                nfl_percentile_bar("Dynasty Strength", dynasty_value, 35)
+
                 if not trend_df.empty and "fantasy_points_ppr" in trend_df.columns:
                     st.markdown("#### Historical Fantasy Trend")
                     trend_df = trend_df.sort_values(["season", "week"])
