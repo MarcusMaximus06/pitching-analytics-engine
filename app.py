@@ -202,22 +202,45 @@ def render_nfl_player_card(player, info):
     name = player or "Unknown"
     info = info or {}
 
-    player_id = str(info.get("player_id") or info.get("Player ID") or info.get("id") or "")
-    headshot = info.get("headshot_url") or info.get("Headshot URL") or (f"https://sleepercdn.com/content/nfl/players/{player_id}.jpg" if player_id else "")
+    player_id = str(
+        info.get("player_id")
+        or info.get("Player ID")
+        or info.get("id")
+        or info.get("player_id".upper())
+        or ""
+    )
+
+    headshot = (
+        info.get("headshot_url")
+        or info.get("Headshot URL")
+        or info.get("Headshot")
+        or (f"https://sleepercdn.com/content/nfl/players/{player_id}.jpg" if player_id else "")
+    )
+
     team = info.get("team") or info.get("Team") or "FA"
     pos = info.get("position") or info.get("Position") or "N/A"
     age = info.get("age") or info.get("Age") or "N/A"
-    value = info.get("Trade Value") or info.get("trade_value") or info.get("Dynasty Value") or info.get("Redraft Value") or "N/A"
+    value = (
+        info.get("Trade Value")
+        or info.get("trade_value")
+        or info.get("Dynasty Value")
+        or info.get("Redraft Value")
+        or info.get("Projected PPR")
+        or "N/A"
+    )
     status = info.get("status") or info.get("Status") or "Active"
 
-    c1, c2 = st.columns([0.45, 2.2])
-    with c1:
-        if headshot:
-            st.image(headshot, width=72)
-    with c2:
-        st.markdown(f"**{name}**")
-        st.caption(f"{team} • {pos} • Age {age} • {status}")
-        st.caption(f"Value: {value}")
+    with st.container(border=True):
+        c1, c2 = st.columns([0.55, 2.45])
+
+        with c1:
+            if headshot:
+                st.image(headshot, width=76)
+
+        with c2:
+            st.markdown(f"**{name}**")
+            st.caption(f"{team} • {pos} • Age {age} • {status}")
+            st.caption(f"Value: {value}")
 
 
 def build_exact_trade_suggestions(power_df, player_df):
