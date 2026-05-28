@@ -142,6 +142,123 @@ NFL_FANTASY_RELEVANT_NAMES = {
     "Eddy Pineiro","Younghoe Koo","Tyler Bass","Jake Moody"
 }
 
+
+def hag_value_score(value, max_value=30):
+    try:
+        v = float(value)
+    except Exception:
+        return 0
+
+    if max_value <= 0:
+        max_value = 30
+
+    return int(max(0, min(100, round((v / max_value) * 100))))
+
+
+def hag_value_label(score):
+    try:
+        s = float(score)
+    except Exception:
+        s = 0
+
+    if s >= 90:
+        return "Elite"
+    elif s >= 80:
+        return "Strong Starter"
+    elif s >= 70:
+        return "Starter"
+    elif s >= 60:
+        return "Flex / Depth"
+    elif s >= 45:
+        return "Bench Value"
+    else:
+        return "Low Value"
+
+
+def hag_add_scaled_columns(df, raw_columns=None, prefix_map=None):
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return df
+
+    out = df.copy()
+
+    if raw_columns is None:
+        raw_columns = [
+            "Trade Value",
+            "Redraft Value",
+            "Dynasty Value",
+            "Power Score",
+            "Upside Score",
+            "Active Value",
+            "Projected PPR",
+            "Future Projection"
+        ]
+
+    existing = [c for c in raw_columns if c in out.columns]
+
+    for col in existing:
+        vals = pd.to_numeric(out[col], errors="coerce").fillna(0)
+        max_val = float(vals.max()) if float(vals.max()) > 0 else 30.0
+
+        label_base = prefix_map.get(col, col) if prefix_map else col
+        score_col = f"{label_base} Score (0-100)"
+        tier_col = f"{label_base} Tier"
+
+        out[score_col] = vals.apply(lambda x: hag_value_score(x, max_val))
+        out[tier_col] = out[score_col].apply(hag_value_label)
+
+    return out
+
+
+def hag_fairness_score(side_a, side_b):
+    try:
+        a = float(side_a)
+        b = float(side_b)
+    except Exception:
+        return 0
+
+    high = max(a, b, 1)
+    diff = abs(a - b)
+    return int(max(0, min(100, round(100 - ((diff / high) * 100)))))
+
+
+def hag_fairness_label(score):
+    try:
+        s = float(score)
+    except Exception:
+        s = 0
+
+    if s >= 95:
+        return "Very Fair"
+    elif s >= 85:
+        return "Fair"
+    elif s >= 70:
+        return "Slight Edge"
+    elif s >= 55:
+        return "Uneven"
+    else:
+        return "Lopsided"
+
+
+def hag_value_scale_explainer():
+    with st.expander("ℹ️ How to read Hag Labs value scores"):
+        st.markdown("""
+        **Raw model values** are still used internally, but the app also converts them into a simpler **0–100 score**.
+
+        - **90–100:** Elite
+        - **80–89:** Strong Starter
+        - **70–79:** Starter
+        - **60–69:** Flex / Depth
+        - **45–59:** Bench Value
+        - **Below 45:** Low Value
+
+        For trades, **Fairness Score** shows how close the two sides are in value:
+        - **95–100:** Very Fair
+        - **85–94:** Fair
+        - **70–84:** Slight Edge
+        - **55–69:** Uneven
+        - **Below 55:** Lopsided
+        """)
+
 def nfl_clean_display_df(df, max_rows=80):
     if df is None or not isinstance(df, pd.DataFrame):
         return df
@@ -1979,11 +2096,16 @@ if sport == "⚾ MLB Baseball":
 
                 st.bar_chart(power_df[["Team", "Power Score"]].set_index("Team"))
 
+                power_df = hag_add_scaled_columns(
+                    power_df,
+                    raw_columns=["Power Score"]
+                )
+
                 st.dataframe(power_df, use_container_width=True, hide_index=True)
 
                 st.download_button(
                     "⬇️ Export MLB Power Rankings CSV",
-                    data=power_df.to_csv(index=False).encode("utf-8"),
+                    data=hag_add_scaled_columns(power_df).to_csv(index=False).encode("utf-8"),
                     file_name="mlb_power_rankings.csv",
                     mime="text/csv"
                 )
@@ -2012,6 +2134,11 @@ if sport == "⚾ MLB Baseball":
                     "Upside Score",
                     ascending=False
                 ).head(15)
+
+                waiver_df = hag_add_scaled_columns(
+                    waiver_df,
+                    raw_columns=["Upside Score"]
+                )
 
                 st.dataframe(waiver_df, use_container_width=True, hide_index=True)
 
@@ -2052,11 +2179,16 @@ if sport == "⚾ MLB Baseball":
                     ascending=False
                 ).head(25)
 
+                trade_df = hag_add_scaled_columns(
+                    trade_df,
+                    raw_columns=["Trade Value"]
+                )
+
                 st.dataframe(trade_df, use_container_width=True, hide_index=True)
 
                 st.download_button(
                     "⬇️ Export MLB Trade Value Board CSV",
-                    data=trade_df.to_csv(index=False).encode("utf-8"),
+                    data=hag_add_scaled_columns(trade_df).to_csv(index=False).encode("utf-8"),
                     file_name="mlb_trade_value_board.csv",
                     mime="text/csv"
                 )
@@ -4591,6 +4723,11 @@ elif sport == "🏈 NFL Football":
                             st.markdown("### 📊 Power Rankings")
                             st.caption("Ranks every synced Sleeper roster using the currently selected Redraft/Dynasty value mode.")
 
+                            power_df = hag_add_scaled_columns(
+                                power_df,
+                                raw_columns=["Total Value", "QB Value", "RB Value", "WR Value", "TE Value", "K Value"]
+                            )
+
                             st.dataframe(
                                 power_df,
                                 use_container_width=True,
@@ -4599,7 +4736,7 @@ elif sport == "🏈 NFL Football":
 
                             st.download_button(
                                 "⬇️ Export NFL Power Rankings CSV",
-                                data=power_df.to_csv(index=False).encode("utf-8"),
+                                data=hag_add_scaled_columns(power_df).to_csv(index=False).encode("utf-8"),
                                 file_name="nfl_power_rankings.csv",
                                 mime="text/csv"
                             )
@@ -4698,6 +4835,11 @@ elif sport == "🏈 NFL Football":
 
                                 st.markdown("### 🤝 Trade Partner Targets")
 
+                                rec_df = hag_add_scaled_columns(
+                                    rec_df,
+                                    raw_columns=["Partner Strength", "Need Score", "Trade Fit Score"]
+                                )
+
                                 st.dataframe(
                                     rec_df,
                                     use_container_width=True,
@@ -4715,6 +4857,18 @@ elif sport == "🏈 NFL Football":
                                 exact_trade_df = build_exact_trade_suggestions(power_df, filtered_df if "filtered_df" in locals() else pd.DataFrame())
 
                                 if not exact_trade_df.empty:
+                                    if "Offer Value" in exact_trade_df.columns and "Target Value" in exact_trade_df.columns:
+                                        exact_trade_df["Fairness Score (0-100)"] = exact_trade_df.apply(
+                                            lambda r: hag_fairness_score(r.get("Offer Value", 0), r.get("Target Value", 0)),
+                                            axis=1
+                                        )
+                                        exact_trade_df["Fairness Label"] = exact_trade_df["Fairness Score (0-100)"].apply(hag_fairness_label)
+
+                                    exact_trade_df = hag_add_scaled_columns(
+                                        exact_trade_df,
+                                        raw_columns=["Offer Value", "Target Value"]
+                                    )
+
                                     st.dataframe(
                                         exact_trade_df,
                                         use_container_width=True,
@@ -4903,13 +5057,18 @@ elif sport == "🏈 NFL Football":
 
                 detail_df = pd.DataFrame(detail_rows).sort_values(["Position", "Active Value"], ascending=[True, False]) if detail_rows else pd.DataFrame()
                 if not detail_df.empty:
+                    detail_df = hag_add_scaled_columns(
+                        detail_df,
+                        raw_columns=["Trade Value", "Active Value", "Redraft Value", "Dynasty Value", "Projected PPR"]
+                    )
+
                     st.dataframe(detail_df, use_container_width=True, hide_index=True)
 
                     # Roster Cards section removed.
                     # Roster details remain available in the table above.
                     st.download_button(
                         "⬇️ Export Selected Roster CSV",
-                        data=detail_df.to_csv(index=False).encode("utf-8"),
+                        data=hag_add_scaled_columns(detail_df).to_csv(index=False).encode("utf-8"),
                         file_name="nfl_selected_roster.csv",
                         mime="text/csv"
                     )
@@ -4962,12 +5121,22 @@ elif sport == "🏈 NFL Football":
                 with m2:
                     st.metric("Future Projection", snapshot.get("Future Projection", 0))
                 with m3:
-                    st.metric("Redraft Value", snapshot.get("Redraft Value", 0))
+                    redraft_raw = snapshot.get("Redraft Value", 0)
+                    redraft_score = hag_value_score(redraft_raw, 30)
+                    st.metric("Redraft Score", f"{redraft_score}/100")
+                    st.caption(hag_value_label(redraft_score))
                 with m4:
-                    st.metric("Dynasty Value", snapshot.get("Dynasty Value", 0))
+                    dynasty_raw = snapshot.get("Dynasty Value", 0)
+                    dynasty_score = hag_value_score(dynasty_raw, 35)
+                    st.metric("Dynasty Score", f"{dynasty_score}/100")
+                    st.caption(hag_value_label(dynasty_score))
 
                 st.markdown("#### Player Profile Details")
-                st.dataframe(pd.DataFrame([snapshot]), use_container_width=True, hide_index=True)
+                snapshot_df = hag_add_scaled_columns(
+                    pd.DataFrame([snapshot]),
+                    raw_columns=["Current PPG", "Future Projection", "Redraft Value", "Dynasty Value", "Historical Fantasy Points"]
+                )
+                st.dataframe(snapshot_df, use_container_width=True, hide_index=True)
 
                 st.markdown("#### 📈 Projection Trend")
 
