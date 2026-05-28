@@ -1046,7 +1046,10 @@ if sport == "⚾ MLB Baseball":
                             df_display = pd.DataFrame(slate_logs, columns=["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Confidence", "Status"])
                             st.dataframe(df_display, use_container_width=True, hide_index=True)
                         else:
-                            st.info("No actionable edges found on today's MLB slate.")
+                            st.info(
+                                "No qualifying Hag Labs edge today. The model is currently close to the market, "
+                                "or every difference is below the actionable threshold/confidence filter."
+                            )
 
         st.markdown("---")
         st.subheader("Manual Matchup Override")
@@ -4902,42 +4905,8 @@ elif sport == "🏈 NFL Football":
                 if not detail_df.empty:
                     st.dataframe(detail_df, use_container_width=True, hide_index=True)
 
-                    st.markdown("#### 🪪 Roster Cards")
-                    card_positions = ["QB", "RB", "WR", "TE", "K"]
-                    for card_pos in card_positions:
-                        pos_cards = detail_df[detail_df["Position"] == card_pos].head(6)
-                        if not pos_cards.empty:
-                            st.markdown(f"**{card_pos}**")
-                            cols = st.columns(min(3, len(pos_cards)))
-                            for idx, (_, card_player) in enumerate(pos_cards.iterrows()):
-                                with cols[idx % len(cols)]:
-                                    card_dict = card_player.to_dict()
-                                    card_name = card_dict.get("Player")
-                                    card_id = str(card_dict.get("Player ID", ""))
-                                    card_img = nfl_headshot_url(card_id)
-
-                                    with st.container(border=True):
-                                        img_col, info_col = st.columns([0.7, 2.3])
-
-                                        with img_col:
-                                            if card_img:
-                                                st.image(card_img, width=80)
-
-                                        with info_col:
-                                            team_display = card_dict.get("Team")
-                                            if pd.isna(team_display) or team_display in [None, "None", "nan", ""]:
-                                                team_display = "FA"
-
-                                            value_display = card_dict.get("Trade Value")
-                                            if pd.isna(value_display) or value_display in [None, "None", "nan", ""]:
-                                                value_display = card_dict.get("Active Value", "N/A")
-
-                                            label_display = card_dict.get("Roster Label", "Depth")
-                                            age_display = card_dict.get("Age", "N/A")
-
-                                            st.markdown(f"**{card_name}**")
-                                            st.caption(f"{team_display} • {card_pos} • Age {age_display}")
-                                            st.caption(f"{label_display} • Value {value_display}")
+                    # Roster Cards section removed.
+                    # Roster details remain available in the table above.
                     st.download_button(
                         "⬇️ Export Selected Roster CSV",
                         data=detail_df.to_csv(index=False).encode("utf-8"),
@@ -4979,10 +4948,7 @@ elif sport == "🏈 NFL Football":
                         st.image(lab_headshot, width=150)
                 with summary_col:
                     st.markdown(f"## {selected_lab_player}")
-                    lab_team = player_row.get("Team", "FA")
-                    if pd.isna(lab_team) or lab_team in [None, "None", "nan", ""]:
-                        lab_team = "FA"
-                    st.caption(f"{lab_team} • {player_row.get('Position')} • Age {player_row.get('Age', 'N/A')} • {player_row.get('Status', 'Active')}")
+                    st.caption(f"{player_row.get('Team', 'FA')} • {player_row.get('Position')} • Age {player_row.get('Age', 'N/A')} • {player_row.get('Status', 'Active')}")
 
                     if st.button("⭐ Add to Watchlist", key=f"watch_{selected_lab_player}"):
                         if "nfl_watchlist" not in st.session_state:
@@ -5002,44 +4968,6 @@ elif sport == "🏈 NFL Football":
 
                 st.markdown("#### Player Profile Details")
                 st.dataframe(pd.DataFrame([snapshot]), use_container_width=True, hide_index=True)
-
-                st.markdown("#### 📈 Projection Trend")
-                current_ppg = float(snapshot.get("Current PPG", 0) or 0)
-                future_projection = float(snapshot.get("Future Projection", 0) or 0)
-                redraft_value = float(snapshot.get("Redraft Value", 0) or 0)
-                dynasty_value = float(snapshot.get("Dynasty Value", 0) or 0)
-
-                projection_curve = pd.DataFrame({
-                    "Window": ["Historical", "Current", "Future"],
-                    "Value": [
-                        float(snapshot.get("Historical Fantasy Points", 0) or 0),
-                        current_ppg,
-                        future_projection
-                    ]
-                })
-
-                fig_projection = go.Figure()
-                fig_projection.add_trace(go.Scatter(
-                    x=projection_curve["Window"],
-                    y=projection_curve["Value"],
-                    mode="lines+markers",
-                    name="Fantasy Value"
-                ))
-                fig_projection.update_layout(
-                    height=340,
-                    xaxis_title="Window",
-                    yaxis_title="Fantasy Points / PPG",
-                    paper_bgcolor="#0e1117",
-                    plot_bgcolor="#0e1117",
-                    font=dict(color="white")
-                )
-                st.plotly_chart(fig_projection, use_container_width=True)
-
-                st.markdown("#### 🧬 NFL Savant-Style Percentiles")
-                nfl_percentile_bar("Usage", current_ppg, 25)
-                nfl_percentile_bar("Efficiency", redraft_value, 30)
-                nfl_percentile_bar("Upside", future_projection, 30)
-                nfl_percentile_bar("Dynasty Strength", dynasty_value, 35)
 
                 if not trend_df.empty and "fantasy_points_ppr" in trend_df.columns:
                     st.markdown("#### Historical Fantasy Trend")
