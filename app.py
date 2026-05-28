@@ -905,12 +905,12 @@ if sport == "⚾ MLB Baseball":
         col_a, col_b = st.columns(2)
         with col_a:
             away_t = st.selectbox("Away Team:", MLB_TEAMS, index=0)
-            away_pitchers = sorted([p for p, data in pitcher_stats.items() if data.get('Team') == away_t]) if 'pitcher_stats' in locals() else []
+            away_pitchers = sorted([p for p, data in pitcher_stats.items() if data.get('Team', 'FA') == away_t]) if 'pitcher_stats' in locals() else []
             away_sp = st.selectbox(f"{away_t} SP Override:", ["League Average SP"] + away_pitchers)
         
         with col_b:
             home_t = st.selectbox("Home Team:", MLB_TEAMS, index=1)
-            home_pitchers = sorted([p for p, data in pitcher_stats.items() if data.get('Team') == home_t]) if 'pitcher_stats' in locals() else []
+            home_pitchers = sorted([p for p, data in pitcher_stats.items() if data.get('Team', 'FA') == home_t]) if 'pitcher_stats' in locals() else []
             home_sp = st.selectbox(f"{home_t} SP Override:", ["League Average SP"] + home_pitchers)
             
         location = st.selectbox("Location:", list(PARK_FACTORS.keys()), index=list(PARK_FACTORS.keys()).index(home_t) if home_t in PARK_FACTORS else 0)
@@ -2063,7 +2063,7 @@ if sport == "⚾ MLB Baseball":
                             name = pdata.get("full_name") or pdata.get("search_full_name") or str(pid)
 
                         age = pdata.get("age")
-                        team = pdata.get("team") or "FA"
+                        team = pdata.get("team", "FA") or "FA"
                         years_exp = pdata.get("years_exp") or 0
                         status = pdata.get("status") or "Unknown"
                         active = bool(pdata.get("active", False))
@@ -2601,9 +2601,6 @@ if sport == "⚾ MLB Baseball":
                         ["Player", "Value Gap"]
                     ].set_index("Player")
                     st.bar_chart(gap_chart_df)
-
-                    if "Headshot URL" in display_df.columns:
-                        display_df = display_df.drop(columns=["Headshot URL"])
 
                     st.dataframe(
                         display_df[
@@ -4010,7 +4007,7 @@ elif sport == "🏈 NFL Football":
                         continue
 
                     name = f"{pdata.get('first_name', '')} {pdata.get('last_name', '')}".strip()
-                    team = pdata.get("team") or "FA"
+                    team = pdata.get("team", "FA")
                     age = pdata.get("age", None)
 
                     players[str(pid)] = {
@@ -4675,7 +4672,7 @@ elif sport == "🏈 NFL Football":
             )
             st.download_button(
                 "⬇️ Export NFL Player Values CSV",
-                data=filtered_df.to_csv(index=False).encode("utf-8"),
+                data=filtered_df.drop(columns=[c for c in ["Headshot URL", "headshot_url", "HeadshotURL"] if c in filtered_df.columns]).to_csv(index=False).encode("utf-8"),
                 file_name="nfl_player_values.csv",
                 mime="text/csv"
             )
@@ -5432,7 +5429,7 @@ elif sport == "🎓 NCAA Football":
             
             dynamic_matrix = {}
             for team in elo_data:
-                team_name = team.get('team')
+                team_name = team.get('team', 'FA')
                 elo = team.get('elo')
                 
                 if team_name and elo:
