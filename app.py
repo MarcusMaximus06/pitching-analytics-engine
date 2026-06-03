@@ -124,6 +124,100 @@ st.set_page_config(page_title=APP_PAGE_TITLE, layout="wide")
 
 
 # ==========================================================
+# DAILY PROBABILITY BOARD HELPERS
+# ==========================================================
+PROBABILITY_BOARD_COLUMNS = [
+    "Date", "Away Team", "Home Team", "Away ML", "Home ML",
+    "Model Away %", "Model Home %", "Vegas Away %",
+    "Vegas Home %", "Model Pick", "Vegas Pick",
+    "Agreement Type", "Model Edge %", "Confidence", "Status"
+]
+
+def hag_market_read(edge):
+    try:
+        e = abs(float(edge))
+    except Exception:
+        e = 0.0
+    if e >= 0.10:
+        return "Strong Model Disagreement"
+    if e >= 0.06:
+        return "Model Disagreement"
+    if e >= 0.03:
+        return "Slight Model Lean"
+    return "Market Agreement"
+
+def hag_board_confidence(model_prob, vegas_prob):
+    edge = abs(float(model_prob) - float(vegas_prob))
+    if edge >= 0.10:
+        return "High"
+    if edge >= 0.06:
+        return "Medium"
+    return "Tracking"
+
+def hag_create_probability_row(date_str, away_t, home_t, away_ml, home_ml, model_away_prob, model_home_prob):
+    vegas_away_prob = calculate_implied_prob(away_ml)
+    vegas_home_prob = calculate_implied_prob(home_ml)
+    model_pick = away_t if model_away_prob >= model_home_prob else home_t
+    vegas_pick = away_t if vegas_away_prob >= vegas_home_prob else home_t
+    away_edge = model_away_prob - vegas_away_prob
+    home_edge = model_home_prob - vegas_home_prob
+    main_edge = away_edge if abs(away_edge) >= abs(home_edge) else home_edge
+    confidence = hag_board_confidence(
+        model_away_prob if model_pick == away_t else model_home_prob,
+        vegas_away_prob if model_pick == away_t else vegas_home_prob,
+    )
+    return [
+        date_str, away_t, home_t, away_ml, home_ml,
+        f"{model_away_prob:.1%}", f"{model_home_prob:.1%}",
+        f"{vegas_away_prob:.1%}", f"{vegas_home_prob:.1%}",
+        model_pick, vegas_pick, hag_market_read(main_edge),
+        f"{main_edge:+.1%}", confidence, "PENDING"
+    ]
+
+def hag_display_probability_board(df, title="Daily Probability Board"):
+    if df is None or df.empty:
+        st.info("No games available for this probability board.")
+        return
+    st.markdown(f"#### {title}")
+    if "Agreement Type" in df.columns:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("Market Agreement", int((df["Agreement Type"] == "Market Agreement").sum()))
+        with c2:
+            st.metric("Slight Leans", int((df["Agreement Type"] == "Slight Model Lean").sum()))
+        with c3:
+            st.metric("Model Disagreements", int(df["Agreement Type"].astype(str).str.contains("Disagreement", na=False).sum()))
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+def hag_log_probability_board_to_sheet(row_data, workbook_name, worksheet_name):
+    try:
+        gc = get_google_client()
+        sh = gc.open(workbook_name)
+        try:
+            worksheet = sh.worksheet(worksheet_name)
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = sh.add_worksheet(title=worksheet_name, rows="3000", cols="20")
+            worksheet.append_row(PROBABILITY_BOARD_COLUMNS)
+
+        values = worksheet.get_all_values()
+        if not values:
+            worksheet.append_row(PROBABILITY_BOARD_COLUMNS)
+            values = [PROBABILITY_BOARD_COLUMNS]
+
+        target_date, target_away, target_home = row_data[0], row_data[1], row_data[2]
+        for row in values[1:]:
+            if len(row) >= 3 and row[0] == target_date and row[1] == target_away and row[2] == target_home:
+                return "DUPLICATE"
+
+        worksheet.append_row(row_data)
+        return "SUCCESS"
+    except Exception as e:
+        st.error(f"Probability Board Log Error: {e}")
+        return "ERROR"
+
+
+
+# ==========================================================
 # NFL UI / ANALYTICS HELPERS
 # ==========================================================
 NFL_FANTASY_RELEVANT_NAMES = {
@@ -1063,53 +1157,81 @@ if sport == "⚾ MLB Baseball":
     
     def log_to_google_sheets(row_data):
         try:
+            if len(row_data) >= 15:
+                return hag_log_probability_board_to_sheet(row_data, "MLB Daily Prediction Model", "MLB Log V2")
+
             gc = get_google_client()
             sh = gc.open("MLB Daily Prediction Model")
             worksheet = sh.worksheet("MLB Log V2")
             values = worksheet.get_all_values()
-            
+
             if not values or len(values) == 0:
-                worksheet.append_row(["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Confidence", "Result"])
-                values = [["Date", "Away Team", "Home Team"]]
-            
+                worksheet.append_row(PROBABILITY_BOARD_COLUMNS)
+                values = [PROBABILITY_BOARD_COLUMNS]
+
             target_date = row_data[0]
             target_away = row_data[1]
             target_home = row_data[2]
-            
+
             for row in values[1:]:
                 if len(row) >= 3 and row[0] == target_date and row[1] == target_away and row[2] == target_home:
                     return "DUPLICATE"
-                    
+
             worksheet.append_row(row_data)
             return "SUCCESS"
         except Exception as e:
             st.error(f"Google Sheets Log Error: {e}")
             return "ERROR"
+
     @st.cache_data(ttl=CACHE_TTL_SHORT)
     def get_master_log_stats():
         try:
             worksheet = get_google_worksheet("MLB Daily Prediction Model", "MLB Log V2")
             data = worksheet.get_all_values()
             last_updated = datetime.now().strftime("%Y-%m-%d %I:%M %p")
-            if len(data) <= 1: return 0, 0.0, 0.0
+            if len(data) <= 1:
+                return 0, 0.0, 0.0, last_updated
+
             total_games, model_wins, vegas_wins = 0, 0, 0
+
             for row in data[1:]:
-                if len(row) >= 9:
-                    result, model_pick = row[8].strip().upper(), row[7].strip()
-                    away_ml = int(row[3]) if row[3].replace('-','').isdigit() else 0
-                    home_ml = int(row[4]) if row[4].replace('-','').isdigit() else 0
+                if len(row) >= 15:
+                    result = row[14].strip().upper()
+                    model_pick = row[9].strip()
+                    vegas_pick = row[10].strip()
                     away_t, home_t = row[1], row[2]
+                elif len(row) >= 10:
+                    result = row[9].strip().upper()
+                    model_pick = row[7].strip()
+                    away_t, home_t = row[1], row[2]
+                    try:
+                        away_ml = int(row[3])
+                    except Exception:
+                        away_ml = 0
+                    try:
+                        home_ml = int(row[4])
+                    except Exception:
+                        home_ml = 0
                     vegas_pick = away_t if away_ml < home_ml else home_t
-                    if result in ["WIN", "LOSS"]:
-                        total_games += 1
-                        if result == "WIN": model_wins += 1
-                        actual_winner = model_pick if result == "WIN" else (away_t if model_pick == home_t else home_t)
-                        if actual_winner == vegas_pick: vegas_wins += 1
+                else:
+                    continue
+
+                if result in ["WIN", "LOSS"]:
+                    total_games += 1
+                    if result == "WIN":
+                        model_wins += 1
+
+                    actual_winner = model_pick if result == "WIN" else (away_t if model_pick == home_t else home_t)
+
+                    if vegas_pick == actual_winner:
+                        vegas_wins += 1
+
             mod_acc = (model_wins / total_games * 100) if total_games > 0 else 0.0
             veg_acc = (vegas_wins / total_games * 100) if total_games > 0 else 0.0
             return total_games, mod_acc, veg_acc, last_updated
         except Exception:
             return 0, 0.0, 0.0, "Unavailable"
+
 
     def calculate_sp_edge_score(pitcher_stats, pitcher_name):
         p = pitcher_stats.get(pitcher_name, {})
@@ -1194,31 +1316,51 @@ if sport == "⚾ MLB Baseball":
         try:
             worksheet = get_google_worksheet("MLB Daily Prediction Model", "MLB Log V2")
             data = worksheet.get_all_values()
-            pending_rows = [(i, row) for i, row in enumerate(data) if i > 0 and len(row) >= 10 and row[9] == "PENDING"]
-            if not pending_rows: return 0
-            
-            pending_dates = list(set([row[0] for i, row in pending_rows]))
+
+            pending_rows = []
+            for i, row in enumerate(data):
+                if i == 0:
+                    continue
+                if len(row) >= 15 and row[14].strip().upper() == "PENDING":
+                    pending_rows.append((i, row, 15))
+                elif len(row) >= 10 and row[9].strip().upper() == "PENDING":
+                    pending_rows.append((i, row, 10))
+
+            if not pending_rows:
+                return 0
+
+            pending_dates = list(set([row[0] for _, row, _ in pending_rows]))
             score_dict = {}
+
             for d_str in pending_dates:
                 url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={d_str}"
                 resp = requests.get(url, timeout=10).json()
-                if 'dates' in resp and len(resp['dates']) > 0:
-                    for g in resp['dates'][0]['games']:
-                        if g['status']['abstractGameState'] == 'Final':
-                            away, home = g['teams']['away']['team']['name'], g['teams']['home']['team']['name']
-                            winner = away if g['teams']['away'].get('score', 0) > g['teams']['home'].get('score', 0) else home
-                            score_dict[f"{d_str}_{away}"] = winner
-                            score_dict[f"{d_str}_{home}"] = winner
-            
+
+                for date_block in resp.get("dates", []):
+                    for g in date_block.get("games", []):
+                        if g["status"]["abstractGameState"] == "Final":
+                            away = g["teams"]["away"]["team"]["name"]
+                            home = g["teams"]["home"]["team"]["name"]
+                            winner = away if g["teams"]["away"].get("score", 0) > g["teams"]["home"].get("score", 0) else home
+                            score_dict[f"{d_str}_{away}_{home}"] = winner
+
             updates = 0
-            for i, row in pending_rows:
-                d_str, away_t, model_pick = row[0], row[1], row[7]
-                lookup_key = f"{d_str}_{away_t}"
-                if lookup_key in score_dict:
-                    actual_winner = score_dict[lookup_key]
+
+            for i, row, schema_len in pending_rows:
+                d_str, away_t, home_t = row[0], row[1], row[2]
+                actual_winner = None
+
+                for key, winner in score_dict.items():
+                    if key.startswith(f"{d_str}_") and away_t in key and home_t in key:
+                        actual_winner = winner
+                        break
+
+                if actual_winner:
+                    model_pick = row[9] if schema_len >= 15 else row[7]
                     new_status = "WIN" if model_pick == actual_winner else "LOSS"
-                    worksheet.update_cell(i + 1, 10, new_status)
+                    worksheet.update_cell(i + 1, 15 if schema_len >= 15 else 10, new_status)
                     updates += 1
+
             return updates
         except Exception as e:
             st.error(f"Auto-Grader Error: {e}")
@@ -1330,6 +1472,18 @@ if sport == "⚾ MLB Baseball":
         if st.button("🔄 Refresh MLB Cached Data"):
             st.cache_data.clear()
             st.success("MLB cached data cleared. Refresh the page to reload fresh data.")
+
+        with st.expander("🤖 Daily automation options"):
+            st.markdown("""
+            The app now logs **every game**, not only actionable edges.
+
+            True no-click automation needs an external scheduler:
+            - **Windows Task Scheduler** for your local setup
+            - **GitHub Actions** for scheduled cloud runs
+            - **Render Cron Job** for public deployment later
+
+            Streamlit itself only runs while a session/app process is active, so a scheduler is the reliable option.
+            """)
         
         if st.button("🔄 Auto-Grade Yesterday's Bets"):
             with st.spinner("Pinging MLB Stats API..."):
@@ -1351,8 +1505,8 @@ if sport == "⚾ MLB Baseball":
             if not team_stats:
                 st.warning("⚠️ Could not establish connection to MLB Stats API.")
             else:
-                st.subheader("⚡ Automated Daily Slate Runner")
-                if st.button("▶ Auto-Run & Log Entire Daily Slate"):
+                st.subheader("⚡ Daily Probability Board Runner")
+                if st.button("▶ Run & Log Every MLB Game Today"):
                     with st.spinner("Simulating full MLB Slate using API Metrics..."):
                         slate_logs = []
                         new_logs_count = 0
@@ -1450,50 +1604,37 @@ if sport == "⚾ MLB Baseball":
                                 v_a_prob = calculate_implied_prob(a_ml)
                                 v_h_prob = calculate_implied_prob(h_ml)
                                 
-                                action_taken = "No Edge"
+                                row_data = hag_create_probability_row(
+                                    date_str,
+                                    away_t,
+                                    home_t,
+                                    a_ml,
+                                    h_ml,
+                                    model_away_prob,
+                                    model_home_prob
+                                )
 
-                                away_edge = model_away_prob - v_a_prob
-                                home_edge = model_home_prob - v_h_prob
-                                
-                                if away_edge > MIN_ACTIONABLE_EDGE and away_edge > home_edge:
-                                    action_taken = away_t
-                                
-                                elif home_edge > MIN_ACTIONABLE_EDGE and home_edge > away_edge:
-                                    action_taken = home_t
-                                
-                                confidence_tier = "Low"
+                                log_status = log_to_google_sheets(row_data)
 
-                                if action_taken == away_t:
-                                    confidence_tier = get_confidence_tier(model_away_prob, v_a_prob)
-                                
-                                elif action_taken == home_t:
-                                    confidence_tier = get_confidence_tier(model_home_prob, v_h_prob)
-                                
-                                if action_taken != "No Edge" and confidence_tier != "Low":
-                                    row_data = [date_str, away_t, home_t, a_ml, h_ml, f"{model_away_prob:.1%}", f"{model_home_prob:.1%}", action_taken, confidence_tier, "PENDING"]
-                                    log_status = log_to_google_sheets(row_data)
-                                    if log_status in ["SUCCESS", "DUPLICATE"]:
-                                        slate_logs.append(row_data)
-                                        if log_status == "SUCCESS":
-                                            new_logs_count += 1
-                            except: continue
-                            
+                                if log_status in ["SUCCESS", "DUPLICATE"]:
+                                    slate_logs.append(row_data)
+                                    if log_status == "SUCCESS":
+                                        new_logs_count += 1
+                            except Exception:
+                                continue
+
                         if slate_logs:
-                            st.success(f"✅ Successfully processed {len(slate_logs)} actionable edges! ({new_logs_count} new entries logged to Sheets)")
-                            st.markdown("#### 📅 Today's MLB Actionable Edges")
-                            df_display = pd.DataFrame(slate_logs, columns=["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Confidence", "Status"])
-                            st.dataframe(df_display, use_container_width=True, hide_index=True)
+                            st.success(f"✅ Successfully processed {len(slate_logs)} MLB games. ({new_logs_count} new entries logged to Sheets)")
+                            df_display = pd.DataFrame(slate_logs, columns=PROBABILITY_BOARD_COLUMNS)
+                            hag_display_probability_board(df_display, "📅 Today's MLB Probability Board")
                         else:
-                            st.info(
-                                "No qualifying Hag Labs edge today. The model is currently close to the market, "
-                                "or every difference is below the actionable threshold/confidence filter."
-                            )
+                            st.info("No MLB games with active odds were found for today.")
 
         st.markdown("---")
         st.subheader("Manual Matchup Override")
         st.caption("Standalone Engine: Calculates probability edges using native MLB API logic and visualizes Poisson distributions.")
         st.caption(f"Simulation Size: {DEFAULT_SIMULATION_SIZE:,} runs per team")
-        st.caption(f"Minimum Actionable Edge: {MIN_ACTIONABLE_EDGE:.1%}")
+        st.caption(f"Previous Edge Threshold: {MIN_ACTIONABLE_EDGE:.1%}")
         if st.checkbox("Show MLB Team Stats Debug"):
             st.write(team_stats)
 
