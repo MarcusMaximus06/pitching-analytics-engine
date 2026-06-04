@@ -873,6 +873,10 @@ if sport == "⚾ MLB Baseball":
         url = f'https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/?apiKey={api_key}&regions=us&markets=h2h&oddsFormat=american&bookmakers=draftkings,fanduel'
         try:
             response = requests.get(url, timeout=15).json()
+            
+            st.write("Odds API Status:", response.status_code)
+            st.write("Odds API URL:", response.url)
+            st.write(response.text[:1000])
             odds_dict = {}
             for game in response:
                 if 'bookmakers' in game and len(game['bookmakers']) > 0:
