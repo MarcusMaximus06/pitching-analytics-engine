@@ -1574,7 +1574,15 @@ if sport == "⚾ MLB Baseball":
             - **GitHub Actions** for scheduled cloud runs
             - **Render Cron Job** for public deployment later
 
-            Streamlit itself only runs while a session/app process is active, so a scheduler is the reliable option.
+            Streamlit remains the dashboard. The included `daily_mlb_auto.py` script does the background work.
+
+Copy `daily_mlb_auto.py` into `C:\\HagLabs\\pitching-analytics-engine`, then use Windows Task Scheduler:
+
+```text
+Program/script: python
+Add arguments: C:\\HagLabs\\pitching-analytics-engine\\daily_mlb_auto.py
+Start in: C:\\HagLabs\\pitching-analytics-engine
+```
             """)
         
         if st.button("🔄 Auto-Grade Yesterday's Bets"):
@@ -1584,10 +1592,7 @@ if sport == "⚾ MLB Baseball":
                     st.success(f"✅ Successfully graded {updates} games! Refresh.")
                 elif updates == 0:
                     st.info("No games ready to be graded.")
-                with st.spinner("Pinging MLB Stats API..."):
-                    updates = auto_grade_pending_bets()
-                    if updates > 0: st.success(f"✅ Successfully graded {updates} games! Refresh.")
-                    elif updates == 0: st.info("No games ready to be graded.")
+
         st.markdown("---")
         
         with st.spinner('Syncing native MLB API data and live odds...'):
