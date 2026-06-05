@@ -130,7 +130,7 @@ PROBABILITY_BOARD_COLUMNS = [
     "Date", "Away Team", "Home Team", "Away ML", "Home ML",
     "Model Away %", "Model Home %", "Vegas Away %",
     "Vegas Home %", "Model Pick", "Vegas Pick",
-    "Agreement Type", "Model Edge %", "Confidence", "Status"
+    "Agreement Type", "Model Edge %", "Confidence", "Status", "Odds Source"
 ]
 
 def hag_market_read(edge):
@@ -155,25 +155,47 @@ def hag_board_confidence(model_prob, vegas_prob):
     return "Tracking"
 
 def hag_create_probability_row(date_str, away_t, home_t, away_ml, home_ml, model_away_prob, model_home_prob):
-    vegas_away_prob = calculate_implied_prob(away_ml)
-    vegas_home_prob = calculate_implied_prob(home_ml)
+    real_odds_available = away_ml not in [None, "", "N/A"] and home_ml not in [None, "", "N/A"]
+
+    if real_odds_available:
+        try:
+            vegas_away_prob = calculate_implied_prob(int(away_ml))
+            vegas_home_prob = calculate_implied_prob(int(home_ml))
+            odds_source = "Live Odds"
+        except Exception:
+            vegas_away_prob = 0.50
+            vegas_home_prob = 0.50
+            away_ml = "N/A"
+            home_ml = "N/A"
+            odds_source = "No Live Odds"
+    else:
+        vegas_away_prob = 0.50
+        vegas_home_prob = 0.50
+        away_ml = "N/A"
+        home_ml = "N/A"
+        odds_source = "No Live Odds"
+
     model_pick = away_t if model_away_prob >= model_home_prob else home_t
     vegas_pick = away_t if vegas_away_prob >= vegas_home_prob else home_t
+
     away_edge = model_away_prob - vegas_away_prob
     home_edge = model_home_prob - vegas_home_prob
     main_edge = away_edge if abs(away_edge) >= abs(home_edge) else home_edge
+
     confidence = hag_board_confidence(
         model_away_prob if model_pick == away_t else model_home_prob,
         vegas_away_prob if model_pick == away_t else vegas_home_prob,
     )
+
+    agreement_type = hag_market_read(main_edge) if odds_source == "Live Odds" else "Model Only"
+
     return [
         date_str, away_t, home_t, away_ml, home_ml,
         f"{model_away_prob:.1%}", f"{model_home_prob:.1%}",
         f"{vegas_away_prob:.1%}", f"{vegas_home_prob:.1%}",
-        model_pick, vegas_pick, hag_market_read(main_edge),
-        f"{main_edge:+.1%}", confidence, "PENDING"
+        model_pick, vegas_pick, agreement_type,
+        f"{main_edge:+.1%}", confidence, "PENDING", odds_source
     ]
-
 def hag_display_probability_board(df, title="Daily Probability Board"):
     if df is None or df.empty:
         st.info("No games available for this probability board.")
@@ -869,25 +891,68 @@ if sport == "⚾ MLB Baseball":
     @st.cache_data(ttl=CACHE_TTL_ODDS)
     def get_live_odds():
         api_key = os.environ.get('ODDS_API_KEY')
-        if not api_key: return {}
-        url = f'https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/?apiKey={api_key}&regions=us&markets=h2h&oddsFormat=american&bookmakers=draftkings,fanduel'
+
+        if not api_key:
+            return {}, {
+                "status": "NO_KEY",
+                "message": "ODDS_API_KEY is missing from environment variables.",
+                "url": "",
+                "raw": ""
+            }
+
+        url = (
+            "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/"
+            f"?apiKey={api_key}&regions=us&markets=h2h&oddsFormat=american&bookmakers=draftkings,fanduel"
+        )
+
         try:
-            response = requests.get(url, timeout=15).json()
-            
-            st.write("Odds API Status:", response.status_code)
-            st.write("Odds API URL:", response.url)
-            st.write(response.text[:1000])
+            response = requests.get(url, timeout=15)
+            status_code = getattr(response, "status_code", "UNKNOWN")
+            response_url = getattr(response, "url", url)
+            raw_text = getattr(response, "text", "")
+
+            if status_code != 200:
+                return {}, {
+                    "status": status_code,
+                    "message": "Odds API returned a non-200 response.",
+                    "url": response_url,
+                    "raw": raw_text[:1000]
+                }
+
+            data = response.json()
             odds_dict = {}
-            for game in response:
+
+            for game in data:
                 if 'bookmakers' in game and len(game['bookmakers']) > 0:
-                    outcomes = game['bookmakers'][0]['markets'][0]['outcomes']
-                    away = game['away_team']
-                    home = game['home_team']
-                    away_ml = next((o['price'] for o in outcomes if o['name'] == away), 100)
-                    home_ml = next((o['price'] for o in outcomes if o['name'] == home), -110)
-                    odds_dict[f"{away} @ {home}"] = [away_ml, home_ml]
-            return odds_dict
-        except Exception: return {}
+                    markets = game['bookmakers'][0].get('markets', [])
+                    if not markets:
+                        continue
+
+                    outcomes = markets[0].get('outcomes', [])
+                    away = game.get('away_team')
+                    home = game.get('home_team')
+
+                    away_ml = next((o.get('price') for o in outcomes if o.get('name') == away), None)
+                    home_ml = next((o.get('price') for o in outcomes if o.get('name') == home), None)
+
+                    if away and home and away_ml is not None and home_ml is not None:
+                        odds_dict[f"{away} @ {home}"] = [away_ml, home_ml]
+
+            return odds_dict, {
+                "status": status_code,
+                "message": f"Loaded {len(odds_dict)} MLB games from Odds API.",
+                "url": response_url,
+                "raw": raw_text[:1000]
+            }
+
+        except Exception as e:
+            return {}, {
+                "status": "ERROR",
+                "message": str(e),
+                "url": url,
+                "raw": ""
+            }
+
 
     @st.cache_data(ttl=CACHE_TTL_STATS)
     def fetch_mlb_api_data():
@@ -1159,6 +1224,35 @@ if sport == "⚾ MLB Baseball":
         except Exception:
             return {}
     
+    @st.cache_data(ttl=CACHE_TTL_SHORT)
+    def fetch_today_mlb_schedule_games():
+        try:
+            date_str = get_local_date_str()
+            url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={date_str}&hydrate=probablePitcher"
+            data = requests.get(url, timeout=10).json()
+
+            games = []
+
+            for date_block in data.get("dates", []):
+                for game in date_block.get("games", []):
+                    away_team = game["teams"]["away"]["team"]["name"]
+                    home_team = game["teams"]["home"]["team"]["name"]
+                    away_sp = clean_name(game["teams"]["away"].get("probablePitcher", {}).get("fullName", "Unknown"))
+                    home_sp = clean_name(game["teams"]["home"].get("probablePitcher", {}).get("fullName", "Unknown"))
+
+                    games.append({
+                        "game_key": f"{away_team} @ {home_team}",
+                        "away_team": away_team,
+                        "home_team": home_team,
+                        "away_sp": away_sp,
+                        "home_sp": home_sp,
+                    })
+
+            return games
+
+        except Exception:
+            return []
+
     def log_to_google_sheets(row_data):
         try:
             if len(row_data) >= 15:
@@ -1445,8 +1539,12 @@ if sport == "⚾ MLB Baseball":
             
             for row in data[1:]:
                 if len(row) >= 10:
-                    confidence = row[8].strip()
-                    result = row[9].strip().upper()
+                    if len(row) >= 15:
+                        confidence = row[13].strip()
+                        result = row[14].strip().upper()
+                    else:
+                        confidence = row[8].strip()
+                        result = row[9].strip().upper()
             
                     if confidence in tier_stats and result in ["WIN", "LOSS"]:
                         if result == "WIN":
@@ -1504,11 +1602,18 @@ if sport == "⚾ MLB Baseball":
         
         with st.spinner('Syncing native MLB API data and live odds...'):
             team_stats, pitcher_stats, _ = fetch_mlb_api_data()
-            live_odds = get_live_odds()
+            live_odds, odds_debug = get_live_odds()
+            schedule_games = fetch_today_mlb_schedule_games()
 
             if st.checkbox("Show Odds Debug"):
                 st.write("Odds Count:", len(live_odds))
-                st.write(live_odds)
+                st.write("Schedule Count:", len(schedule_games))
+                st.write("Odds API Status:", odds_debug.get("status"))
+                st.write("Odds API Message:", odds_debug.get("message"))
+                st.write("Odds API URL:", odds_debug.get("url"))
+                st.write("Odds API Raw Response:", odds_debug.get("raw"))
+                st.write("Live Odds:", live_odds)
+                st.write("Schedule Games:", schedule_games)
                 
             if not team_stats:
                 st.warning("⚠️ Could not establish connection to MLB Stats API.")
@@ -1520,30 +1625,52 @@ if sport == "⚾ MLB Baseball":
                         new_logs_count = 0
                         date_str = get_local_date_str()
                         
-                        sched_url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={date_str}&hydrate=probablePitcher"
-                        sched_resp = requests.get(sched_url).json()
-                        probables = {}
-                        if 'dates' in sched_resp and len(sched_resp['dates']) > 0:
-                            for g in sched_resp['dates'][0].get('games', []):
-                                a_team = g['teams']['away']['team']['name']
-                                h_team = g['teams']['home']['team']['name']
-                                a_sp = clean_name(g['teams']['away'].get('probablePitcher', {}).get('fullName', 'Unknown'))
-                                h_sp = clean_name(g['teams']['home'].get('probablePitcher', {}).get('fullName', 'Unknown'))
-                                probables[a_team] = a_sp
-                                probables[h_team] = h_sp
+                        game_inputs = []
 
-                        for game_key, odds in live_odds.items():
-                            try:
+                        if schedule_games:
+                            for scheduled_game in schedule_games:
+                                game_key = scheduled_game["game_key"]
+                                odds = live_odds.get(game_key, ["N/A", "N/A"])
+
+                                game_inputs.append({
+                                    "game_key": game_key,
+                                    "away_t": scheduled_game["away_team"],
+                                    "home_t": scheduled_game["home_team"],
+                                    "away_sp": scheduled_game.get("away_sp", "Unknown"),
+                                    "home_sp": scheduled_game.get("home_sp", "Unknown"),
+                                    "a_ml": odds[0],
+                                    "h_ml": odds[1],
+                                })
+
+                        else:
+                            for game_key, odds in live_odds.items():
                                 away_t, home_t = game_key.split(" @ ")
-                                a_ml, h_ml = odds
+                                game_inputs.append({
+                                    "game_key": game_key,
+                                    "away_t": away_t,
+                                    "home_t": home_t,
+                                    "away_sp": "Unknown",
+                                    "home_sp": "Unknown",
+                                    "a_ml": odds[0],
+                                    "h_ml": odds[1],
+                                })
+
+                        for game_data in game_inputs:
+                            try:
+                                away_t = game_data["away_t"]
+                                home_t = game_data["home_t"]
+                                away_sp = game_data.get("away_sp", "Unknown")
+                                home_sp = game_data.get("home_sp", "Unknown")
+                                a_ml = game_data.get("a_ml", "N/A")
+                                h_ml = game_data.get("h_ml", "N/A")
                                 
                                 a_rs_g = team_stats.get(away_t, {}).get('RS_per_G', 4.5)
                                 h_rs_g = team_stats.get(home_t, {}).get('RS_per_G', 4.5)
                                 a_ra_g = team_stats.get(away_t, {}).get('RA_per_G', 4.5)
                                 h_ra_g = team_stats.get(home_t, {}).get('RA_per_G', 4.5)
                                 
-                                away_sp = probables.get(away_t, 'Unknown')
-                                home_sp = probables.get(home_t, 'Unknown')
+                                away_sp = away_sp or 'Unknown'
+                                home_sp = home_sp or 'Unknown'
                                 a_sp_fip = pitcher_stats.get(away_sp, {}).get('FIP', a_ra_g)
                                 h_sp_fip = pitcher_stats.get(home_sp, {}).get('FIP', h_ra_g)
 
@@ -1636,7 +1763,7 @@ if sport == "⚾ MLB Baseball":
                             df_display = pd.DataFrame(slate_logs, columns=PROBABILITY_BOARD_COLUMNS)
                             hag_display_probability_board(df_display, "📅 Today's MLB Probability Board")
                         else:
-                            st.info("No MLB games with active odds were found for today.")
+                            st.info("No MLB games were found from either the MLB schedule or the Odds API for today.")
 
         st.markdown("---")
         st.subheader("Manual Matchup Override")
