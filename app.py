@@ -839,6 +839,150 @@ def hag_trade_impact_summary(team_roster_df, outgoing_players, incoming_players,
     }])
 
 
+
+# ==========================================================
+# MLB AUTOMATION STATUS HELPERS
+# ==========================================================
+def hag_mlb_automation_status():
+    try:
+        worksheet = get_google_worksheet("MLB Daily Prediction Model", "MLB Log V2")
+        data = worksheet.get_all_values()
+
+        if len(data) <= 1:
+            return {
+                "total_rows": 0, "today_logged": 0, "pending": 0, "graded": 0,
+                "last_logged_date": "None", "last_graded_date": "None",
+                "latest_status": "No log rows found",
+                "agreement_summary": pd.DataFrame(),
+                "recent_rows": pd.DataFrame(),
+            }
+
+        rows = data[1:]
+        today = get_local_date_str()
+        total_rows = len(rows)
+        today_logged = 0
+        pending = 0
+        graded = 0
+        last_logged_date = "None"
+        last_graded_date = "None"
+        agreement_counts = {}
+
+        for row in rows:
+            if len(row) < 3:
+                continue
+
+            row_date = row[0]
+
+            if row_date:
+                last_logged_date = max(last_logged_date, row_date) if last_logged_date != "None" else row_date
+
+            if row_date == today:
+                today_logged += 1
+
+            if len(row) >= 15:
+                status = row[14].strip().upper()
+                agreement = row[11].strip() if len(row) > 11 else "Unknown"
+            elif len(row) >= 10:
+                status = row[9].strip().upper()
+                agreement = "Legacy Row"
+            else:
+                status = ""
+                agreement = "Unknown"
+
+            agreement_counts[agreement] = agreement_counts.get(agreement, 0) + 1
+
+            if status == "PENDING":
+                pending += 1
+            elif status in ["WIN", "LOSS"]:
+                graded += 1
+                if row_date:
+                    last_graded_date = max(last_graded_date, row_date) if last_graded_date != "None" else row_date
+
+        latest_status = "Automation ready"
+
+        if today_logged > 0:
+            latest_status = f"{today_logged} games logged today"
+        elif pending > 0:
+            latest_status = f"{pending} pending games waiting to grade"
+
+        agreement_summary = pd.DataFrame(
+            [{"Agreement Type": k, "Games": v} for k, v in agreement_counts.items()]
+        ).sort_values("Games", ascending=False) if agreement_counts else pd.DataFrame()
+
+        recent_clean = []
+        for row in rows[-20:]:
+            padded = row + [""] * max(0, len(PROBABILITY_BOARD_COLUMNS) - len(row))
+            recent_clean.append(padded[:len(PROBABILITY_BOARD_COLUMNS)])
+
+        recent_rows = pd.DataFrame(recent_clean, columns=PROBABILITY_BOARD_COLUMNS)
+
+        return {
+            "total_rows": total_rows, "today_logged": today_logged,
+            "pending": pending, "graded": graded,
+            "last_logged_date": last_logged_date,
+            "last_graded_date": last_graded_date,
+            "latest_status": latest_status,
+            "agreement_summary": agreement_summary,
+            "recent_rows": recent_rows,
+        }
+
+    except Exception as e:
+        return {
+            "total_rows": 0, "today_logged": 0, "pending": 0, "graded": 0,
+            "last_logged_date": "Unavailable", "last_graded_date": "Unavailable",
+            "latest_status": f"Automation status unavailable: {e}",
+            "agreement_summary": pd.DataFrame(),
+            "recent_rows": pd.DataFrame(),
+        }
+
+
+def hag_render_mlb_automation_status_panel():
+    status = hag_mlb_automation_status()
+
+    st.subheader("🤖 MLB Automation Status")
+
+    a1, a2, a3, a4 = st.columns(4)
+    with a1:
+        st.metric("Games Logged Today", status["today_logged"])
+    with a2:
+        st.metric("Pending Games", status["pending"])
+    with a3:
+        st.metric("Graded Games", status["graded"])
+    with a4:
+        st.metric("Total Logged Rows", status["total_rows"])
+
+    st.info(status["latest_status"])
+
+    b1, b2 = st.columns(2)
+    with b1:
+        st.caption(f"Last Logged Date: {status['last_logged_date']}")
+    with b2:
+        st.caption(f"Last Graded Date: {status['last_graded_date']}")
+
+    with st.expander("📋 Scheduler Setup"):
+        st.markdown("""
+        The Streamlit app is now the dashboard only. The daily background work should be handled by `daily_mlb_auto.py`.
+
+        Windows Task Scheduler settings:
+
+        ```text
+        Program/script: python
+        Add arguments: C:\\HagLabs\\pitching-analytics-engine\\daily_mlb_auto.py
+        Start in: C:\\HagLabs\\pitching-analytics-engine
+        ```
+
+        The script grades completed pending games first, then logs today's full MLB probability board.
+        """)
+
+    if not status["agreement_summary"].empty:
+        st.markdown("#### Agreement Summary")
+        st.dataframe(status["agreement_summary"], use_container_width=True, hide_index=True)
+
+    if not status["recent_rows"].empty:
+        st.markdown("#### Recent Logged Games")
+        st.dataframe(status["recent_rows"], use_container_width=True, hide_index=True)
+
+
 # ==========================================================
 # MASTER SPORT ROUTER
 # ==========================================================
@@ -1561,37 +1705,8 @@ if sport == "⚾ MLB Baseball":
             st.warning(f"Dashboard unavailable: {e}")
         tot_games, mod_acc, veg_acc, last_updated = get_master_log_stats()
         st.caption(f"Last Updated: {last_updated}")
-        if st.button("🔄 Refresh MLB Cached Data"):
-            st.cache_data.clear()
-            st.success("MLB cached data cleared. Refresh the page to reload fresh data.")
 
-        with st.expander("🤖 Daily automation options"):
-            st.markdown("""
-            The app now logs **every game**, not only actionable edges.
-
-            True no-click automation needs an external scheduler:
-            - **Windows Task Scheduler** for your local setup
-            - **GitHub Actions** for scheduled cloud runs
-            - **Render Cron Job** for public deployment later
-
-            Streamlit remains the dashboard. The included `daily_mlb_auto.py` script does the background work.
-
-Copy `daily_mlb_auto.py` into `C:\\HagLabs\\pitching-analytics-engine`, then use Windows Task Scheduler:
-
-```text
-Program/script: python
-Add arguments: C:\\HagLabs\\pitching-analytics-engine\\daily_mlb_auto.py
-Start in: C:\\HagLabs\\pitching-analytics-engine
-```
-            """)
-        
-        if st.button("🔄 Auto-Grade Yesterday's Bets"):
-            with st.spinner("Pinging MLB Stats API..."):
-                updates = auto_grade_pending_bets()
-                if updates > 0:
-                    st.success(f"✅ Successfully graded {updates} games! Refresh.")
-                elif updates == 0:
-                    st.info("No games ready to be graded.")
+        hag_render_mlb_automation_status_panel()
 
         st.markdown("---")
         
@@ -1600,7 +1715,7 @@ Start in: C:\\HagLabs\\pitching-analytics-engine
             live_odds, odds_debug = get_live_odds()
             schedule_games = fetch_today_mlb_schedule_games()
 
-            if st.checkbox("Show Odds Debug"):
+            with st.expander("🛠 Odds/Schedule Debug"):
                 st.write("Odds Count:", len(live_odds))
                 st.write("Schedule Count:", len(schedule_games))
                 st.write("Odds API Status:", odds_debug.get("status"))
@@ -1613,152 +1728,8 @@ Start in: C:\\HagLabs\\pitching-analytics-engine
             if not team_stats:
                 st.warning("⚠️ Could not establish connection to MLB Stats API.")
             else:
-                st.subheader("⚡ Daily Probability Board Runner")
-                if st.button("▶ Run & Log Every MLB Game Today"):
-                    with st.spinner("Simulating full MLB Slate using API Metrics..."):
-                        slate_logs = []
-                        new_logs_count = 0
-                        date_str = get_local_date_str()
-                        
-                        game_inputs = []
-
-                        if schedule_games:
-                            for scheduled_game in schedule_games:
-                                game_key = scheduled_game["game_key"]
-                                odds = live_odds.get(game_key, ["N/A", "N/A"])
-
-                                game_inputs.append({
-                                    "game_key": game_key,
-                                    "away_t": scheduled_game["away_team"],
-                                    "home_t": scheduled_game["home_team"],
-                                    "away_sp": scheduled_game.get("away_sp", "Unknown"),
-                                    "home_sp": scheduled_game.get("home_sp", "Unknown"),
-                                    "a_ml": odds[0],
-                                    "h_ml": odds[1],
-                                })
-
-                        else:
-                            for game_key, odds in live_odds.items():
-                                away_t, home_t = game_key.split(" @ ")
-                                game_inputs.append({
-                                    "game_key": game_key,
-                                    "away_t": away_t,
-                                    "home_t": home_t,
-                                    "away_sp": "Unknown",
-                                    "home_sp": "Unknown",
-                                    "a_ml": odds[0],
-                                    "h_ml": odds[1],
-                                })
-
-                        for game_data in game_inputs:
-                            try:
-                                away_t = game_data["away_t"]
-                                home_t = game_data["home_t"]
-                                away_sp = game_data.get("away_sp", "Unknown")
-                                home_sp = game_data.get("home_sp", "Unknown")
-                                a_ml = game_data.get("a_ml", "N/A")
-                                h_ml = game_data.get("h_ml", "N/A")
-                                
-                                a_rs_g = team_stats.get(away_t, {}).get('RS_per_G', 4.5)
-                                h_rs_g = team_stats.get(home_t, {}).get('RS_per_G', 4.5)
-                                a_ra_g = team_stats.get(away_t, {}).get('RA_per_G', 4.5)
-                                h_ra_g = team_stats.get(home_t, {}).get('RA_per_G', 4.5)
-                                
-                                away_sp = away_sp or 'Unknown'
-                                home_sp = home_sp or 'Unknown'
-                                a_sp_fip = pitcher_stats.get(away_sp, {}).get('FIP', a_ra_g)
-                                h_sp_fip = pitcher_stats.get(home_sp, {}).get('FIP', h_ra_g)
-
-                                away_pitcher_id = pitcher_stats.get(away_sp, {}).get("ID")
-                                home_pitcher_id = pitcher_stats.get(home_sp, {}).get("ID")
-                                
-                                a_recent_era = fetch_pitcher_recent_era(away_pitcher_id) or a_sp_fip
-                                h_recent_era = fetch_pitcher_recent_era(home_pitcher_id) or h_sp_fip
-                                
-                                a_sp_fip = blend_pitcher_form(a_sp_fip, a_recent_era)
-                                h_sp_fip = blend_pitcher_form(h_sp_fip, h_recent_era)
-
-                                away_sp_score = calculate_sp_edge_score(pitcher_stats, away_sp)
-                                home_sp_score = calculate_sp_edge_score(pitcher_stats, home_sp)
-                                
-                                sp_edge_adjustment = (away_sp_score - home_sp_score) * 0.25
-
-                                away_k_factor = calculate_team_k_tendency(team_stats, home_t)
-                                home_k_factor = calculate_team_k_tendency(team_stats, away_t)
-                                
-                                sp_edge_adjustment = sp_edge_adjustment * away_k_factor
-                                sp_edge_adjustment = sp_edge_adjustment / home_k_factor
-                                
-                                a_run_prevention = (a_sp_fip * 0.60) + (a_ra_g * 0.40)
-                                h_run_prevention = (h_sp_fip * 0.60) + (h_ra_g * 0.40)
-                                p_factor = PARK_FACTORS.get(home_t, 100) / 100
-
-                                away_bullpen_factor = calculate_bullpen_fatigue(away_t)
-                                home_bullpen_factor = calculate_bullpen_fatigue(home_t)
-                                
-                                away_recent_raw = fetch_recent_mlb_team_form(away_t) or {
-                                    "recent_rs_per_g": a_rs_g,
-                                    "recent_ra_per_g": a_ra_g,
-                                    "recent_games": 0
-                                }
-                                
-                                home_recent_raw = fetch_recent_mlb_team_form(home_t) or {
-                                    "recent_rs_per_g": h_rs_g,
-                                    "recent_ra_per_g": h_ra_g,
-                                    "recent_games": 0
-                                }
-                                
-                                away_recent_form = calculate_recent_form_adjustment(
-                                    a_rs_g,
-                                    away_recent_raw["recent_rs_per_g"],
-                                    a_ra_g,
-                                    away_recent_raw["recent_ra_per_g"]
-                                )
-                                
-                                home_recent_form = calculate_recent_form_adjustment(
-                                    h_rs_g,
-                                    home_recent_raw["recent_rs_per_g"],
-                                    h_ra_g,
-                                    home_recent_raw["recent_ra_per_g"]
-                                )
-                                
-                                away_lam = (((away_recent_form["offense"] + home_recent_form["defense"]) / 2) * p_factor * home_bullpen_factor) * (1 + sp_edge_adjustment)
-                                home_lam = (((home_recent_form["offense"] + away_recent_form["defense"]) / 2) * p_factor * away_bullpen_factor) * (1 - sp_edge_adjustment)
-                                
-                                sim_a = np.random.poisson(away_lam, DEFAULT_SIMULATION_SIZE)
-                                sim_h = np.random.poisson(home_lam, DEFAULT_SIMULATION_SIZE)
-                                a_wins = np.sum(sim_a > sim_h) + (np.sum(sim_a == sim_h) / 2)
-                                h_wins = DEFAULT_SIMULATION_SIZE - a_wins
-                                model_away_prob = a_wins / DEFAULT_SIMULATION_SIZE
-                                model_home_prob = h_wins / DEFAULT_SIMULATION_SIZE
-                                v_a_prob = calculate_implied_prob(a_ml)
-                                v_h_prob = calculate_implied_prob(h_ml)
-                                
-                                row_data = hag_create_probability_row(
-                                    date_str,
-                                    away_t,
-                                    home_t,
-                                    a_ml,
-                                    h_ml,
-                                    model_away_prob,
-                                    model_home_prob
-                                )
-
-                                log_status = log_to_google_sheets(row_data)
-
-                                if log_status in ["SUCCESS", "DUPLICATE"]:
-                                    slate_logs.append(row_data)
-                                    if log_status == "SUCCESS":
-                                        new_logs_count += 1
-                            except Exception:
-                                continue
-
-                        if slate_logs:
-                            st.success(f"✅ Successfully processed {len(slate_logs)} MLB games. ({new_logs_count} new entries logged to Sheets)")
-                            df_display = pd.DataFrame(slate_logs, columns=PROBABILITY_BOARD_COLUMNS)
-                            hag_display_probability_board(df_display, "📅 Today's MLB Probability Board")
-                        else:
-                            st.info("No MLB games were found from either the MLB schedule or the Odds API for today.")
+                st.subheader("🤖 Automated Probability Board")
+                st.info("Daily logging and grading now run through daily_mlb_auto.py. This page is the dashboard/status view.")
 
         st.markdown("---")
         st.subheader("Manual Matchup Override")
@@ -5013,7 +4984,7 @@ if sport == "🥎 NCAA Softball":
 
     with col3:
         st.write("")
-        if st.button("🔄 Auto-Grade Yesterday's Softball"):
+        if st.button("🔄 Manual MLB Grader Disabled's Softball"):
             with st.spinner("Accessing NCAA Scoreboard Portal..."):
                 softball_teams, _ = scrape_ncaa_softball_standings()
                 softball_eras = scrape_ncaa_softball_pitching()
