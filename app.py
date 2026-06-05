@@ -186,7 +186,6 @@ def hag_create_probability_row(date_str, away_t, home_t, away_ml, home_ml, model
         model_away_prob if model_pick == away_t else model_home_prob,
         vegas_away_prob if model_pick == away_t else vegas_home_prob,
     )
-
     agreement_type = hag_market_read(main_edge) if odds_source == "Live Odds" else "Model Only"
 
     return [
@@ -890,15 +889,7 @@ if sport == "⚾ MLB Baseball":
 
     @st.cache_data(ttl=CACHE_TTL_ODDS)
     def get_live_odds():
-        api_key = os.environ.get('ODDS_API_KEY')
-
-        if not api_key:
-            return {}, {
-                "status": "NO_KEY",
-                "message": "ODDS_API_KEY is missing from environment variables.",
-                "url": "",
-                "raw": ""
-            }
+        api_key = os.environ.get("ODDS_API_KEY") or "19d9ef9331ef61b3a2589d81ba676e11"
 
         url = (
             "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/"
@@ -923,20 +914,23 @@ if sport == "⚾ MLB Baseball":
             odds_dict = {}
 
             for game in data:
-                if 'bookmakers' in game and len(game['bookmakers']) > 0:
-                    markets = game['bookmakers'][0].get('markets', [])
-                    if not markets:
-                        continue
+                bookmakers = game.get("bookmakers", [])
+                if not bookmakers:
+                    continue
 
-                    outcomes = markets[0].get('outcomes', [])
-                    away = game.get('away_team')
-                    home = game.get('home_team')
+                markets = bookmakers[0].get("markets", [])
+                if not markets:
+                    continue
 
-                    away_ml = next((o.get('price') for o in outcomes if o.get('name') == away), None)
-                    home_ml = next((o.get('price') for o in outcomes if o.get('name') == home), None)
+                outcomes = markets[0].get("outcomes", [])
+                away = game.get("away_team")
+                home = game.get("home_team")
 
-                    if away and home and away_ml is not None and home_ml is not None:
-                        odds_dict[f"{away} @ {home}"] = [away_ml, home_ml]
+                away_ml = next((o.get("price") for o in outcomes if o.get("name") == away), None)
+                home_ml = next((o.get("price") for o in outcomes if o.get("name") == home), None)
+
+                if away and home and away_ml is not None and home_ml is not None:
+                    odds_dict[f"{away} @ {home}"] = [away_ml, home_ml]
 
             return odds_dict, {
                 "status": status_code,
@@ -1539,12 +1533,8 @@ if sport == "⚾ MLB Baseball":
             
             for row in data[1:]:
                 if len(row) >= 10:
-                    if len(row) >= 15:
-                        confidence = row[13].strip()
-                        result = row[14].strip().upper()
-                    else:
-                        confidence = row[8].strip()
-                        result = row[9].strip().upper()
+                    confidence = row[8].strip()
+                    result = row[9].strip().upper()
             
                     if confidence in tier_stats and result in ["WIN", "LOSS"]:
                         if result == "WIN":
