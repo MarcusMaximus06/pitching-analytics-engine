@@ -983,6 +983,226 @@ def hag_render_mlb_automation_status_panel():
         st.dataframe(status["recent_rows"], use_container_width=True, hide_index=True)
 
 
+
+
+# ==========================================================
+# FANTASY SEASON SIMULATOR HELPERS
+# ==========================================================
+def hag_fantasy_points_mlb_hitter(pdata, scoring=None):
+    scoring = scoring or {}
+    g = max(1, int(pdata.get("G", 1) or 1))
+    total = (
+        float(pdata.get("H", 0)) * scoring.get("H", 1.0)
+        + float(pdata.get("2B", 0)) * scoring.get("2B", 2.0)
+        + float(pdata.get("3B", 0)) * scoring.get("3B", 3.0)
+        + float(pdata.get("HR", 0)) * scoring.get("HR", 6.0)
+        + float(pdata.get("R", 0)) * scoring.get("R", 2.0)
+        + float(pdata.get("RBI", 0)) * scoring.get("RBI", 2.0)
+        + float(pdata.get("BB", 0)) * scoring.get("BB", 1.0)
+        + float(pdata.get("SB", 0)) * scoring.get("SB", 5.0)
+        - float(pdata.get("SO", 0)) * scoring.get("SO", 0.5)
+    )
+    ppg = total / g
+    ros_games = int(scoring.get("ROS_GAMES", 120))
+    return round(ppg * ros_games, 1), round(ppg, 2)
+
+
+def hag_fantasy_points_mlb_pitcher(pdata, scoring=None):
+    scoring = scoring or {}
+    g = max(1, int(pdata.get("G", 1) or 1))
+    total = (
+        float(pdata.get("IP", 0)) * scoring.get("IP", 3.0)
+        + float(pdata.get("K", 0)) * scoring.get("K", 1.0)
+        + float(pdata.get("W", 0)) * scoring.get("W", 5.0)
+        + float(pdata.get("SV", 0)) * scoring.get("SV", 5.0)
+        - float(pdata.get("ER", 0)) * scoring.get("ER", 2.0)
+        - float(pdata.get("H", 0)) * scoring.get("H_ALLOWED", 0.5)
+        - float(pdata.get("BB", 0)) * scoring.get("BB_ALLOWED", 0.5)
+    )
+    ppg = total / g
+    ros_games = int(scoring.get("ROS_GAMES", 32))
+    return round(ppg * ros_games, 1), round(ppg, 2)
+
+
+def hag_build_mlb_fantasy_pool(h_stats, p_stats, scoring=None):
+    rows = []
+    for name, pdata in h_stats.items():
+        proj, ppg = hag_fantasy_points_mlb_hitter(pdata, scoring)
+        rows.append({
+            "Player": name, "Team": pdata.get("Team", ""), "Position": pdata.get("Position", "UTIL"),
+            "Type": "Hitter", "Projected Season Points": proj, "Projected PPG": ppg,
+            "Floor": round(proj * 0.78, 1), "Ceiling": round(proj * 1.24, 1),
+            "Volatility": round(max(8, proj * 0.16), 1)
+        })
+    for name, pdata in p_stats.items():
+        proj, ppg = hag_fantasy_points_mlb_pitcher(pdata, scoring)
+        rows.append({
+            "Player": name, "Team": pdata.get("Team", ""), "Position": "P",
+            "Type": "Pitcher", "Projected Season Points": proj, "Projected PPG": ppg,
+            "Floor": round(proj * 0.72, 1), "Ceiling": round(proj * 1.30, 1),
+            "Volatility": round(max(10, proj * 0.20), 1)
+        })
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    return df.sort_values("Projected Season Points", ascending=False).reset_index(drop=True)
+
+
+def hag_simulate_fantasy_roster(player_df, selected_players, sims=5000, replacement_points=0):
+    if player_df is None or player_df.empty or not selected_players:
+        return pd.DataFrame(), pd.DataFrame()
+    roster = player_df[player_df["Player"].isin(selected_players)].copy()
+    if roster.empty:
+        return pd.DataFrame(), pd.DataFrame()
+    means = pd.to_numeric(roster["Projected Season Points"], errors="coerce").fillna(0).to_numpy()
+    sds = pd.to_numeric(roster["Volatility"], errors="coerce").fillna(10).to_numpy()
+    draws = np.random.normal(loc=means, scale=sds, size=(int(sims), len(means)))
+    draws = np.clip(draws, 0, None)
+    totals = draws.sum(axis=1) + float(replacement_points)
+    summary = pd.DataFrame([{
+        "Simulations": int(sims),
+        "Mean Team Points": round(float(np.mean(totals)), 1),
+        "Median Team Points": round(float(np.median(totals)), 1),
+        "Floor 10%": round(float(np.percentile(totals, 10)), 1),
+        "Ceiling 90%": round(float(np.percentile(totals, 90)), 1),
+        "Best Sim": round(float(np.max(totals)), 1),
+        "Worst Sim": round(float(np.min(totals)), 1),
+    }])
+    roster["Roster Share %"] = (pd.to_numeric(roster["Projected Season Points"], errors="coerce").fillna(0) / max(1, means.sum()) * 100).round(1)
+    return summary, roster.sort_values("Projected Season Points", ascending=False)
+
+
+def hag_grade_roster_from_percentile(mean_points, benchmark):
+    try:
+        pct = float(mean_points) / max(1.0, float(benchmark))
+    except Exception:
+        pct = 0
+    if pct >= 1.08:
+        return "A+ / League-winning profile"
+    if pct >= 1.00:
+        return "A / Contender"
+    if pct >= 0.92:
+        return "B / Competitive"
+    if pct >= 0.84:
+        return "C / Needs upgrades"
+    return "D / Rebuild or aggressive waiver/trade mode"
+
+
+def hag_fetch_nfl_fantasy_pool():
+    try:
+        resp = requests.get("https://api.sleeper.app/v1/players/nfl", timeout=20).json()
+    except Exception:
+        return pd.DataFrame()
+
+    rows = []
+    base = {"QB": 285, "RB": 185, "WR": 175, "TE": 125, "K": 130, "DEF": 120}
+    elite = NFL_FANTASY_RELEVANT_NAMES
+    for pid, pdata in resp.items():
+        if not pdata.get("active"):
+            continue
+        pos = pdata.get("position", "")
+        if pos not in ["QB", "RB", "WR", "TE", "K"]:
+            continue
+        name = f"{pdata.get('first_name', '')} {pdata.get('last_name', '')}".strip()
+        if not name:
+            continue
+        age = pdata.get("age") or 27
+        team = pdata.get("team") or "FA"
+        years = pdata.get("years_exp") or 0
+        pos_base = base.get(pos, 100)
+        boost = 1.28 if name in elite else 1.0
+        if pos == "RB":
+            age_factor = 1.04 if float(age or 27) <= 25 else max(0.78, 1 - (float(age or 27) - 25) * 0.045)
+        elif pos in ["WR", "TE"]:
+            age_factor = 1.04 if float(age or 27) <= 27 else max(0.82, 1 - (float(age or 27) - 27) * 0.035)
+        else:
+            age_factor = 1.0
+        exp_factor = 0.88 if int(years or 0) == 0 else 1.0
+        proj = round(pos_base * boost * age_factor * exp_factor, 1)
+        rows.append({
+            "Player": name, "Team": team, "Position": pos, "Age": age,
+            "Projected Season Points": proj, "Projected PPG": round(proj / 17, 2),
+            "Floor": round(proj * 0.74, 1), "Ceiling": round(proj * 1.28, 1),
+            "Volatility": round(max(12, proj * ({"QB": .12, "RB": .23, "WR": .22, "TE": .20, "K": .18}.get(pos, .20))), 1),
+            "Status": str(pdata.get("injury_status") or pdata.get("status") or "Active")
+        })
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    return df.sort_values("Projected Season Points", ascending=False).reset_index(drop=True)
+
+
+def hag_render_fantasy_season_lab(player_df, sport_label, default_slots, benchmark_default):
+    st.subheader(f"🧪 {sport_label} Fantasy Season Simulator")
+    st.caption("Build a fantasy roster, run thousands of season simulations, and estimate total team/player points. This is the Hag Labs version of an 82-0 style team-builder, but for fantasy.")
+
+    if player_df is None or player_df.empty:
+        st.error("No player projection pool is available yet.")
+        return
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        sims = st.slider("Season simulations", 1000, 20000, 5000, step=1000, key=f"{sport_label}_sims")
+    with c2:
+        benchmark = st.number_input("Contender benchmark points", value=float(benchmark_default), step=50.0, key=f"{sport_label}_benchmark")
+    with c3:
+        replacement_points = st.number_input("Replacement/bench adjustment", value=0.0, step=25.0, key=f"{sport_label}_replacement")
+
+    with st.expander("Scoring/profile note"):
+        st.write("This first version uses Hag Labs internal baseline projections from your available data. Later we can add selectable ESPN/Sleeper/Yahoo scoring presets, league upload, bye weeks, and live draft mode.")
+
+    positions = sorted(player_df["Position"].dropna().astype(str).unique().tolist())
+    pos_filter = st.multiselect("Filter player pool by position:", positions, default=positions, key=f"{sport_label}_pos_filter")
+    filtered = player_df[player_df["Position"].astype(str).isin(pos_filter)].copy() if pos_filter else player_df.copy()
+
+    selected_players = st.multiselect(
+        "Build your fantasy roster:",
+        filtered["Player"].tolist(),
+        max_selections=int(default_slots),
+        key=f"{sport_label}_selected_players"
+    )
+
+    left, right = st.columns([1, 1])
+    with left:
+        st.markdown("#### Top available players")
+        st.dataframe(filtered.head(60), use_container_width=True, hide_index=True)
+    with right:
+        st.markdown("#### Selected roster")
+        if selected_players:
+            st.dataframe(player_df[player_df["Player"].isin(selected_players)], use_container_width=True, hide_index=True)
+        else:
+            st.info("Select players to build the roster.")
+
+    if selected_players and st.button("▶ Run Fantasy Season Simulation", key=f"{sport_label}_run"):
+        summary, roster_summary = hag_simulate_fantasy_roster(player_df, selected_players, sims=sims, replacement_points=replacement_points)
+        if summary.empty:
+            st.warning("No simulation results were created.")
+            return
+
+        row = summary.iloc[0]
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.metric("Mean Team Points", row["Mean Team Points"])
+        with m2:
+            st.metric("Median", row["Median Team Points"])
+        with m3:
+            st.metric("Floor / Ceiling", f"{row['Floor 10%']} / {row['Ceiling 90%']}")
+        with m4:
+            st.metric("Roster Grade", hag_grade_roster_from_percentile(row["Mean Team Points"], benchmark))
+
+        st.markdown("### Player contribution summary")
+        st.dataframe(roster_summary, use_container_width=True, hide_index=True)
+
+        chart_df = roster_summary[["Player", "Projected Season Points"]].set_index("Player")
+        st.bar_chart(chart_df)
+
+        st.download_button(
+            "⬇️ Export roster simulation CSV",
+            data=roster_summary.to_csv(index=False).encode("utf-8"),
+            file_name=f"{sport_label.lower().replace(' ', '_')}_fantasy_simulation.csv",
+            mime="text/csv"
+        )
+
 # ==========================================================
 # MASTER SPORT ROUTER
 # ==========================================================
@@ -2601,10 +2821,25 @@ if sport == "⚾ MLB Baseball":
         st.title("🏆 Season-Long Fantasy Hub")
         st.markdown("### ⚾ MLB Fantasy Command Center")
         
-        fantasy_sport = st.radio("Select Active Fantasy Sport:", ["⚾ MLB Trade Analyzer & Projections"])
+        fantasy_sport = st.radio(
+            "Select Active Fantasy Sport:",
+            ["🧪 MLB Fantasy Season Simulator", "⚾ MLB Trade Analyzer & Projections"],
+            horizontal=True
+        )
         st.markdown("---")
         
-        if fantasy_sport == "⚾ MLB Trade Analyzer & Projections":
+        if fantasy_sport == "🧪 MLB Fantasy Season Simulator":
+            with st.spinner("Building MLB fantasy projection pool..."):
+                team_stats, p_stats, h_stats = fetch_mlb_api_data()
+                mlb_pool_df = hag_build_mlb_fantasy_pool(h_stats, p_stats)
+            hag_render_fantasy_season_lab(
+                mlb_pool_df,
+                "MLB",
+                default_slots=16,
+                benchmark_default=5200
+            )
+
+        elif fantasy_sport == "⚾ MLB Trade Analyzer & Projections":
             st.subheader("⚖️ ESPN Standard Points Trade Analyzer")
             st.caption("Calculates Rest-of-Season (ROS) projections natively via MLB API data logs.")
 
@@ -5148,13 +5383,25 @@ elif sport == "🏈 NFL Football":
         "Select NFL Engine:",
         [
             "🏈 NFL Simulation Engine",
+            "🧪 NFL Fantasy Season Simulator",
             "🏆 NFL Fantasy Predictor"
         ]
     )
 
     st.sidebar.markdown("---")
 
-    if nfl_page == "🏆 NFL Fantasy Predictor":
+    if nfl_page == "🧪 NFL Fantasy Season Simulator":
+        st.title("🧪 NFL Fantasy Season Simulator")
+        with st.spinner("Building NFL fantasy projection pool from Sleeper..."):
+            nfl_pool_df = hag_fetch_nfl_fantasy_pool()
+        hag_render_fantasy_season_lab(
+            nfl_pool_df,
+            "NFL",
+            default_slots=15,
+            benchmark_default=2350
+        )
+
+    elif nfl_page == "🏆 NFL Fantasy Predictor":
 
         st.title("🏆 NFL Fantasy Predictor")
         st.caption("Sleeper PPR projections, rankings, tiers, and trade tools.")
