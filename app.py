@@ -133,6 +133,79 @@ PROBABILITY_BOARD_COLUMNS = [
     "Agreement Type", "Model Edge %", "Confidence", "Status", "Odds Source"
 ]
 
+MLB_LOG_STATUSES = {"PENDING", "WIN", "LOSS"}
+
+def hag_parse_mlb_log_row(row):
+    """
+    Safely read both Hag Labs MLB log formats:
+    - Current V2 rows: Status in column 15 / index 14.
+    - Legacy rows: Status in column 10 / index 9.
+    """
+    if row is None:
+        return None
+
+    padded = list(row) + [""] * 20
+    away_t = padded[1].strip()
+    home_t = padded[2].strip()
+
+    v2_status = padded[14].strip().upper()
+    legacy_status = padded[9].strip().upper()
+
+    if v2_status in MLB_LOG_STATUSES:
+        return {
+            "schema": "v2",
+            "date": padded[0].strip(),
+            "away_team": away_t,
+            "home_team": home_t,
+            "away_ml": padded[3].strip(),
+            "home_ml": padded[4].strip(),
+            "model_pick": padded[9].strip(),
+            "vegas_pick": padded[10].strip(),
+            "agreement": padded[11].strip() or "Unknown",
+            "confidence": padded[13].strip() or "Tracking",
+            "status": v2_status,
+        }
+
+    if legacy_status in MLB_LOG_STATUSES:
+        away_ml = padded[3].strip()
+        home_ml = padded[4].strip()
+        try:
+            away_ml_int = int(away_ml)
+            home_ml_int = int(home_ml)
+            vegas_pick = away_t if away_ml_int < home_ml_int else home_t
+        except Exception:
+            vegas_pick = ""
+
+        return {
+            "schema": "legacy",
+            "date": padded[0].strip(),
+            "away_team": away_t,
+            "home_team": home_t,
+            "away_ml": away_ml,
+            "home_ml": home_ml,
+            "model_pick": padded[7].strip(),
+            "vegas_pick": vegas_pick,
+            "agreement": "Legacy Row",
+            "confidence": padded[8].strip() or "Unknown",
+            "status": legacy_status,
+        }
+
+    return None
+
+def hag_mlb_actual_winner_from_status(parsed_row):
+    if not parsed_row:
+        return ""
+    status = parsed_row.get("status", "")
+    model_pick = parsed_row.get("model_pick", "")
+    away_t = parsed_row.get("away_team", "")
+    home_t = parsed_row.get("home_team", "")
+
+    if status == "WIN":
+        return model_pick
+    if status == "LOSS":
+        return away_t if model_pick == home_t else home_t
+    return ""
+
 def hag_market_read(edge):
     try:
         e = abs(float(edge))
@@ -871,7 +944,8 @@ def hag_mlb_automation_status():
             if len(row) < 3:
                 continue
 
-            row_date = row[0]
+            parsed = hag_parse_mlb_log_row(row)
+            row_date = str(row[0]).strip() if len(row) > 0 else ""
 
             if row_date:
                 last_logged_date = max(last_logged_date, row_date) if last_logged_date != "None" else row_date
@@ -879,12 +953,9 @@ def hag_mlb_automation_status():
             if row_date == today:
                 today_logged += 1
 
-            if len(row) >= 15:
-                status = row[14].strip().upper()
-                agreement = row[11].strip() if len(row) > 11 else "Unknown"
-            elif len(row) >= 10:
-                status = row[9].strip().upper()
-                agreement = "Legacy Row"
+            if parsed:
+                status = parsed["status"]
+                agreement = parsed["agreement"]
             else:
                 status = ""
                 agreement = "Unknown"
@@ -919,8 +990,7 @@ def hag_mlb_automation_status():
         return {
             "total_rows": total_rows, "today_logged": today_logged,
             "pending": pending, "graded": graded,
-            "last_logged_date": last_logged_date,
-            "last_graded_date": last_graded_date,
+            "last_logged_date": last_logged_date, "last_graded_date": last_graded_date,
             "latest_status": latest_status,
             "agreement_summary": agreement_summary,
             "recent_rows": recent_rows,
@@ -1832,95 +1902,93 @@ if sport == "⚾ MLB Baseball":
         v2_losses = 0
         vegas_wins = 0
         vegas_losses = 0
-        
+
         try:
             worksheet = get_google_worksheet("MLB Daily Prediction Model", "MLB Log V2")
             data = worksheet.get_all_values()
-        
+
+            tier_stats = {
+                "High": {"wins": 0, "losses": 0},
+                "Medium": {"wins": 0, "losses": 0},
+                "Low": {"wins": 0, "losses": 0},
+                "Tracking": {"wins": 0, "losses": 0},
+                "Unknown": {"wins": 0, "losses": 0},
+            }
+
             for row in data[1:]:
-                if len(row) >= 10:
-                    result = row[9].strip().upper()
-        
-                    if result in ["WIN", "LOSS"]:
-                        v2_total += 1
-        
-                        if result == "WIN":
-                            v2_wins += 1
-                        else:
-                            v2_losses += 1
-        
-                        away_team = row[1]
-                        home_team = row[2]
-                        away_ml = int(row[3])
-                        home_ml = int(row[4])
-                        model_pick = row[7]
-        
-                        vegas_pick = away_team if away_ml < home_ml else home_team
-        
-                        actual_winner = (
-                            model_pick
-                            if result == "WIN"
-                            else (away_team if model_pick == home_team else home_team)
-                        )
-        
-                        if vegas_pick == actual_winner:
-                            vegas_wins += 1
-                        else:
-                            vegas_losses += 1
-        
+                parsed = hag_parse_mlb_log_row(row)
+                if not parsed:
+                    continue
+
+                result = parsed["status"]
+                if result not in ["WIN", "LOSS"]:
+                    continue
+
+                v2_total += 1
+
+                if result == "WIN":
+                    v2_wins += 1
+                else:
+                    v2_losses += 1
+
+                actual_winner = hag_mlb_actual_winner_from_status(parsed)
+                vegas_pick = parsed.get("vegas_pick", "")
+
+                if vegas_pick and vegas_pick == actual_winner:
+                    vegas_wins += 1
+                elif vegas_pick:
+                    vegas_losses += 1
+
+                confidence = parsed.get("confidence", "Unknown")
+                if confidence not in tier_stats:
+                    tier_stats[confidence] = {"wins": 0, "losses": 0}
+
+                if result == "WIN":
+                    tier_stats[confidence]["wins"] += 1
+                else:
+                    tier_stats[confidence]["losses"] += 1
+
             v2_acc = (v2_wins / v2_total * 100) if v2_total > 0 else 0
             vegas_total = vegas_wins + vegas_losses
             vegas_acc = (vegas_wins / vegas_total * 100) if vegas_total > 0 else 0
             hag_advantage = v2_acc - vegas_acc
-        
+
             d1, d2, d3, d4 = st.columns(4)
 
             with d1:
                 st.metric("Graded Games", v2_total)
-            
+
             with d2:
                 st.metric("Hag Labs Accuracy", f"{v2_acc:.1f}%")
-            
+
             with d3:
                 st.metric("Vegas Accuracy", f"{vegas_acc:.1f}%")
-            
+
             with d4:
                 st.metric("Hag Labs Advantage", f"{hag_advantage:+.1f}%")
 
             st.markdown("#### Accuracy by Confidence Tier")
-    
-            tier_stats = {
-                "High": {"wins": 0, "losses": 0},
-                "Medium": {"wins": 0, "losses": 0},
-                "Low": {"wins": 0, "losses": 0}
-            }
-            
-            for row in data[1:]:
-                if len(row) >= 10:
-                    confidence = row[8].strip()
-                    result = row[9].strip().upper()
-            
-                    if confidence in tier_stats and result in ["WIN", "LOSS"]:
-                        if result == "WIN":
-                            tier_stats[confidence]["wins"] += 1
-                        else:
-                            tier_stats[confidence]["losses"] += 1
-            
-            tier_cols = st.columns(3)
-            
-            for idx, tier in enumerate(["High", "Medium", "Low"]):
-                wins = tier_stats[tier]["wins"]
-                losses = tier_stats[tier]["losses"]
-                total = wins + losses
-                acc = (wins / total * 100) if total > 0 else 0
-            
-                with tier_cols[idx]:
-                    st.metric(
-                        f"{tier} Confidence",
-                        f"{acc:.1f}%",
-                        f"{wins}-{losses}"
-                    )
-        
+
+            visible_tiers = [t for t in ["High", "Medium", "Low", "Tracking", "Unknown"] if (tier_stats.get(t, {}).get("wins", 0) + tier_stats.get(t, {}).get("losses", 0)) > 0]
+
+            if not visible_tiers:
+                st.info("No graded confidence-tier results yet.")
+            else:
+                tier_cols = st.columns(len(visible_tiers))
+
+                for idx, tier in enumerate(visible_tiers):
+                    wins = tier_stats[tier]["wins"]
+                    losses = tier_stats[tier]["losses"]
+                    total = wins + losses
+                    acc = (wins / total * 100) if total > 0 else 0
+
+                    with tier_cols[idx]:
+                        st.metric(
+                            f"{tier} Confidence",
+                            f"{acc:.1f}%",
+                            f"{wins}-{losses}"
+                        )
+
         except Exception as e:
             st.warning(f"Dashboard unavailable: {e}")
         tot_games, mod_acc, veg_acc, last_updated = get_master_log_stats()
