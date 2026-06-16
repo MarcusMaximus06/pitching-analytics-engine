@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 import nfl_data_py as nfl
 import re
 import requests
+from urllib.parse import quote
 from utils import get_local_date_str, clean_name, calculate_implied_prob, get_confidence_tier
 from google_sheets import get_google_client, get_google_worksheet
 from config import APP_TITLE, APP_PAGE_TITLE, CACHE_TTL_SHORT, CACHE_TTL_ODDS, CACHE_TTL_STATS, CACHE_TTL_DAILY, DEFAULT_SIMULATION_SIZE, MIN_ACTIONABLE_EDGE
@@ -1415,8 +1416,135 @@ def hag_ufc_percentile_bar(label, value):
         pct = int(max(1, min(99, float(value))))
     except Exception:
         pct = 50
-    st.markdown(f"**{label}: {pct}%**")
-    st.progress(pct / 100)
+
+    if pct >= 90:
+        color = "#22c55e"
+    elif pct >= 80:
+        color = "#84cc16"
+    elif pct >= 65:
+        color = "#facc15"
+    else:
+        color = "#ef4444"
+
+    st.markdown(f"**{label}: {pct}th percentile**")
+    st.markdown(
+        f"""
+        <div style="background-color:#1f2937;border-radius:8px;height:15px;width:100%;margin-bottom:14px;">
+            <div style="background-color:{color};width:{pct}%;height:15px;border-radius:8px;"></div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def hag_ufc_fighter_image_url(fighter_name):
+    f = UFC_FIGHTERS.get(fighter_name, {})
+    if f.get("Headshot"):
+        return f.get("Headshot")
+    safe_name = quote(str(fighter_name))
+    return f"https://ui-avatars.com/api/?name={safe_name}&size=256&background=111827&color=ffffff&bold=true&format=png"
+
+
+def hag_render_ufc_fighter_header(fighter_name, fighter_data=None):
+    f = fighter_data or UFC_FIGHTERS.get(fighter_name, {})
+    grade = hag_ufc_score(f)
+
+    c1, c2 = st.columns([0.7, 3.3])
+    with c1:
+        st.image(hag_ufc_fighter_image_url(fighter_name), width=132)
+    with c2:
+        st.markdown(f"## {fighter_name}")
+        st.caption(
+            f"{f.get('Division', 'N/A')} • {f.get('Record', 'N/A')} • {f.get('Style', 'N/A')} • "
+            f"{f.get('Stance', 'N/A')} • Age {f.get('Age', 'N/A')} • Reach {f.get('Reach', 'N/A')} in"
+        )
+        h1, h2, h3, h4 = st.columns(4)
+        with h1:
+            st.metric("Overall Grade", f"{grade}/100")
+        with h2:
+            st.metric("Tier", hag_ufc_tier(grade))
+        with h3:
+            st.metric("Finish Split", f"KO {f.get('KO %', 0)}% / Sub {f.get('Sub %', 0)}%")
+        with h4:
+            st.metric("SOS", f"{f.get('Strength of Schedule', 'N/A')}/100")
+
+
+def hag_ufc_category_advantage(fighter_a, fighter_b):
+    a = UFC_FIGHTERS.get(fighter_a, {})
+    b = UFC_FIGHTERS.get(fighter_b, {})
+    metrics = ["Striking", "Grappling", "Wrestling", "Submission", "Durability", "Cardio", "Power", "Speed", "Fight IQ", "Recent Form", "Strength of Schedule"]
+    rows = []
+    for metric in metrics:
+        av = float(a.get(metric, 75))
+        bv = float(b.get(metric, 75))
+        diff = round(av - bv, 1)
+        if abs(diff) < 2:
+            adv = "Even"
+        else:
+            adv = fighter_a if diff > 0 else fighter_b
+        rows.append({"Category": metric, fighter_a: av, fighter_b: bv, "Edge": diff, "Advantage": adv})
+    return pd.DataFrame(rows)
+
+
+def hag_ufc_method_cards(result):
+    if not result:
+        return
+    method_rows = [
+        (result["Fighter A"], "KO/TKO", result["A KO/TKO %"]),
+        (result["Fighter A"], "Submission", result["A Submission %"]),
+        (result["Fighter A"], "Decision", result["A Decision %"]),
+        (result["Fighter B"], "KO/TKO", result["B KO/TKO %"]),
+        (result["Fighter B"], "Submission", result["B Submission %"]),
+        (result["Fighter B"], "Decision", result["B Decision %"]),
+    ]
+    top = sorted(method_rows, key=lambda x: float(x[2]), reverse=True)[:3]
+    cols = st.columns(3)
+    for col, (fighter, method, pct) in zip(cols, top):
+        with col:
+            st.metric(f"{fighter} by {method}", f"{pct}%")
+
+
+def hag_render_ufc_comparison_tool():
+    st.title("🧬 UFC Fighter Comparison")
+    st.caption("Category-by-category fighter comparison with advantage labels and 0-100 skill profiles.")
+    names = sorted(UFC_FIGHTERS.keys())
+    c1, c2 = st.columns(2)
+    with c1:
+        fighter_a = st.selectbox("Fighter A:", names, index=0, key="ufc_compare_a")
+    with c2:
+        fighter_b = st.selectbox("Fighter B:", names, index=1 if len(names) > 1 else 0, key="ufc_compare_b")
+
+    if fighter_a == fighter_b:
+        st.warning("Select two different fighters.")
+        return
+
+    h1, h2 = st.columns(2)
+    with h1:
+        hag_render_ufc_fighter_header(fighter_a)
+    with h2:
+        hag_render_ufc_fighter_header(fighter_b)
+
+    comp_df = hag_ufc_category_advantage(fighter_a, fighter_b)
+    st.markdown("### Category Advantages")
+    st.dataframe(comp_df, use_container_width=True, hide_index=True)
+
+    result = hag_ufc_matchup_result(fighter_a, fighter_b)
+    if result:
+        st.markdown("### Head-to-Head Projection")
+        p1, p2, p3 = st.columns(3)
+        with p1:
+            st.metric(f"{fighter_a} Win %", f"{result['A Win %']}%")
+        with p2:
+            st.metric(f"{fighter_b} Win %", f"{result['B Win %']}%")
+        with p3:
+            st.metric("Projected Winner", result["Predicted Winner"])
+        hag_ufc_method_cards(result)
+
+    chart_cols = st.columns(2)
+    with chart_cols[0]:
+        st.plotly_chart(hag_ufc_radar_chart(fighter_a), use_container_width=True)
+    with chart_cols[1]:
+        st.plotly_chart(hag_ufc_radar_chart(fighter_b), use_container_width=True)
 
 
 def hag_ufc_profile_df():
@@ -1514,7 +1642,7 @@ def hag_ufc_radar_chart(fighter_name):
 
 def hag_render_ufc_fighter_lab():
     st.title("🥊 UFC Fighter Lab")
-    st.caption("Starter Hag Labs fighter profiles. This is the UFC version of Player Lab; live UFCStats scraping can be added next.")
+    st.caption("Hag Labs fighter profiles with Savant-style percentiles, radar charts, fighter grades, and method profiles.")
 
     df = hag_ufc_profile_df()
     divisions = ["All"] + sorted(df["Division"].dropna().unique().tolist())
@@ -1523,40 +1651,40 @@ def hag_render_ufc_fighter_lab():
 
     fighter = st.selectbox("Select fighter:", filtered["Fighter"].tolist(), key="ufc_lab_fighter")
     f = UFC_FIGHTERS[fighter]
-    grade = hag_ufc_score(f)
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.metric("Overall Grade", f"{grade}/100")
-    with c2:
-        st.metric("Tier", hag_ufc_tier(grade))
-    with c3:
-        st.metric("Record", f.get("Record", "N/A"))
-    with c4:
-        st.metric("Division", f.get("Division", "N/A"))
+    hag_render_ufc_fighter_header(fighter, f)
 
     left, right = st.columns([1, 1])
     with left:
-        st.markdown(f"### {fighter}")
-        st.caption(f"{f.get('Style')} • {f.get('Stance')} • Age {f.get('Age')} • Reach {f.get('Reach')} in")
+        st.markdown("### Fighter Notes")
         st.write(f.get("Notes", ""))
-        hag_ufc_percentile_bar("Striking", f.get("Striking", 75))
-        hag_ufc_percentile_bar("Grappling", f.get("Grappling", 75))
-        hag_ufc_percentile_bar("Wrestling", f.get("Wrestling", 75))
-        hag_ufc_percentile_bar("Durability", f.get("Durability", 75))
-        hag_ufc_percentile_bar("Fight IQ", f.get("Fight IQ", 75))
+
+        st.markdown("### Savant-Style Percentiles")
+        for metric in ["Striking", "Grappling", "Wrestling", "Submission", "Durability", "Cardio", "Power", "Speed", "Fight IQ", "Recent Form"]:
+            hag_ufc_percentile_bar(metric, f.get(metric, 75))
+
     with right:
+        st.markdown("### Skill Radar")
         st.plotly_chart(hag_ufc_radar_chart(fighter), use_container_width=True)
 
+        st.markdown("### Method Profile")
+        method_profile = pd.DataFrame([
+            {"Method": "KO/TKO", "Career Split %": f.get("KO %", 0)},
+            {"Method": "Submission", "Career Split %": f.get("Sub %", 0)},
+            {"Method": "Decision", "Career Split %": f.get("Decision %", 0)},
+        ])
+        st.dataframe(method_profile, use_container_width=True, hide_index=True)
+        st.bar_chart(method_profile.set_index("Method"))
+
     st.markdown("### Fighter Database")
-    display_cols = ["Fighter", "Division", "Record", "Age", "Stance", "Overall Grade", "Tier", "Striking", "Grappling", "Wrestling", "Durability", "Power", "Fight IQ"]
+    display_cols = ["Fighter", "Division", "Record", "Age", "Stance", "Overall Grade", "Tier", "Striking", "Grappling", "Wrestling", "Submission", "Durability", "Cardio", "Power", "Speed", "Fight IQ"]
     st.dataframe(filtered[display_cols], use_container_width=True, hide_index=True)
     st.download_button("⬇️ Export UFC Fighter Lab CSV", data=filtered.to_csv(index=False).encode("utf-8"), file_name="ufc_fighter_lab.csv", mime="text/csv")
 
 
 def hag_render_ufc_fight_predictor():
     st.title("🥊 UFC Fight Predictor")
-    st.caption("Compare two fighters and estimate win probability plus method-of-victory lean.")
+    st.caption("Compare two fighters and estimate win probability, method-of-victory probabilities, and category advantages.")
     names = sorted(UFC_FIGHTERS.keys())
     c1, c2 = st.columns(2)
     with c1:
@@ -1570,6 +1698,12 @@ def hag_render_ufc_fight_predictor():
         st.warning("Select two different fighters.")
         return
 
+    h1, h2 = st.columns(2)
+    with h1:
+        hag_render_ufc_fighter_header(fighter_a)
+    with h2:
+        hag_render_ufc_fighter_header(fighter_b)
+
     m1, m2, m3 = st.columns(3)
     with m1:
         st.metric(f"{fighter_a} Win Probability", f"{result['A Win %']}%")
@@ -1580,8 +1714,11 @@ def hag_render_ufc_fight_predictor():
 
     st.success(f"Predicted Winner: {result['Predicted Winner']}")
 
+    st.markdown("### Most Likely Methods")
+    hag_ufc_method_cards(result)
+
     method_df, sim_summary = hag_ufc_simulation_df(result, sims=10000)
-    st.markdown("### Method Breakdown")
+    st.markdown("### Full Method Breakdown")
     st.dataframe(method_df, use_container_width=True, hide_index=True)
     st.bar_chart(method_df.set_index("Outcome"))
 
@@ -1589,11 +1726,15 @@ def hag_render_ufc_fight_predictor():
         st.dataframe(sim_summary, use_container_width=True, hide_index=True)
 
     st.markdown("### Fighter Comparison")
-    comp = pd.DataFrame([
-        {"Metric": k, fighter_a: UFC_FIGHTERS[fighter_a].get(k), fighter_b: UFC_FIGHTERS[fighter_b].get(k)}
-        for k in ["Division", "Record", "Age", "Height", "Reach", "Stance", "Striking", "Grappling", "Wrestling", "Submission", "Durability", "Cardio", "Power", "Speed", "Fight IQ", "Recent Form"]
-    ])
-    st.dataframe(comp, use_container_width=True, hide_index=True)
+    comp_df = hag_ufc_category_advantage(fighter_a, fighter_b)
+    st.dataframe(comp_df, use_container_width=True, hide_index=True)
+
+    st.download_button(
+        "⬇️ Export UFC Fight Prediction CSV",
+        data=method_df.to_csv(index=False).encode("utf-8"),
+        file_name="ufc_fight_prediction.csv",
+        mime="text/csv"
+    )
 
 
 def hag_render_ufc_historical_simulator():
@@ -1659,7 +1800,7 @@ if sport == "🏠 Home":
     #### Active Engines
     - ⚾ MLB Baseball: betting model, player lab, fantasy projections
     - 🏈 NFL Football: simulation engine and fantasy projections in progress
-    - 🥊 UFC Combat Sports: Fighter Lab, Fight Predictor, and Historical Simulator
+    - 🥊 UFC Combat Sports: Fighter Lab, Fight Predictor, Fighter Comparison, and Historical Simulator
 
     #### Coming Soon
     - 🎓 NCAA Football
@@ -1678,6 +1819,7 @@ if sport == "🥊 UFC Combat Sports":
         [
             "🥊 UFC Fighter Lab",
             "⚔️ UFC Fight Predictor",
+            "🧬 Fighter Comparison",
             "🕰️ Historical Fight Simulator"
         ]
     )
@@ -1688,6 +1830,9 @@ if sport == "🥊 UFC Combat Sports":
 
     elif page == "⚔️ UFC Fight Predictor":
         hag_render_ufc_fight_predictor()
+
+    elif page == "🧬 Fighter Comparison":
+        hag_render_ufc_comparison_tool()
 
     elif page == "🕰️ Historical Fight Simulator":
         hag_render_ufc_historical_simulator()
