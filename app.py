@@ -1381,6 +1381,213 @@ UFC_FIGHTERS = {
 }
 
 
+# ==========================================================
+# UFC FIGHTER DATABASE LOADER
+# ==========================================================
+UFC_FIGHTER_DB_PATH = "ufc_fighters.csv"
+
+def hag_normalize_ufc_fighter_row(row):
+    numeric_cols = [
+        "Age", "Height", "Reach", "Striking", "Grappling", "Wrestling",
+        "Submission", "Durability", "Cardio", "Power", "Speed",
+        "Fight IQ", "Experience", "KO %", "Sub %", "Decision %",
+        "Recent Form", "Strength of Schedule"
+    ]
+
+    out = {}
+    for key, value in dict(row).items():
+        if pd.isna(value):
+            value = ""
+        if key in numeric_cols:
+            try:
+                if str(value).strip() == "":
+                    out[key] = 0
+                else:
+                    out[key] = float(value)
+                    if out[key].is_integer():
+                        out[key] = int(out[key])
+            except Exception:
+                out[key] = 0
+        else:
+            out[key] = str(value).strip()
+
+    return out
+
+def hag_load_ufc_fighter_database(path=UFC_FIGHTER_DB_PATH):
+    if not os.path.exists(path):
+        return {}
+
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return {}
+
+    if df.empty or "Fighter" not in df.columns:
+        return {}
+
+    loaded = {}
+    for _, row in df.iterrows():
+        name = str(row.get("Fighter", "")).strip()
+        if not name:
+            continue
+
+        fighter_data = hag_normalize_ufc_fighter_row(row)
+        fighter_data.pop("Fighter", None)
+        loaded[name] = fighter_data
+
+    return loaded
+
+def hag_save_ufc_fighter_database(df, path=UFC_FIGHTER_DB_PATH):
+    if df is None or df.empty:
+        return False
+    try:
+        df.to_csv(path, index=False)
+        return True
+    except Exception:
+        return False
+
+def hag_ufc_database_df():
+    rows = []
+    for name, data in UFC_FIGHTERS.items():
+        row = {"Fighter": name}
+        row.update(data)
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    preferred = [
+        "Fighter", "Division", "Status", "Record", "Age", "Height", "Reach",
+        "Stance", "Style", "Striking", "Grappling", "Wrestling", "Submission",
+        "Durability", "Cardio", "Power", "Speed", "Fight IQ", "Experience",
+        "KO %", "Sub %", "Decision %", "Recent Form", "Strength of Schedule", "Notes"
+    ]
+    for col in preferred:
+        if col not in df.columns:
+            df[col] = ""
+    return df[preferred + [c for c in df.columns if c not in preferred]]
+
+def hag_apply_external_ufc_database():
+    loaded = hag_load_ufc_fighter_database()
+    if loaded:
+        UFC_FIGHTERS.update(loaded)
+
+hag_apply_external_ufc_database()
+
+def hag_render_ufc_database_manager():
+    st.title("🗂️ UFC Fighter Database")
+    st.caption("The UFC section now loads fighters from `ufc_fighters.csv` when that file exists in your project folder. This keeps app.py smaller and lets you grow current/historical fighter coverage without editing code.")
+
+    df = hag_ufc_database_df()
+
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        st.metric("Total Fighters", len(df))
+    with m2:
+        st.metric("Active", int((df["Status"].astype(str) == "Active").sum()) if "Status" in df.columns else 0)
+    with m3:
+        st.metric("Historical", int((df["Status"].astype(str) == "Historical").sum()) if "Status" in df.columns else 0)
+    with m4:
+        st.metric("Divisions", df["Division"].nunique() if "Division" in df.columns else 0)
+
+    st.info("Put `ufc_fighters.csv` in the same folder as app.py. Restart Streamlit after replacing the file.")
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        status_filter = st.selectbox("Status filter", ["All"] + sorted(df["Status"].dropna().astype(str).unique().tolist()), key="ufc_db_status")
+    with c2:
+        division_filter = st.selectbox("Division filter", ["All"] + sorted(df["Division"].dropna().astype(str).unique().tolist()), key="ufc_db_division")
+    with c3:
+        search = st.text_input("Search fighter", key="ufc_db_search")
+
+    show = df.copy()
+    if status_filter != "All":
+        show = show[show["Status"].astype(str) == status_filter]
+    if division_filter != "All":
+        show = show[show["Division"].astype(str) == division_filter]
+    if search:
+        show = show[show["Fighter"].astype(str).str.contains(search, case=False, na=False)]
+
+    st.dataframe(show, use_container_width=True, hide_index=True)
+
+    st.download_button(
+        "⬇ Export Current UFC Fighter Database CSV",
+        data=df.to_csv(index=False).encode("utf-8"),
+        file_name="ufc_fighters_export.csv",
+        mime="text/csv",
+        key="ufc_db_export"
+    )
+
+    with st.expander("➕ Add one fighter manually"):
+        names = df["Fighter"].astype(str).tolist()
+        new_name = st.text_input("Fighter name", key="ufc_db_new_name")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            new_div = st.text_input("Division", value="Unknown", key="ufc_db_new_div")
+        with c2:
+            new_status = st.selectbox("Status", ["Active", "Historical", "Retired", "Prospect"], key="ufc_db_new_status")
+        with c3:
+            new_record = st.text_input("Record", value="0-0", key="ufc_db_new_record")
+        with c4:
+            new_age = st.number_input("Age", 18, 60, 28, key="ufc_db_new_age")
+
+        style = st.text_input("Style", value="All-Around", key="ufc_db_new_style")
+        notes = st.text_area("Notes", value="Manual Hag Labs starter profile.", key="ufc_db_new_notes")
+
+        s1, s2, s3, s4 = st.columns(4)
+        with s1:
+            striking = st.slider("Striking", 1, 100, 75, key="ufc_db_new_striking")
+            grappling = st.slider("Grappling", 1, 100, 75, key="ufc_db_new_grappling")
+        with s2:
+            wrestling = st.slider("Wrestling", 1, 100, 75, key="ufc_db_new_wrestling")
+            submission = st.slider("Submission", 1, 100, 70, key="ufc_db_new_submission")
+        with s3:
+            durability = st.slider("Durability", 1, 100, 75, key="ufc_db_new_durability")
+            cardio = st.slider("Cardio", 1, 100, 75, key="ufc_db_new_cardio")
+        with s4:
+            power = st.slider("Power", 1, 100, 75, key="ufc_db_new_power")
+            speed = st.slider("Speed", 1, 100, 75, key="ufc_db_new_speed")
+
+        if st.button("💾 Save Fighter to ufc_fighters.csv", key="ufc_db_save_new"):
+            if not new_name.strip():
+                st.error("Enter a fighter name.")
+            elif new_name.strip() in names:
+                st.info("That fighter already exists in the database.")
+            else:
+                new_row = {
+                    "Fighter": new_name.strip(),
+                    "Division": new_div,
+                    "Status": new_status,
+                    "Record": new_record,
+                    "Age": new_age,
+                    "Height": 0,
+                    "Reach": 0,
+                    "Stance": "",
+                    "Style": style,
+                    "Striking": striking,
+                    "Grappling": grappling,
+                    "Wrestling": wrestling,
+                    "Submission": submission,
+                    "Durability": durability,
+                    "Cardio": cardio,
+                    "Power": power,
+                    "Speed": speed,
+                    "Fight IQ": 75,
+                    "Experience": 50,
+                    "KO %": 33,
+                    "Sub %": 33,
+                    "Decision %": 34,
+                    "Recent Form": 75,
+                    "Strength of Schedule": 50,
+                    "Notes": notes,
+                }
+                current = hag_ufc_database_df()
+                updated = pd.concat([current, pd.DataFrame([new_row])], ignore_index=True)
+                if hag_save_ufc_fighter_database(updated):
+                    st.success("Fighter saved. Restart Streamlit to load the new fighter everywhere.")
+                else:
+                    st.error("Could not save fighter database.")
+
+
+
 def hag_ufc_score(fighter):
     f = fighter or {}
     weights = {
@@ -2788,6 +2995,7 @@ if sport == "🥊 UFC Combat Sports":
             "🏆 UFC Rankings Center",
             "🎲 UFC Monte Carlo Simulator",
             "📒 UFC Prediction Log",
+            "🗂️ UFC Fighter Database",
             "🕰️ Historical Fight Simulator"
         ]
     )
@@ -2813,6 +3021,9 @@ if sport == "🥊 UFC Combat Sports":
 
     elif page == "📒 UFC Prediction Log":
         hag_render_ufc_prediction_log()
+
+    elif page == "🗂️ UFC Fighter Database":
+        hag_render_ufc_database_manager()
 
     elif page == "🕰️ Historical Fight Simulator":
         hag_render_ufc_historical_simulator()
