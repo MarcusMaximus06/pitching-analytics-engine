@@ -123,6 +123,11 @@ requests.Session.request = custom_request
 
 st.set_page_config(page_title=APP_PAGE_TITLE, layout="wide")
 
+# Hag Labs Global Logo
+if os.path.exists("hag_labs_logo.png"):
+    st.image("hag_labs_logo.png", width=300)
+
+
 
 # ==========================================================
 # DAILY PROBABILITY BOARD HELPERS
