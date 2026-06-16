@@ -1754,52 +1754,114 @@ def hag_ufc_body_zone_profile(fighter_name):
     return attack, defense, phase_profile
 
 
+
 def hag_ufc_body_heatmap_figure(fighter_name, mode="Attack"):
     attack, defense, phase_profile = hag_ufc_body_zone_profile(fighter_name)
     profile = attack if mode == "Attack" else defense
 
+    # Only true target locations belong on the body map.
+    # Clinch/Ground is a fight phase, so it is rendered separately in the Fight Phase chart.
     zones = [
-        {"zone": "Head", "x": 0.50, "y": 0.86, "size": profile.get("Head", 25)},
-        {"zone": "Body", "x": 0.50, "y": 0.58, "size": profile.get("Body", 25)},
-        {"zone": "Legs", "x": 0.50, "y": 0.28, "size": profile.get("Legs", 25)},
-        {"zone": "Clinch/Ground", "x": 0.50, "y": 0.44, "size": profile.get("Clinch/Ground", 25)},
+        {"zone": "Head", "x": 0.50, "y": 0.78, "size": float(profile.get("Head", 25))},
+        {"zone": "Body", "x": 0.50, "y": 0.50, "size": float(profile.get("Body", 25))},
+        {"zone": "Legs", "x": 0.50, "y": 0.22, "size": float(profile.get("Legs", 25))},
     ]
+
+    colorscale = "Reds" if mode == "Attack" else "Blues"
+    title_word = "Targeted" if mode == "Attack" else "Absorbed"
 
     fig = go.Figure()
 
-    # Simple body silhouette using lines/shapes so no image asset is required.
-    fig.add_shape(type="circle", x0=0.42, y0=0.78, x1=0.58, y1=0.94, line=dict(width=2), fillcolor="rgba(148,163,184,0.10)")
-    fig.add_shape(type="rect", x0=0.38, y0=0.45, x1=0.62, y1=0.76, line=dict(width=2), fillcolor="rgba(148,163,184,0.08)")
-    fig.add_shape(type="line", x0=0.38, y0=0.70, x1=0.25, y1=0.48, line=dict(width=5))
-    fig.add_shape(type="line", x0=0.62, y0=0.70, x1=0.75, y1=0.48, line=dict(width=5))
-    fig.add_shape(type="line", x0=0.45, y0=0.45, x1=0.37, y1=0.08, line=dict(width=6))
-    fig.add_shape(type="line", x0=0.55, y0=0.45, x1=0.63, y1=0.08, line=dict(width=6))
+    # Clean silhouette-style layout. No stick arms/legs and no fake clinch bubble.
+    # Torso / lower body base
+    fig.add_shape(
+        type="path",
+        path="M 0.39 0.66 C 0.37 0.58, 0.36 0.47, 0.39 0.38 C 0.43 0.28, 0.57 0.28, 0.61 0.38 C 0.64 0.47, 0.63 0.58, 0.61 0.66 C 0.56 0.70, 0.44 0.70, 0.39 0.66 Z",
+        line=dict(color="rgba(148,163,184,0.55)", width=2),
+        fillcolor="rgba(148,163,184,0.12)"
+    )
+    # Shoulders / arms as soft outline, not stick lines
+    fig.add_shape(
+        type="path",
+        path="M 0.39 0.64 C 0.30 0.59, 0.24 0.48, 0.22 0.35 C 0.27 0.35, 0.33 0.46, 0.39 0.55 Z",
+        line=dict(color="rgba(148,163,184,0.35)", width=1),
+        fillcolor="rgba(148,163,184,0.07)"
+    )
+    fig.add_shape(
+        type="path",
+        path="M 0.61 0.64 C 0.70 0.59, 0.76 0.48, 0.78 0.35 C 0.73 0.35, 0.67 0.46, 0.61 0.55 Z",
+        line=dict(color="rgba(148,163,184,0.35)", width=1),
+        fillcolor="rgba(148,163,184,0.07)"
+    )
+    # Head / neck
+    fig.add_shape(
+        type="circle",
+        x0=0.42, y0=0.70, x1=0.58, y1=0.88,
+        line=dict(color="rgba(148,163,184,0.55)", width=2),
+        fillcolor="rgba(148,163,184,0.10)"
+    )
+    fig.add_shape(
+        type="rect",
+        x0=0.46, y0=0.64, x1=0.54, y1=0.71,
+        line=dict(color="rgba(148,163,184,0.20)", width=1),
+        fillcolor="rgba(148,163,184,0.08)"
+    )
+    # Legs as filled silhouette shapes, not stick lines
+    fig.add_shape(
+        type="path",
+        path="M 0.43 0.32 C 0.40 0.22, 0.38 0.12, 0.37 0.05 L 0.45 0.05 C 0.47 0.15, 0.48 0.24, 0.49 0.33 Z",
+        line=dict(color="rgba(148,163,184,0.35)", width=1),
+        fillcolor="rgba(148,163,184,0.09)"
+    )
+    fig.add_shape(
+        type="path",
+        path="M 0.57 0.32 C 0.60 0.22, 0.62 0.12, 0.63 0.05 L 0.55 0.05 C 0.53 0.15, 0.52 0.24, 0.51 0.33 Z",
+        line=dict(color="rgba(148,163,184,0.35)", width=1),
+        fillcolor="rgba(148,163,184,0.09)"
+    )
 
+    # Heat spots
     fig.add_trace(go.Scatter(
         x=[z["x"] for z in zones],
         y=[z["y"] for z in zones],
         mode="markers+text",
-        text=[f"{z['zone']}<br>{z['size']}%" for z in zones],
+        text=[f"{z['zone']}<br>{z['size']:.1f}%" for z in zones],
         textposition="middle center",
+        textfont=dict(color="white", size=12),
         marker=dict(
-            size=[max(34, z["size"] * 2.25) for z in zones],
+            size=[max(50, z["size"] * 2.4) for z in zones],
             color=[z["size"] for z in zones],
-            colorscale="Reds" if mode == "Attack" else "Blues",
+            colorscale=colorscale,
+            opacity=0.86,
+            line=dict(color="rgba(15,23,42,0.95)", width=2),
             showscale=True,
             colorbar=dict(title=f"{mode} %")
         ),
         hovertemplate="%{text}<extra></extra>"
     ))
 
+    # Subtle labels to make it feel like an analytics map, not a drawing.
+    fig.add_annotation(
+        x=0.5, y=0.96,
+        text=f"{fighter_name} {mode} Location Map",
+        showarrow=False,
+        font=dict(size=18, color="white")
+    )
+    fig.add_annotation(
+        x=0.5, y=0.01,
+        text=f"Estimated {title_word.lower()} strike location share",
+        showarrow=False,
+        font=dict(size=11, color="rgba(226,232,240,0.65)")
+    )
+
     fig.update_xaxes(visible=False, range=[0, 1])
     fig.update_yaxes(visible=False, range=[0, 1], scaleanchor="x", scaleratio=1)
     fig.update_layout(
-        title=f"{fighter_name} {mode} Body Map",
-        height=500,
-        margin=dict(l=20, r=20, t=55, b=20),
-        plot_bgcolor="rgba(0,0,0,0)",
+        height=520,
+        margin=dict(l=10, r=10, t=45, b=25),
         paper_bgcolor="rgba(0,0,0,0)",
-        showlegend=False,
+        plot_bgcolor="rgba(15,23,42,0.18)",
+        showlegend=False
     )
     return fig
 
@@ -1855,16 +1917,23 @@ def hag_render_ufc_statleaders_importer():
             st.write("Next step would be a dedicated scraper/parser for the site's rendered leaderboard data.")
 
 
+
 def hag_render_ufc_body_map_section(fighter_name):
     st.markdown("### 🎯 Savant-Style Body Strike Map")
-    st.caption("First version is a Hag Labs estimated strike-zone model from style, power, striking, grappling, cardio, and durability. Later we can replace the estimates with real zone data if we find a source with exact head/body/leg splits.")
+    st.caption("Estimated strike-location model from style, power, striking, grappling, cardio, durability, and fight profile. Head/body/legs are target locations. Distance/clinch/ground are shown separately as fight phases.")
+
     mode = st.radio("Body map mode:", ["Attack", "Defense"], horizontal=True, key=f"ufc_body_mode_{fighter_name}")
+
+    attack, defense, phase_profile = hag_ufc_body_zone_profile(fighter_name)
+    zone_df = hag_ufc_strike_zone_df(fighter_name)
+
     c1, c2 = st.columns([1.15, 0.85])
     with c1:
         st.plotly_chart(hag_ufc_body_heatmap_figure(fighter_name, mode=mode), use_container_width=True)
     with c2:
-        zone_df = hag_ufc_strike_zone_df(fighter_name)
+        st.markdown("#### Target Location Table")
         st.dataframe(zone_df, use_container_width=True, hide_index=True)
+
         st.download_button(
             "⬇️ Export body map CSV",
             data=zone_df.to_csv(index=False).encode("utf-8"),
@@ -1872,6 +1941,35 @@ def hag_render_ufc_body_map_section(fighter_name):
             mime="text/csv",
             key=f"ufc_body_export_{fighter_name}"
         )
+
+        st.markdown("#### Fight Phase Profile")
+        phase_values = pd.Series(phase_profile, dtype="float64")
+        phase_total = float(phase_values.sum()) if float(phase_values.sum()) > 0 else 1.0
+        phase_df = pd.DataFrame({
+            "Fight Phase": phase_values.index,
+            "Estimated Usage %": (phase_values / phase_total * 100).round(1).values
+        })
+        st.dataframe(phase_df, use_container_width=True, hide_index=True)
+
+        phase_fig = go.Figure()
+        phase_fig.add_trace(go.Bar(
+            x=phase_df["Estimated Usage %"],
+            y=phase_df["Fight Phase"],
+            orientation="h",
+            text=[f"{v:.1f}%" for v in phase_df["Estimated Usage %"]],
+            textposition="auto",
+            marker=dict(color=phase_df["Estimated Usage %"], colorscale="Viridis", showscale=False)
+        ))
+        phase_fig.update_layout(
+            height=240,
+            margin=dict(l=10, r=10, t=15, b=20),
+            xaxis_title="Estimated Usage %",
+            yaxis_title="",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(15,23,42,0.18)",
+            showlegend=False
+        )
+        st.plotly_chart(phase_fig, use_container_width=True)
 
 
 def hag_render_ufc_style_badges(fighter_name):
