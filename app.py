@@ -2481,7 +2481,7 @@ UFC_LOG_COLUMNS = [
 ]
 
 def hag_ufc_log_path():
-    return Path("ufc_prediction_log.csv")
+    return "ufc_prediction_log.csv"
 
 def hag_ufc_make_log_id(date_str, fighter_a, fighter_b):
     safe = re.sub(r"[^A-Za-z0-9]+", "_", f"{date_str}_{fighter_a}_vs_{fighter_b}").strip("_")
@@ -2501,7 +2501,7 @@ def hag_ufc_top_method_from_result(result):
 
 def hag_ufc_read_log():
     path = hag_ufc_log_path()
-    if not path.exists():
+    if not os.path.exists(path):
         return pd.DataFrame(columns=UFC_LOG_COLUMNS)
     try:
         df = pd.read_csv(path)
