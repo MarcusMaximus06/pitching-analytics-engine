@@ -1755,7 +1755,7 @@ def hag_ufc_body_zone_profile(fighter_name):
 
 
 def hag_ufc_body_heatmap_figure(fighter_name, mode="Attack"):
-    attack, defense = hag_ufc_body_zone_profile(fighter_name)
+    attack, defense, phase_profile = hag_ufc_body_zone_profile(fighter_name)
     profile = attack if mode == "Attack" else defense
 
     zones = [
