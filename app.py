@@ -8252,3 +8252,82 @@ elif sport == "🎓 NCAA Football":
                     st.success("✅ Logged successfully to the 'NCAAF Log' tab!")
                 elif status == "DUPLICATE":
                     st.info("ℹ️ This matchup is already logged for today.")
+
+
+# ==========================================================
+# UFC EVENT CENTER + FIGHT CARD PREDICTOR (Hag Labs)
+# ==========================================================
+
+UFC_SAMPLE_CARD = [
+    ("Jon Jones", "Tom Aspinall"),
+    ("Islam Makhachev", "Ilia Topuria"),
+    ("Alex Pereira", "Khamzat Chimaev"),
+    ("Sean O'Malley", "Merab Dvalishvili"),
+]
+
+def hag_ufc_win_probability(f1_name, f2_name):
+    if f1_name not in UFC_FIGHTERS or f2_name not in UFC_FIGHTERS:
+        return 50.0, 50.0
+
+    f1 = UFC_FIGHTERS[f1_name]
+    f2 = UFC_FIGHTERS[f2_name]
+
+    s1 = hag_ufc_score(f1)
+    s2 = hag_ufc_score(f2)
+
+    total = max(1, s1 + s2)
+    p1 = round((s1 / total) * 100, 1)
+    p2 = round((s2 / total) * 100, 1)
+
+    return p1, p2
+
+def hag_ufc_method_lean(fighter):
+    ko = fighter.get("KO %", 0)
+    sub = fighter.get("Sub %", 0)
+
+    if ko >= sub and ko >= 35:
+        return "KO/TKO"
+    if sub > ko and sub >= 30:
+        return "Submission"
+    return "Decision"
+
+def hag_render_ufc_event_center():
+    st.header("🥊 UFC Event Center")
+    st.caption("Hag Labs full-card prediction engine")
+
+    rows = []
+
+    for red, blue in UFC_SAMPLE_CARD:
+
+        p_red, p_blue = hag_ufc_win_probability(red, blue)
+
+        winner = red if p_red >= p_blue else blue
+        win_pct = max(p_red, p_blue)
+
+        fighter = UFC_FIGHTERS[winner]
+
+        if win_pct >= 60:
+            confidence = "High"
+        elif win_pct >= 55:
+            confidence = "Medium"
+        else:
+            confidence = "Low"
+
+        rows.append({
+            "Fight": f"{red} vs {blue}",
+            "Pick": winner,
+            "Win %": win_pct,
+            "Method Lean": hag_ufc_method_lean(fighter),
+            "Confidence": confidence
+        })
+
+    card_df = pd.DataFrame(rows)
+
+    st.dataframe(card_df, use_container_width=True, hide_index=True)
+
+    st.download_button(
+        "⬇ Export Fight Card Predictions",
+        card_df.to_csv(index=False).encode("utf-8"),
+        file_name="ufc_fight_card_predictions.csv",
+        mime="text/csv"
+    )
