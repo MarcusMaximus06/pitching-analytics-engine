@@ -2467,6 +2467,313 @@ def hag_render_ufc_fight_predictor():
         key="ufc_fight_predictor_export_fixed"
     )
 
+
+
+# ==========================================================
+# UFC PREDICTION LOGGING + GRADING
+# ==========================================================
+UFC_LOG_COLUMNS = [
+    "Log ID", "Date", "Event", "Fighter A", "Fighter B",
+    "A Win %", "B Win %", "Model Pick", "Confidence",
+    "Top Method", "A KO/TKO %", "A Submission %", "A Decision %",
+    "B KO/TKO %", "B Submission %", "B Decision %",
+    "Actual Winner", "Actual Method", "Pick Result", "Method Result", "Status"
+]
+
+def hag_ufc_log_path():
+    return Path("ufc_prediction_log.csv")
+
+def hag_ufc_make_log_id(date_str, fighter_a, fighter_b):
+    safe = re.sub(r"[^A-Za-z0-9]+", "_", f"{date_str}_{fighter_a}_vs_{fighter_b}").strip("_")
+    return safe.lower()
+
+def hag_ufc_top_method_from_result(result):
+    method_rows = [
+        (result["Fighter A"], "KO/TKO", float(result["A KO/TKO %"])),
+        (result["Fighter A"], "Submission", float(result["A Submission %"])),
+        (result["Fighter A"], "Decision", float(result["A Decision %"])),
+        (result["Fighter B"], "KO/TKO", float(result["B KO/TKO %"])),
+        (result["Fighter B"], "Submission", float(result["B Submission %"])),
+        (result["Fighter B"], "Decision", float(result["B Decision %"])),
+    ]
+    fighter, method, pct = sorted(method_rows, key=lambda x: x[2], reverse=True)[0]
+    return f"{fighter} by {method}"
+
+def hag_ufc_read_log():
+    path = hag_ufc_log_path()
+    if not path.exists():
+        return pd.DataFrame(columns=UFC_LOG_COLUMNS)
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return pd.DataFrame(columns=UFC_LOG_COLUMNS)
+    for col in UFC_LOG_COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+    return df[UFC_LOG_COLUMNS]
+
+def hag_ufc_write_log(df):
+    out = df.copy()
+    for col in UFC_LOG_COLUMNS:
+        if col not in out.columns:
+            out[col] = ""
+    out[UFC_LOG_COLUMNS].to_csv(hag_ufc_log_path(), index=False)
+
+def hag_ufc_prediction_row(fighter_a, fighter_b, event_name="Manual Fight", date_str=None, boost_a=0, boost_b=0):
+    date_str = date_str or get_local_date_str()
+    result = hag_ufc_matchup_result(fighter_a, fighter_b, boost_a=boost_a, boost_b=boost_b)
+    if not result:
+        return None
+
+    return {
+        "Log ID": hag_ufc_make_log_id(date_str, fighter_a, fighter_b),
+        "Date": date_str,
+        "Event": event_name,
+        "Fighter A": fighter_a,
+        "Fighter B": fighter_b,
+        "A Win %": result["A Win %"],
+        "B Win %": result["B Win %"],
+        "Model Pick": result["Predicted Winner"],
+        "Confidence": result["Confidence"],
+        "Top Method": hag_ufc_top_method_from_result(result),
+        "A KO/TKO %": result["A KO/TKO %"],
+        "A Submission %": result["A Submission %"],
+        "A Decision %": result["A Decision %"],
+        "B KO/TKO %": result["B KO/TKO %"],
+        "B Submission %": result["B Submission %"],
+        "B Decision %": result["B Decision %"],
+        "Actual Winner": "",
+        "Actual Method": "",
+        "Pick Result": "",
+        "Method Result": "",
+        "Status": "PENDING",
+    }
+
+def hag_ufc_append_prediction(row):
+    if row is None:
+        return "ERROR"
+    df = hag_ufc_read_log()
+    log_id = row["Log ID"]
+    if not df.empty and log_id in df["Log ID"].astype(str).tolist():
+        return "DUPLICATE"
+    df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+    hag_ufc_write_log(df)
+    return "SUCCESS"
+
+def hag_ufc_grade_prediction(log_id, actual_winner, actual_method):
+    df = hag_ufc_read_log()
+    if df.empty or log_id not in df["Log ID"].astype(str).tolist():
+        return False
+
+    idx = df.index[df["Log ID"].astype(str) == str(log_id)][0]
+    model_pick = str(df.loc[idx, "Model Pick"])
+    top_method = str(df.loc[idx, "Top Method"])
+
+    pick_result = "WIN" if model_pick == actual_winner else "LOSS"
+    method_result = "WIN" if actual_method and actual_method.lower() in top_method.lower() and pick_result == "WIN" else "LOSS"
+
+    df.loc[idx, "Actual Winner"] = actual_winner
+    df.loc[idx, "Actual Method"] = actual_method
+    df.loc[idx, "Pick Result"] = pick_result
+    df.loc[idx, "Method Result"] = method_result
+    df.loc[idx, "Status"] = "GRADED"
+
+    hag_ufc_write_log(df)
+    return True
+
+def hag_ufc_accuracy_summary(df):
+    if df is None or df.empty:
+        return {
+            "total": 0, "pending": 0, "graded": 0,
+            "pick_accuracy": 0.0, "method_accuracy": 0.0,
+            "confidence_df": pd.DataFrame(), "event_df": pd.DataFrame()
+        }
+
+    total = len(df)
+    pending = int((df["Status"].astype(str) == "PENDING").sum()) if "Status" in df.columns else 0
+    graded_df = df[df["Status"].astype(str) == "GRADED"].copy()
+    graded = len(graded_df)
+
+    if graded == 0:
+        pick_acc = 0.0
+        method_acc = 0.0
+        confidence_df = pd.DataFrame()
+        event_df = pd.DataFrame()
+    else:
+        pick_acc = round((graded_df["Pick Result"].astype(str) == "WIN").mean() * 100, 1)
+        method_acc = round((graded_df["Method Result"].astype(str) == "WIN").mean() * 100, 1)
+
+        confidence_df = (
+            graded_df.groupby("Confidence", dropna=False)
+            .agg(
+                Fights=("Log ID", "count"),
+                Pick_Wins=("Pick Result", lambda s: int((s.astype(str) == "WIN").sum())),
+                Method_Wins=("Method Result", lambda s: int((s.astype(str) == "WIN").sum())),
+            )
+            .reset_index()
+        )
+        confidence_df["Pick Accuracy %"] = (confidence_df["Pick_Wins"] / confidence_df["Fights"] * 100).round(1)
+        confidence_df["Method Accuracy %"] = (confidence_df["Method_Wins"] / confidence_df["Fights"] * 100).round(1)
+
+        event_df = (
+            graded_df.groupby("Event", dropna=False)
+            .agg(
+                Fights=("Log ID", "count"),
+                Pick_Wins=("Pick Result", lambda s: int((s.astype(str) == "WIN").sum())),
+            )
+            .reset_index()
+        )
+        event_df["Event Pick Accuracy %"] = (event_df["Pick_Wins"] / event_df["Fights"] * 100).round(1)
+
+    return {
+        "total": total,
+        "pending": pending,
+        "graded": graded,
+        "pick_accuracy": pick_acc,
+        "method_accuracy": method_acc,
+        "confidence_df": confidence_df,
+        "event_df": event_df,
+    }
+
+def hag_render_ufc_prediction_log():
+    st.title("📒 UFC Prediction Log & Grading")
+    st.caption("Track UFC model picks, grade fight results, and build an accuracy record like the MLB dashboard.")
+
+    df = hag_ufc_read_log()
+    summary = hag_ufc_accuracy_summary(df)
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        st.metric("Logged Fights", summary["total"])
+    with c2:
+        st.metric("Pending", summary["pending"])
+    with c3:
+        st.metric("Graded", summary["graded"])
+    with c4:
+        st.metric("Pick Accuracy", f"{summary['pick_accuracy']}%")
+    with c5:
+        st.metric("Method Accuracy", f"{summary['method_accuracy']}%")
+
+    tab1, tab2, tab3, tab4 = st.tabs(["Log Predictions", "Grade Results", "Accuracy Dashboard", "Event History"])
+
+    with tab1:
+        st.subheader("Log a UFC Prediction")
+        names = sorted(UFC_FIGHTERS.keys())
+        l1, l2, l3 = st.columns([1.2, 1.2, 1])
+        with l1:
+            fighter_a = st.selectbox("Fighter A", names, index=0, key="ufc_log_a")
+        with l2:
+            fighter_b = st.selectbox("Fighter B", names, index=1 if len(names) > 1 else 0, key="ufc_log_b")
+        with l3:
+            event_name = st.text_input("Event name", value="UFC Event", key="ufc_log_event")
+
+        date_str = st.text_input("Fight date", value=get_local_date_str(), key="ufc_log_date")
+
+        if fighter_a == fighter_b:
+            st.warning("Select two different fighters.")
+        else:
+            row = hag_ufc_prediction_row(fighter_a, fighter_b, event_name=event_name, date_str=date_str)
+            if row:
+                preview = pd.DataFrame([row])
+                st.dataframe(preview[[
+                    "Date", "Event", "Fighter A", "Fighter B", "A Win %", "B Win %",
+                    "Model Pick", "Confidence", "Top Method", "Status"
+                ]], use_container_width=True, hide_index=True)
+
+                if st.button("💾 Save Prediction to UFC Log", key="ufc_save_manual_prediction"):
+                    status = hag_ufc_append_prediction(row)
+                    if status == "SUCCESS":
+                        st.success("Prediction saved to UFC log.")
+                    elif status == "DUPLICATE":
+                        st.info("That fight/date is already logged.")
+                    else:
+                        st.error("Could not save prediction.")
+
+        st.markdown("#### Log Sample Event Card")
+        st.caption("Uses the current starter card to quickly populate the log for testing.")
+        if st.button("💾 Log Sample UFC Event Card", key="ufc_log_sample_card"):
+            saved = 0
+            dupes = 0
+            for a, b in UFC_SAMPLE_CARD:
+                row = hag_ufc_prediction_row(a, b, event_name="Sample UFC Card", date_str=date_str)
+                status = hag_ufc_append_prediction(row)
+                if status == "SUCCESS":
+                    saved += 1
+                elif status == "DUPLICATE":
+                    dupes += 1
+            st.success(f"Sample card logged. Saved: {saved}. Duplicates skipped: {dupes}.")
+
+    with tab2:
+        st.subheader("Grade Pending UFC Fights")
+        df = hag_ufc_read_log()
+        pending_df = df[df["Status"].astype(str) == "PENDING"].copy() if not df.empty else pd.DataFrame()
+
+        if pending_df.empty:
+            st.info("No pending UFC fights to grade.")
+        else:
+            pending_df["Display"] = pending_df.apply(
+                lambda r: f"{r['Date']} | {r['Event']} | {r['Fighter A']} vs {r['Fighter B']} | Pick: {r['Model Pick']}",
+                axis=1
+            )
+            selected = st.selectbox("Select pending fight", pending_df["Display"].tolist(), key="ufc_grade_select")
+            selected_row = pending_df[pending_df["Display"] == selected].iloc[0]
+            fighters = [selected_row["Fighter A"], selected_row["Fighter B"]]
+
+            g1, g2 = st.columns(2)
+            with g1:
+                actual_winner = st.selectbox("Actual winner", fighters, key="ufc_actual_winner")
+            with g2:
+                actual_method = st.selectbox("Actual method", ["KO/TKO", "Submission", "Decision", "DQ/No Contest"], key="ufc_actual_method")
+
+            if st.button("✅ Grade UFC Fight", key="ufc_grade_button"):
+                ok = hag_ufc_grade_prediction(selected_row["Log ID"], actual_winner, actual_method)
+                if ok:
+                    st.success("Fight graded.")
+                else:
+                    st.error("Could not grade fight.")
+
+    with tab3:
+        st.subheader("UFC Accuracy Dashboard")
+        df = hag_ufc_read_log()
+        summary = hag_ufc_accuracy_summary(df)
+
+        if summary["graded"] == 0:
+            st.info("No graded UFC fights yet.")
+        else:
+            st.markdown("#### Accuracy by Confidence Tier")
+            st.dataframe(summary["confidence_df"], use_container_width=True, hide_index=True)
+
+            if not summary["confidence_df"].empty:
+                chart_df = summary["confidence_df"][["Confidence", "Pick Accuracy %"]].set_index("Confidence")
+                st.bar_chart(chart_df)
+
+            st.markdown("#### Event-Level Accuracy")
+            st.dataframe(summary["event_df"], use_container_width=True, hide_index=True)
+
+    with tab4:
+        st.subheader("UFC Event History")
+        df = hag_ufc_read_log()
+
+        if df.empty:
+            st.info("No UFC prediction history yet.")
+        else:
+            status_filter = st.multiselect(
+                "Filter status",
+                sorted(df["Status"].dropna().astype(str).unique().tolist()),
+                default=sorted(df["Status"].dropna().astype(str).unique().tolist()),
+                key="ufc_history_status_filter"
+            )
+            show_df = df[df["Status"].astype(str).isin(status_filter)].copy() if status_filter else df.copy()
+            st.dataframe(show_df, use_container_width=True, hide_index=True)
+
+            st.download_button(
+                "⬇ Export UFC Prediction Log CSV",
+                data=show_df.to_csv(index=False).encode("utf-8"),
+                file_name="ufc_prediction_log_export.csv",
+                mime="text/csv",
+                key="ufc_log_export"
+            )
+
 # ==========================================================
 # SPORT BRANCH: UFC COMBAT SPORTS
 # ==========================================================
@@ -2480,6 +2787,7 @@ if sport == "🥊 UFC Combat Sports":
             "📋 UFC Event Center",
             "🏆 UFC Rankings Center",
             "🎲 UFC Monte Carlo Simulator",
+            "📒 UFC Prediction Log",
             "🕰️ Historical Fight Simulator"
         ]
     )
@@ -2502,6 +2810,9 @@ if sport == "🥊 UFC Combat Sports":
 
     elif page == "🎲 UFC Monte Carlo Simulator":
         hag_render_ufc_monte_carlo_simulator()
+
+    elif page == "📒 UFC Prediction Log":
+        hag_render_ufc_prediction_log()
 
     elif page == "🕰️ Historical Fight Simulator":
         hag_render_ufc_historical_simulator()
