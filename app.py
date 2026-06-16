@@ -1391,7 +1391,10 @@ def hag_normalize_ufc_fighter_row(row):
         "Age", "Height", "Reach", "Striking", "Grappling", "Wrestling",
         "Submission", "Durability", "Cardio", "Power", "Speed",
         "Fight IQ", "Experience", "KO %", "Sub %", "Decision %",
-        "Recent Form", "Strength of Schedule"
+        "Recent Form", "Strength of Schedule",
+        "SLpM", "Str Acc %", "SApM", "Str Def %",
+        "TD Avg", "TD Acc %", "TD Def %", "Sub Avg",
+        "KD Avg", "Control Score", "UFC Stat Sample"
     ]
 
     out = {}
@@ -1456,7 +1459,10 @@ def hag_ufc_database_df():
     df = pd.DataFrame(rows)
     preferred = [
         "Fighter", "Division", "Status", "Record", "Age", "Height", "Reach",
-        "Stance", "Style", "Striking", "Grappling", "Wrestling", "Submission",
+        "Stance", "Style", "Data Quality", "Data Source",
+        "SLpM", "Str Acc %", "SApM", "Str Def %", "TD Avg", "TD Acc %",
+        "TD Def %", "Sub Avg", "KD Avg", "Control Score", "UFC Stat Sample",
+        "Striking", "Grappling", "Wrestling", "Submission",
         "Durability", "Cardio", "Power", "Speed", "Fight IQ", "Experience",
         "KO %", "Sub %", "Decision %", "Recent Form", "Strength of Schedule", "Notes"
     ]
@@ -1487,6 +1493,16 @@ def hag_render_ufc_database_manager():
         st.metric("Historical", int((df["Status"].astype(str) == "Historical").sum()) if "Status" in df.columns else 0)
     with m4:
         st.metric("Divisions", df["Division"].nunique() if "Division" in df.columns else 0)
+
+    if "Data Quality" in df.columns:
+        q1, q2, q3 = st.columns(3)
+        with q1:
+            st.metric("Real/Mixed Profiles", int(df["Data Quality"].astype(str).str.contains("Real|Mixed", case=False, na=False).sum()))
+        with q2:
+            st.metric("Manual Profiles", int(df["Data Quality"].astype(str).str.contains("Manual", case=False, na=False).sum()))
+        with q3:
+            stat_cols_available = sum([1 for c in UFC_RAW_STAT_COLUMNS if c in df.columns])
+            st.metric("Raw Stat Columns", stat_cols_available)
 
     st.info("Put `ufc_fighters.csv` in the same folder as app.py. Restart Streamlit after replacing the file.")
 
@@ -1562,6 +1578,19 @@ def hag_render_ufc_database_manager():
                     "Reach": 0,
                     "Stance": "",
                     "Style": style,
+                    "Data Quality": "Manual estimate",
+                    "Data Source": "Manual Hag Labs entry",
+                    "SLpM": 0,
+                    "Str Acc %": 0,
+                    "SApM": 0,
+                    "Str Def %": 0,
+                    "TD Avg": 0,
+                    "TD Acc %": 0,
+                    "TD Def %": 0,
+                    "Sub Avg": 0,
+                    "KD Avg": 0,
+                    "Control Score": 0,
+                    "UFC Stat Sample": 0,
                     "Striking": striking,
                     "Grappling": grappling,
                     "Wrestling": wrestling,
@@ -1585,6 +1614,206 @@ def hag_render_ufc_database_manager():
                     st.success("Fighter saved. Restart Streamlit to load the new fighter everywhere.")
                 else:
                     st.error("Could not save fighter database.")
+
+
+
+# ==========================================================
+# UFC REAL-STAT QUALITY + PERCENTILE HELPERS
+# ==========================================================
+UFC_RAW_STAT_COLUMNS = [
+    "SLpM", "Str Acc %", "SApM", "Str Def %",
+    "TD Avg", "TD Acc %", "TD Def %", "Sub Avg", "KD Avg", "Control Score"
+]
+
+def hag_ufc_has_real_stat_data(f):
+    if not isinstance(f, dict):
+        return False
+    hits = 0
+    for col in UFC_RAW_STAT_COLUMNS:
+        try:
+            if float(f.get(col, 0) or 0) > 0:
+                hits += 1
+        except Exception:
+            pass
+    return hits >= 4
+
+def hag_ufc_data_quality_label(f):
+    source = str(f.get("Data Source", "") or "").strip()
+    quality = str(f.get("Data Quality", "") or "").strip()
+    if quality:
+        return quality
+    if hag_ufc_has_real_stat_data(f):
+        return "Mixed real/manual"
+    if source:
+        return "Manual estimate"
+    return "Manual estimate"
+
+def hag_ufc_data_quality_badge(f):
+    quality = hag_ufc_data_quality_label(f)
+    source = str(f.get("Data Source", "") or ("UFCStats-style columns + Hag Labs estimates" if hag_ufc_has_real_stat_data(f) else "Manual Hag Labs estimate"))
+    if "Real" in quality:
+        color = "#14532d"
+        border = "#22c55e"
+    elif "Mixed" in quality:
+        color = "#1e3a8a"
+        border = "#60a5fa"
+    else:
+        color = "#422006"
+        border = "#f59e0b"
+
+    st.markdown(
+        f"""
+        <div style="display:inline-block;background:{color};border:1px solid {border};
+        border-radius:999px;padding:7px 12px;font-weight:800;margin:4px 0 10px 0;">
+        Data Quality: {quality} · Source: {source}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+def hag_ufc_percentile_rank(series, value, higher_is_better=True):
+    vals = pd.to_numeric(series, errors="coerce").dropna()
+    vals = vals[vals > 0]
+    if vals.empty:
+        return 50
+    try:
+        v = float(value)
+    except Exception:
+        return 50
+    if v <= 0:
+        return 50
+    if higher_is_better:
+        pct = (vals <= v).mean() * 100
+    else:
+        pct = (vals >= v).mean() * 100
+    return int(max(1, min(99, round(pct))))
+
+def hag_ufc_enriched_database_df():
+    df = hag_ufc_database_df().copy()
+    for col in UFC_RAW_STAT_COLUMNS:
+        if col not in df.columns:
+            df[col] = 0
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    if df.empty:
+        return df
+
+    df["SLpM Percentile"] = df["SLpM"].apply(lambda v: hag_ufc_percentile_rank(df["SLpM"], v, True))
+    df["Striking Accuracy Percentile"] = df["Str Acc %"].apply(lambda v: hag_ufc_percentile_rank(df["Str Acc %"], v, True))
+    df["Strike Defense Percentile"] = df["Str Def %"].apply(lambda v: hag_ufc_percentile_rank(df["Str Def %"], v, True))
+    df["Damage Avoidance Percentile"] = df["SApM"].apply(lambda v: hag_ufc_percentile_rank(df["SApM"], v, False))
+    df["Takedown Activity Percentile"] = df["TD Avg"].apply(lambda v: hag_ufc_percentile_rank(df["TD Avg"], v, True))
+    df["Takedown Accuracy Percentile"] = df["TD Acc %"].apply(lambda v: hag_ufc_percentile_rank(df["TD Acc %"], v, True))
+    df["Takedown Defense Percentile"] = df["TD Def %"].apply(lambda v: hag_ufc_percentile_rank(df["TD Def %"], v, True))
+    df["Submission Activity Percentile"] = df["Sub Avg"].apply(lambda v: hag_ufc_percentile_rank(df["Sub Avg"], v, True))
+    df["Knockdown Threat Percentile"] = df["KD Avg"].apply(lambda v: hag_ufc_percentile_rank(df["KD Avg"], v, True))
+    df["Control Percentile"] = df["Control Score"].apply(lambda v: hag_ufc_percentile_rank(df["Control Score"], v, True))
+
+    df["Real Striking Percentile"] = (
+        df[["SLpM Percentile", "Striking Accuracy Percentile", "Strike Defense Percentile", "Damage Avoidance Percentile", "Knockdown Threat Percentile"]]
+        .mean(axis=1).round(0).astype(int)
+    )
+    df["Real Grappling Percentile"] = (
+        df[["Takedown Activity Percentile", "Takedown Accuracy Percentile", "Takedown Defense Percentile", "Submission Activity Percentile", "Control Percentile"]]
+        .mean(axis=1).round(0).astype(int)
+    )
+    df["Real Defense Percentile"] = (
+        df[["Strike Defense Percentile", "Damage Avoidance Percentile", "Takedown Defense Percentile"]]
+        .mean(axis=1).round(0).astype(int)
+    )
+    df["Real Finish Percentile"] = (
+        df[["Knockdown Threat Percentile", "Submission Activity Percentile"]]
+        .mean(axis=1).round(0).astype(int)
+    )
+
+    return df
+
+def hag_ufc_get_enriched_row(fighter_name):
+    df = hag_ufc_enriched_database_df()
+    if df.empty or "Fighter" not in df.columns:
+        return {}
+    rows = df[df["Fighter"].astype(str) == str(fighter_name)]
+    if rows.empty:
+        return {}
+    return rows.iloc[0].to_dict()
+
+def hag_render_ufc_raw_stat_table(fighter_name):
+    row = hag_ufc_get_enriched_row(fighter_name)
+    if not row:
+        return
+
+    raw_cols = [
+        "SLpM", "Str Acc %", "SApM", "Str Def %",
+        "TD Avg", "TD Acc %", "TD Def %", "Sub Avg", "KD Avg", "Control Score"
+    ]
+    stat_labels = {
+        "SLpM": "Sig. Strikes Landed / Min",
+        "Str Acc %": "Striking Accuracy %",
+        "SApM": "Sig. Strikes Absorbed / Min",
+        "Str Def %": "Strike Defense %",
+        "TD Avg": "Takedowns / 15 Min",
+        "TD Acc %": "Takedown Accuracy %",
+        "TD Def %": "Takedown Defense %",
+        "Sub Avg": "Sub Attempts / 15 Min",
+        "KD Avg": "Knockdowns / 15 Min",
+        "Control Score": "Control Score"
+    }
+
+    rows = []
+    for col in raw_cols:
+        rows.append({
+            "Stat": stat_labels.get(col, col),
+            "Value": row.get(col, 0),
+        })
+
+    st.markdown("### Raw UFC-Style Stats")
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+def hag_render_ufc_real_stat_percentiles(fighter_name):
+    row = hag_ufc_get_enriched_row(fighter_name)
+    if not row:
+        return
+
+    st.markdown("### Real-Stat Percentile Translation")
+    st.caption("These convert UFCStats-style raw columns into 0-100 percentile language. Current values are database-driven and can be replaced with fully scraped UFCStats/Stat Leaders values later.")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        for label, col in [
+            ("Real Striking", "Real Striking Percentile"),
+            ("Strike Volume", "SLpM Percentile"),
+            ("Striking Accuracy", "Striking Accuracy Percentile"),
+            ("Strike Defense", "Strike Defense Percentile"),
+            ("Damage Avoidance", "Damage Avoidance Percentile"),
+            ("Knockdown Threat", "Knockdown Threat Percentile"),
+        ]:
+            hag_ufc_percentile_bar(label, row.get(col, 50))
+    with c2:
+        for label, col in [
+            ("Real Grappling", "Real Grappling Percentile"),
+            ("Takedown Activity", "Takedown Activity Percentile"),
+            ("Takedown Accuracy", "Takedown Accuracy Percentile"),
+            ("Takedown Defense", "Takedown Defense Percentile"),
+            ("Submission Activity", "Submission Activity Percentile"),
+            ("Control", "Control Percentile"),
+        ]:
+            hag_ufc_percentile_bar(label, row.get(col, 50))
+
+def hag_ufc_apply_real_stat_scores_to_fighters():
+    df = hag_ufc_enriched_database_df()
+    if df.empty:
+        return
+    for _, row in df.iterrows():
+        name = str(row.get("Fighter", "")).strip()
+        if not name or name not in UFC_FIGHTERS:
+            continue
+        if hag_ufc_has_real_stat_data(UFC_FIGHTERS[name]):
+            UFC_FIGHTERS[name]["Striking"] = int(round((float(UFC_FIGHTERS[name].get("Striking", 75)) * 0.65) + (float(row.get("Real Striking Percentile", 50)) * 0.35)))
+            UFC_FIGHTERS[name]["Grappling"] = int(round((float(UFC_FIGHTERS[name].get("Grappling", 75)) * 0.65) + (float(row.get("Real Grappling Percentile", 50)) * 0.35)))
+            UFC_FIGHTERS[name]["Durability"] = int(round((float(UFC_FIGHTERS[name].get("Durability", 75)) * 0.70) + (float(row.get("Real Defense Percentile", 50)) * 0.30)))
+            UFC_FIGHTERS[name]["Data Quality"] = hag_ufc_data_quality_label(UFC_FIGHTERS[name])
+
+hag_ufc_apply_real_stat_scores_to_fighters()
 
 
 
@@ -1699,6 +1928,7 @@ def hag_render_ufc_fighter_header(fighter_name, fighter_data=None):
             f"{f.get('Division', 'N/A')} • {f.get('Record', 'N/A')} • {f.get('Style', 'N/A')} • "
             f"{f.get('Stance', 'N/A')} • Age {f.get('Age', 'N/A')} • Reach {f.get('Reach', 'N/A')} in"
         )
+        hag_ufc_data_quality_badge(f)
         h1, h2, h3, h4 = st.columns(4)
         with h1:
             st.metric("Overall Grade", f"{grade}/100")
@@ -2557,6 +2787,9 @@ def hag_render_ufc_fighter_lab():
 
     st.markdown("### Fighter Notes")
     st.write(f.get("Notes", "No notes available."))
+
+    hag_render_ufc_raw_stat_table(fighter)
+    hag_render_ufc_real_stat_percentiles(fighter)
 
     c1, c2 = st.columns([1, 1])
     with c1:
