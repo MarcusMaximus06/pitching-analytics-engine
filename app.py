@@ -1982,48 +1982,74 @@ def hag_render_ufc_style_badges(fighter_name):
     st.markdown(badge_html, unsafe_allow_html=True)
 
 
-def hag_render_ufc_event_center():
-    st.title("📋 UFC Event Center")
-    st.caption("Build a fight card and run Hag Labs predictions for every matchup.")
-    names = sorted(UFC_FIGHTERS.keys())
 
-    with st.expander("Build fight card", expanded=True):
-        fight_count = st.slider("Number of fights", 1, 8, 3, key="ufc_event_fight_count")
-        fights = []
-        for i in range(fight_count):
-            c1, c2 = st.columns(2)
-            with c1:
-                a = st.selectbox(f"Fight {i+1} - Fighter A", names, index=i % len(names), key=f"ufc_event_a_{i}")
-            with c2:
-                b_index = (i + 1) % len(names)
-                b = st.selectbox(f"Fight {i+1} - Fighter B", names, index=b_index, key=f"ufc_event_b_{i}")
-            if a != b:
-                fights.append((a, b))
+def hag_ufc_rankings_df():
+    rows = []
+    for name, f in UFC_FIGHTERS.items():
+        grade = hag_ufc_score(f)
+        rows.append({
+            "Fighter": name,
+            "Division": f.get("Division", ""),
+            "Record": f.get("Record", ""),
+            "Age": f.get("Age", ""),
+            "Style": f.get("Style", ""),
+            "Hag Labs Grade": grade,
+            "Tier": hag_ufc_tier(grade),
+            "Striking": f.get("Striking", 0),
+            "Grappling": f.get("Grappling", 0),
+            "Wrestling": f.get("Wrestling", 0),
+            "Power": f.get("Power", 0),
+            "Cardio": f.get("Cardio", 0),
+            "Durability": f.get("Durability", 0),
+            "SOS": f.get("Strength of Schedule", 0),
+        })
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    df["P4P Rank"] = df["Hag Labs Grade"].rank(ascending=False, method="first").astype(int)
+    return df.sort_values("P4P Rank").reset_index(drop=True)
 
+
+def hag_ufc_method_label(result):
+    if not result:
+        return "N/A"
+    options = [
+        (f"{result['Fighter A']} KO/TKO", result["A KO/TKO %"]),
+        (f"{result['Fighter A']} Submission", result["A Submission %"]),
+        (f"{result['Fighter A']} Decision", result["A Decision %"]),
+        (f"{result['Fighter B']} KO/TKO", result["B KO/TKO %"]),
+        (f"{result['Fighter B']} Submission", result["B Submission %"]),
+        (f"{result['Fighter B']} Decision", result["B Decision %"]),
+    ]
+    return max(options, key=lambda x: x[1])[0]
+
+
+def hag_ufc_fight_card_df(fights):
     rows = []
     method_rows = []
-    for idx, (a, b) in enumerate(fights, start=1):
+    for idx, (a, b, card_section) in enumerate(fights, start=1):
         result = hag_ufc_matchup_result(a, b)
         if not result:
             continue
+        favorite_pct = max(result["A Win %"], result["B Win %"])
+        underdog = b if result["Predicted Winner"] == a else a
         rows.append({
-            "Fight": idx,
+            "Bout": idx,
+            "Card": card_section,
+            "Fight": f"{a} vs {b}",
             "Fighter A": a,
             "Fighter B": b,
             "A Win %": result["A Win %"],
             "B Win %": result["B Win %"],
             "Pick": result["Predicted Winner"],
+            "Underdog": underdog,
+            "Favorite Win %": favorite_pct,
             "Confidence": result["Confidence"],
-            "Most Likely Method": max([
-                (f"{a} by KO/TKO", result["A KO/TKO %"]),
-                (f"{a} by Submission", result["A Submission %"]),
-                (f"{a} by Decision", result["A Decision %"]),
-                (f"{b} by KO/TKO", result["B KO/TKO %"]),
-                (f"{b} by Submission", result["B Submission %"]),
-                (f"{b} by Decision", result["B Decision %"]),
-            ], key=lambda x: x[1])[0]
+            "Method Lean": hag_ufc_method_label(result),
+            "A Grade": hag_ufc_score(UFC_FIGHTERS[a]),
+            "B Grade": hag_ufc_score(UFC_FIGHTERS[b]),
         })
-        for label, pct in [
+        for outcome, pct in [
             (f"{a} KO/TKO", result["A KO/TKO %"]),
             (f"{a} Submission", result["A Submission %"]),
             (f"{a} Decision", result["A Decision %"]),
@@ -2031,28 +2057,70 @@ def hag_render_ufc_event_center():
             (f"{b} Submission", result["B Submission %"]),
             (f"{b} Decision", result["B Decision %"]),
         ]:
-            method_rows.append({"Fight": idx, "Outcome": label, "Probability %": pct})
+            method_rows.append({"Bout": idx, "Card": card_section, "Outcome": outcome, "Probability %": pct})
+    return pd.DataFrame(rows), pd.DataFrame(method_rows)
 
-    event_df = pd.DataFrame(rows)
-    methods_df = pd.DataFrame(method_rows)
+
+def hag_render_ufc_event_center():
+    st.title("📋 UFC Event Center")
+    st.caption("Build a fight card and run Hag Labs full-card predictions, method leans, confidence tiers, and exportable boards.")
+
+    names = sorted(UFC_FIGHTERS.keys())
+
+    with st.expander("Build fight card", expanded=True):
+        event_name = st.text_input("Event name:", value="Hag Labs UFC Card", key="ufc_event_name")
+        event_date = st.date_input("Event date:", value=datetime.now().date(), key="ufc_event_date")
+        fight_count = st.slider("Number of fights", 1, 12, 5, key="ufc_event_fight_count")
+
+        fights = []
+        for i in range(fight_count):
+            c0, c1, c2 = st.columns([0.9, 1.4, 1.4])
+            with c0:
+                section = st.selectbox(
+                    f"Fight {i+1} card section",
+                    ["Main Card", "Prelims", "Early Prelims"],
+                    index=0 if i < 5 else 1,
+                    key=f"ufc_event_section_{i}"
+                )
+            with c1:
+                a = st.selectbox(f"Fight {i+1} - Fighter A", names, index=i % len(names), key=f"ufc_event_a_{i}")
+            with c2:
+                b_index = (i + 1) % len(names)
+                b = st.selectbox(f"Fight {i+1} - Fighter B", names, index=b_index, key=f"ufc_event_b_{i}")
+
+            if a != b:
+                fights.append((a, b, section))
+
+    event_df, methods_df = hag_ufc_fight_card_df(fights)
 
     if event_df.empty:
         st.info("Add at least one valid fight.")
         return
 
-    st.markdown("### Event Prediction Board")
+    st.markdown(f"### {event_name} — {event_date}")
+
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        st.metric("Fights", len(event_df))
+    with m2:
+        st.metric("High Confidence", int((event_df["Confidence"] == "High").sum()))
+    with m3:
+        st.metric("Avg Favorite Win %", f"{round(event_df['Favorite Win %'].mean(), 1)}%")
+    with m4:
+        st.metric("Main Card Fights", int((event_df["Card"] == "Main Card").sum()))
+
+    st.markdown("### Full Card Prediction Board")
     st.dataframe(event_df, use_container_width=True, hide_index=True)
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.metric("Fights", len(event_df))
-    with c2:
-        st.metric("High Confidence Picks", int((event_df["Confidence"] == "High").sum()))
-    with c3:
-        st.metric("Average Favorite Win %", f"{round(event_df[['A Win %','B Win %']].max(axis=1).mean(), 1)}%")
+    st.markdown("### Probability Chart")
+    chart_df = event_df[["Fight", "A Win %", "B Win %"]].set_index("Fight")
+    st.bar_chart(chart_df)
 
-    with st.expander("Full method probabilities"):
+    with st.expander("Full method probability board", expanded=False):
         st.dataframe(methods_df, use_container_width=True, hide_index=True)
+        if not methods_df.empty:
+            top_methods = methods_df.sort_values("Probability %", ascending=False).head(12)
+            st.bar_chart(top_methods.set_index("Outcome")["Probability %"])
 
     st.download_button(
         "⬇️ Export UFC Event Board CSV",
@@ -2061,107 +2129,113 @@ def hag_render_ufc_event_center():
         mime="text/csv"
     )
 
-
-def hag_render_ufc_fighter_lab():
-    st.title("🥊 UFC Fighter Lab")
-    st.caption("Hag Labs fighter profiles with Savant-style percentiles, radar charts, fighter grades, and method profiles.")
-
-    df = hag_ufc_profile_df()
-    divisions = ["All"] + sorted(df["Division"].dropna().unique().tolist())
-    division = st.selectbox("Filter by division:", divisions, key="ufc_lab_division")
-    filtered = df.copy() if division == "All" else df[df["Division"] == division].copy()
-
-    fighter = st.selectbox("Select fighter:", filtered["Fighter"].tolist(), key="ufc_lab_fighter")
-    f = UFC_FIGHTERS[fighter]
-
-    hag_render_ufc_fighter_header(fighter, f)
-
-    left, right = st.columns([1, 1])
-    with left:
-        st.markdown("### Fighter Notes")
-        st.write(f.get("Notes", ""))
-        hag_render_ufc_style_badges(fighter)
-
-        st.markdown("### Savant-Style Percentiles")
-        for metric in ["Striking", "Grappling", "Wrestling", "Submission", "Durability", "Cardio", "Power", "Speed", "Fight IQ", "Recent Form"]:
-            hag_ufc_percentile_bar(metric, f.get(metric, 75))
-
-    with right:
-        st.markdown("### Skill Radar")
-        st.plotly_chart(hag_ufc_radar_chart(fighter), use_container_width=True)
-
-        st.markdown("### Method Profile")
-        method_profile = pd.DataFrame([
-            {"Method": "KO/TKO", "Career Split %": f.get("KO %", 0)},
-            {"Method": "Submission", "Career Split %": f.get("Sub %", 0)},
-            {"Method": "Decision", "Career Split %": f.get("Decision %", 0)},
-        ])
-        st.dataframe(method_profile, use_container_width=True, hide_index=True)
-        st.bar_chart(method_profile.set_index("Method"))
-
-    hag_render_ufc_body_map_section(fighter)
-    hag_render_ufc_statleaders_importer()
-
-    st.markdown("### Fighter Database")
-    display_cols = ["Fighter", "Division", "Record", "Age", "Stance", "Overall Grade", "Tier", "Striking", "Grappling", "Wrestling", "Submission", "Durability", "Cardio", "Power", "Speed", "Fight IQ"]
-    st.dataframe(filtered[display_cols], use_container_width=True, hide_index=True)
-    st.download_button("⬇️ Export UFC Fighter Lab CSV", data=filtered.to_csv(index=False).encode("utf-8"), file_name="ufc_fighter_lab.csv", mime="text/csv")
+    st.download_button(
+        "⬇️ Export UFC Method Probabilities CSV",
+        data=methods_df.to_csv(index=False).encode("utf-8"),
+        file_name="ufc_event_method_probabilities.csv",
+        mime="text/csv"
+    )
 
 
-def hag_render_ufc_fight_predictor():
-    st.title("🥊 UFC Fight Predictor")
-    st.caption("Compare two fighters and estimate win probability, method-of-victory probabilities, and category advantages.")
+def hag_render_ufc_rankings_center():
+    st.title("🏆 UFC Rankings Center")
+    st.caption("Hag Labs internal rankings by overall grade, division, and category strengths.")
+
+    rankings = hag_ufc_rankings_df()
+    if rankings.empty:
+        st.warning("No UFC fighter rankings available.")
+        return
+
+    divisions = ["Pound-for-Pound"] + sorted(rankings["Division"].dropna().unique().tolist())
+    selected_division = st.selectbox("Ranking view:", divisions, key="ufc_rankings_view")
+
+    if selected_division == "Pound-for-Pound":
+        view = rankings.copy()
+        title = "Pound-for-Pound Rankings"
+    else:
+        view = rankings[rankings["Division"] == selected_division].copy()
+        view["Division Rank"] = view["Hag Labs Grade"].rank(ascending=False, method="first").astype(int)
+        view = view.sort_values("Division Rank")
+        title = f"{selected_division} Rankings"
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Ranked Fighters", len(view))
+    with c2:
+        st.metric("Top Grade", round(float(view["Hag Labs Grade"].max()), 1) if not view.empty else 0)
+    with c3:
+        st.metric("Average Grade", round(float(view["Hag Labs Grade"].mean()), 1) if not view.empty else 0)
+
+    st.markdown(f"### {title}")
+    st.dataframe(view, use_container_width=True, hide_index=True)
+
+    st.markdown("### Category Leaders")
+    cat = st.selectbox(
+        "Select category:",
+        ["Hag Labs Grade", "Striking", "Grappling", "Wrestling", "Power", "Cardio", "Durability", "SOS"],
+        key="ufc_rankings_category"
+    )
+    leaders = rankings.sort_values(cat, ascending=False).head(10)[["Fighter", "Division", "Record", cat, "Tier"]]
+    st.dataframe(leaders, use_container_width=True, hide_index=True)
+    st.bar_chart(leaders.set_index("Fighter")[cat])
+
+    st.download_button(
+        "⬇️ Export UFC Rankings CSV",
+        data=rankings.to_csv(index=False).encode("utf-8"),
+        file_name="ufc_rankings.csv",
+        mime="text/csv"
+    )
+
+
+def hag_render_ufc_monte_carlo_simulator():
+    st.title("🎲 UFC Monte Carlo Fight Simulator")
+    st.caption("Run thousands of simulated outcomes using Hag Labs fighter grades and method profiles.")
+
     names = sorted(UFC_FIGHTERS.keys())
+
     c1, c2 = st.columns(2)
     with c1:
-        fighter_a = st.selectbox("Fighter A:", names, index=0, key="ufc_pred_a")
+        fighter_a = st.selectbox("Fighter A:", names, index=names.index("Jon Jones") if "Jon Jones" in names else 0, key="ufc_mc_a")
+        boost_a = st.slider("Fighter A context adjustment", -10, 10, 0, key="ufc_mc_boost_a")
     with c2:
-        default_b = 1 if len(names) > 1 else 0
-        fighter_b = st.selectbox("Fighter B:", names, index=default_b, key="ufc_pred_b")
+        fighter_b = st.selectbox("Fighter B:", names, index=names.index("Tom Aspinall") if "Tom Aspinall" in names else 1, key="ufc_mc_b")
+        boost_b = st.slider("Fighter B context adjustment", -10, 10, 0, key="ufc_mc_boost_b")
 
-    result = hag_ufc_matchup_result(fighter_a, fighter_b)
+    sims = st.slider("Simulations", 1000, 100000, 25000, step=1000, key="ufc_mc_sims")
+
+    result = hag_ufc_matchup_result(fighter_a, fighter_b, boost_a=boost_a, boost_b=boost_b)
     if not result:
         st.warning("Select two different fighters.")
         return
 
-    h1, h2 = st.columns(2)
-    with h1:
-        hag_render_ufc_fighter_header(fighter_a)
-    with h2:
-        hag_render_ufc_fighter_header(fighter_b)
+    method_df, sim_summary = hag_ufc_simulation_df(result, sims=sims)
 
-    m1, m2, m3 = st.columns(3)
-    with m1:
-        st.metric(f"{fighter_a} Win Probability", f"{result['A Win %']}%")
-    with m2:
-        st.metric(f"{fighter_b} Win Probability", f"{result['B Win %']}%")
-    with m3:
+    w1, w2, w3, w4 = st.columns(4)
+    with w1:
+        st.metric(f"{fighter_a} Win %", f"{result['A Win %']}%")
+    with w2:
+        st.metric(f"{fighter_b} Win %", f"{result['B Win %']}%")
+    with w3:
+        st.metric("Model Pick", result["Predicted Winner"])
+    with w4:
         st.metric("Confidence", result["Confidence"])
 
-    st.success(f"Predicted Winner: {result['Predicted Winner']}")
+    st.markdown("### Simulated Outcome Distribution")
+    st.dataframe(sim_summary, use_container_width=True, hide_index=True)
+    if not sim_summary.empty:
+        st.bar_chart(sim_summary.set_index("Simulated Outcome")["Simulated Count"])
 
-    st.markdown("### Most Likely Methods")
-    hag_ufc_method_cards(result)
-
-    method_df, sim_summary = hag_ufc_simulation_df(result, sims=10000)
-    st.markdown("### Full Method Breakdown")
+    st.markdown("### Base Method Probability Profile")
     st.dataframe(method_df, use_container_width=True, hide_index=True)
-    st.bar_chart(method_df.set_index("Outcome"))
-
-    with st.expander("View simulated outcome summary"):
-        st.dataframe(sim_summary, use_container_width=True, hide_index=True)
-
-    st.markdown("### Fighter Comparison")
-    comp_df = hag_ufc_category_advantage(fighter_a, fighter_b)
-    st.dataframe(comp_df, use_container_width=True, hide_index=True)
+    if not method_df.empty:
+        st.bar_chart(method_df.set_index("Outcome")["Probability"])
 
     st.download_button(
-        "⬇️ Export UFC Fight Prediction CSV",
-        data=method_df.to_csv(index=False).encode("utf-8"),
-        file_name="ufc_fight_prediction.csv",
+        "⬇️ Export UFC Monte Carlo Results CSV",
+        data=sim_summary.to_csv(index=False).encode("utf-8"),
+        file_name="ufc_monte_carlo_results.csv",
         mime="text/csv"
     )
-
 
 def hag_render_ufc_historical_simulator():
     st.title("🕰️ UFC Historical Fight Simulator")
@@ -2247,6 +2321,8 @@ if sport == "🥊 UFC Combat Sports":
             "⚔️ UFC Fight Predictor",
             "🧬 Fighter Comparison",
             "📋 UFC Event Center",
+            "🏆 UFC Rankings Center",
+            "🎲 UFC Monte Carlo Simulator",
             "🕰️ Historical Fight Simulator"
         ]
     )
@@ -2263,6 +2339,12 @@ if sport == "🥊 UFC Combat Sports":
 
     elif page == "📋 UFC Event Center":
         hag_render_ufc_event_center()
+
+    elif page == "🏆 UFC Rankings Center":
+        hag_render_ufc_rankings_center()
+
+    elif page == "🎲 UFC Monte Carlo Simulator":
+        hag_render_ufc_monte_carlo_simulator()
 
     elif page == "🕰️ Historical Fight Simulator":
         hag_render_ufc_historical_simulator()
@@ -8252,82 +8334,3 @@ elif sport == "🎓 NCAA Football":
                     st.success("✅ Logged successfully to the 'NCAAF Log' tab!")
                 elif status == "DUPLICATE":
                     st.info("ℹ️ This matchup is already logged for today.")
-
-
-# ==========================================================
-# UFC EVENT CENTER + FIGHT CARD PREDICTOR (Hag Labs)
-# ==========================================================
-
-UFC_SAMPLE_CARD = [
-    ("Jon Jones", "Tom Aspinall"),
-    ("Islam Makhachev", "Ilia Topuria"),
-    ("Alex Pereira", "Khamzat Chimaev"),
-    ("Sean O'Malley", "Merab Dvalishvili"),
-]
-
-def hag_ufc_win_probability(f1_name, f2_name):
-    if f1_name not in UFC_FIGHTERS or f2_name not in UFC_FIGHTERS:
-        return 50.0, 50.0
-
-    f1 = UFC_FIGHTERS[f1_name]
-    f2 = UFC_FIGHTERS[f2_name]
-
-    s1 = hag_ufc_score(f1)
-    s2 = hag_ufc_score(f2)
-
-    total = max(1, s1 + s2)
-    p1 = round((s1 / total) * 100, 1)
-    p2 = round((s2 / total) * 100, 1)
-
-    return p1, p2
-
-def hag_ufc_method_lean(fighter):
-    ko = fighter.get("KO %", 0)
-    sub = fighter.get("Sub %", 0)
-
-    if ko >= sub and ko >= 35:
-        return "KO/TKO"
-    if sub > ko and sub >= 30:
-        return "Submission"
-    return "Decision"
-
-def hag_render_ufc_event_center():
-    st.header("🥊 UFC Event Center")
-    st.caption("Hag Labs full-card prediction engine")
-
-    rows = []
-
-    for red, blue in UFC_SAMPLE_CARD:
-
-        p_red, p_blue = hag_ufc_win_probability(red, blue)
-
-        winner = red if p_red >= p_blue else blue
-        win_pct = max(p_red, p_blue)
-
-        fighter = UFC_FIGHTERS[winner]
-
-        if win_pct >= 60:
-            confidence = "High"
-        elif win_pct >= 55:
-            confidence = "Medium"
-        else:
-            confidence = "Low"
-
-        rows.append({
-            "Fight": f"{red} vs {blue}",
-            "Pick": winner,
-            "Win %": win_pct,
-            "Method Lean": hag_ufc_method_lean(fighter),
-            "Confidence": confidence
-        })
-
-    card_df = pd.DataFrame(rows)
-
-    st.dataframe(card_df, use_container_width=True, hide_index=True)
-
-    st.download_button(
-        "⬇ Export Fight Card Predictions",
-        card_df.to_csv(index=False).encode("utf-8"),
-        file_name="ufc_fight_card_predictions.csv",
-        mime="text/csv"
-    )
