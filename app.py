@@ -1273,6 +1273,367 @@ def hag_render_fantasy_season_lab(player_df, sport_label, default_slots, benchma
             mime="text/csv"
         )
 
+
+
+# ==========================================================
+# UFC COMBAT SPORTS HELPERS
+# ==========================================================
+UFC_FIGHTERS = {
+    "Islam Makhachev": {
+        "Division": "Lightweight", "Record": "26-1", "Age": 34, "Height": 70, "Reach": 70.5, "Stance": "Southpaw",
+        "Style": "Sambo / Grappling", "Striking": 82, "Grappling": 98, "Wrestling": 97, "Submission": 94,
+        "Durability": 91, "Cardio": 93, "Power": 82, "Speed": 86, "Fight IQ": 96, "Experience": 93,
+        "KO %": 23, "Sub %": 46, "Decision %": 31, "Recent Form": 96, "Strength of Schedule": 92,
+        "Notes": "Elite control grappler with strong striking discipline and championship-level fight IQ. Starter profile; replace with live scraped data later."
+    },
+    "Ilia Topuria": {
+        "Division": "Featherweight", "Record": "16-0", "Age": 29, "Height": 67, "Reach": 69.0, "Stance": "Orthodox",
+        "Style": "Boxing / Grappling", "Striking": 93, "Grappling": 88, "Wrestling": 84, "Submission": 82,
+        "Durability": 89, "Cardio": 87, "Power": 96, "Speed": 91, "Fight IQ": 90, "Experience": 84,
+        "KO %": 38, "Sub %": 50, "Decision %": 12, "Recent Form": 98, "Strength of Schedule": 87,
+        "Notes": "High-power boxer with strong grappling base and elite finishing threat. Starter profile; replace with live scraped data later."
+    },
+    "Alexander Volkanovski": {
+        "Division": "Featherweight", "Record": "26-4", "Age": 37, "Height": 66, "Reach": 71.5, "Stance": "Orthodox",
+        "Style": "Kickboxing / Wrestling", "Striking": 91, "Grappling": 86, "Wrestling": 88, "Submission": 70,
+        "Durability": 84, "Cardio": 96, "Power": 80, "Speed": 88, "Fight IQ": 97, "Experience": 98,
+        "KO %": 50, "Sub %": 12, "Decision %": 38, "Recent Form": 78, "Strength of Schedule": 96,
+        "Notes": "All-time great pressure striker with elite adjustments, cardio, and championship experience. Starter profile; replace with live scraped data later."
+    },
+    "Khamzat Chimaev": {
+        "Division": "Middleweight", "Record": "14-0", "Age": 32, "Height": 74, "Reach": 75.0, "Stance": "Orthodox",
+        "Style": "Wrestling / Pressure", "Striking": 83, "Grappling": 96, "Wrestling": 99, "Submission": 88,
+        "Durability": 88, "Cardio": 84, "Power": 91, "Speed": 89, "Fight IQ": 87, "Experience": 82,
+        "KO %": 43, "Sub %": 43, "Decision %": 14, "Recent Form": 94, "Strength of Schedule": 84,
+        "Notes": "Explosive wrestler with suffocating top control and early finishing upside. Starter profile; replace with live scraped data later."
+    },
+    "Dricus Du Plessis": {
+        "Division": "Middleweight", "Record": "23-2", "Age": 32, "Height": 73, "Reach": 76.0, "Stance": "Switch",
+        "Style": "Pressure / All-Around", "Striking": 86, "Grappling": 84, "Wrestling": 82, "Submission": 80,
+        "Durability": 93, "Cardio": 88, "Power": 90, "Speed": 82, "Fight IQ": 87, "Experience": 88,
+        "KO %": 43, "Sub %": 43, "Decision %": 14, "Recent Form": 95, "Strength of Schedule": 90,
+        "Notes": "Physically strong pressure fighter with awkward rhythm and proven championship grit. Starter profile; replace with live scraped data later."
+    },
+    "Sean O'Malley": {
+        "Division": "Bantamweight", "Record": "18-2", "Age": 31, "Height": 71, "Reach": 72.0, "Stance": "Switch",
+        "Style": "Kickboxing / Range", "Striking": 94, "Grappling": 73, "Wrestling": 72, "Submission": 62,
+        "Durability": 83, "Cardio": 86, "Power": 88, "Speed": 94, "Fight IQ": 89, "Experience": 86,
+        "KO %": 67, "Sub %": 6, "Decision %": 27, "Recent Form": 82, "Strength of Schedule": 86,
+        "Notes": "Elite range striker with speed, timing, and knockout upside. Starter profile; replace with live scraped data later."
+    },
+    "Merab Dvalishvili": {
+        "Division": "Bantamweight", "Record": "18-4", "Age": 35, "Height": 66, "Reach": 68.0, "Stance": "Orthodox",
+        "Style": "Wrestling / Pace", "Striking": 78, "Grappling": 90, "Wrestling": 97, "Submission": 67,
+        "Durability": 92, "Cardio": 99, "Power": 68, "Speed": 88, "Fight IQ": 90, "Experience": 92,
+        "KO %": 17, "Sub %": 6, "Decision %": 77, "Recent Form": 96, "Strength of Schedule": 91,
+        "Notes": "Relentless pace wrestler with elite cardio and chain takedowns. Starter profile; replace with live scraped data later."
+    },
+    "Alex Pereira": {
+        "Division": "Light Heavyweight", "Record": "12-3", "Age": 38, "Height": 76, "Reach": 79.0, "Stance": "Orthodox",
+        "Style": "Kickboxing / Power", "Striking": 97, "Grappling": 70, "Wrestling": 68, "Submission": 55,
+        "Durability": 88, "Cardio": 84, "Power": 99, "Speed": 84, "Fight IQ": 91, "Experience": 88,
+        "KO %": 83, "Sub %": 0, "Decision %": 17, "Recent Form": 94, "Strength of Schedule": 93,
+        "Notes": "World-class kickboxer with rare one-shot finishing power. Starter profile; replace with live scraped data later."
+    },
+    "Jon Jones": {
+        "Division": "Heavyweight", "Record": "27-1", "Age": 38, "Height": 76, "Reach": 84.5, "Stance": "Orthodox",
+        "Style": "MMA / Wrestling", "Striking": 88, "Grappling": 94, "Wrestling": 95, "Submission": 88,
+        "Durability": 91, "Cardio": 90, "Power": 84, "Speed": 82, "Fight IQ": 99, "Experience": 99,
+        "KO %": 37, "Sub %": 26, "Decision %": 37, "Recent Form": 83, "Strength of Schedule": 99,
+        "Notes": "Historically elite all-around fighter with unmatched reach, clinch craft, wrestling, and fight IQ. Starter profile; replace with live scraped data later."
+    },
+    "Tom Aspinall": {
+        "Division": "Heavyweight", "Record": "15-3", "Age": 33, "Height": 77, "Reach": 78.0, "Stance": "Orthodox",
+        "Style": "Boxing / BJJ", "Striking": 91, "Grappling": 86, "Wrestling": 79, "Submission": 84,
+        "Durability": 86, "Cardio": 82, "Power": 96, "Speed": 94, "Fight IQ": 87, "Experience": 82,
+        "KO %": 73, "Sub %": 27, "Decision %": 0, "Recent Form": 94, "Strength of Schedule": 84,
+        "Notes": "Fast heavyweight with rare hand speed, finishing power, and submission threat. Starter profile; replace with live scraped data later."
+    },
+    "Georges St-Pierre": {
+        "Division": "Welterweight", "Record": "26-2", "Age": 44, "Height": 70, "Reach": 76.0, "Stance": "Orthodox",
+        "Style": "Karate / Wrestling", "Striking": 88, "Grappling": 91, "Wrestling": 96, "Submission": 82,
+        "Durability": 89, "Cardio": 96, "Power": 76, "Speed": 90, "Fight IQ": 99, "Experience": 99,
+        "KO %": 31, "Sub %": 23, "Decision %": 46, "Recent Form": 88, "Strength of Schedule": 98,
+        "Notes": "All-time great with elite jab, timing, wrestling entries, cardio, and game planning. Historical starter profile."
+    },
+    "Khabib Nurmagomedov": {
+        "Division": "Lightweight", "Record": "29-0", "Age": 37, "Height": 70, "Reach": 70.0, "Stance": "Orthodox",
+        "Style": "Wrestling / Sambo", "Striking": 80, "Grappling": 99, "Wrestling": 100, "Submission": 91,
+        "Durability": 96, "Cardio": 97, "Power": 78, "Speed": 84, "Fight IQ": 96, "Experience": 95,
+        "KO %": 28, "Sub %": 38, "Decision %": 34, "Recent Form": 99, "Strength of Schedule": 93,
+        "Notes": "Historic pressure grappler with unmatched control, durability, and pace. Historical starter profile."
+    },
+    "Anderson Silva": {
+        "Division": "Middleweight", "Record": "34-11", "Age": 50, "Height": 74, "Reach": 77.5, "Stance": "Southpaw",
+        "Style": "Muay Thai / Counter", "Striking": 98, "Grappling": 82, "Wrestling": 73, "Submission": 78,
+        "Durability": 84, "Cardio": 88, "Power": 90, "Speed": 92, "Fight IQ": 97, "Experience": 99,
+        "KO %": 68, "Sub %": 9, "Decision %": 23, "Recent Form": 86, "Strength of Schedule": 95,
+        "Notes": "Legendary counter striker with elite timing, creativity, and finishing instincts. Historical starter profile."
+    },
+    "Demetrious Johnson": {
+        "Division": "Flyweight", "Record": "25-4-1", "Age": 39, "Height": 63, "Reach": 66.0, "Stance": "Orthodox",
+        "Style": "Complete MMA", "Striking": 90, "Grappling": 94, "Wrestling": 92, "Submission": 91,
+        "Durability": 91, "Cardio": 98, "Power": 72, "Speed": 98, "Fight IQ": 99, "Experience": 99,
+        "KO %": 20, "Sub %": 48, "Decision %": 32, "Recent Form": 94, "Strength of Schedule": 94,
+        "Notes": "Complete all-phase fighter with elite transitions, speed, cardio, and fight IQ. Historical starter profile."
+    },
+}
+
+
+def hag_ufc_score(fighter):
+    f = fighter or {}
+    weights = {
+        "Striking": 0.16, "Grappling": 0.14, "Wrestling": 0.13, "Submission": 0.09,
+        "Durability": 0.10, "Cardio": 0.10, "Power": 0.09, "Speed": 0.07,
+        "Fight IQ": 0.08, "Recent Form": 0.04
+    }
+    total = 0
+    for key, weight in weights.items():
+        total += float(f.get(key, 75)) * weight
+    sos = float(f.get("Strength of Schedule", 80))
+    return round((total * 0.92) + (sos * 0.08), 1)
+
+
+def hag_ufc_tier(score):
+    try:
+        s = float(score)
+    except Exception:
+        s = 0
+    if s >= 94:
+        return "All-Time / Champion Tier"
+    if s >= 88:
+        return "Elite Contender"
+    if s >= 82:
+        return "Ranked-Level Threat"
+    if s >= 75:
+        return "Dangerous Specialist"
+    return "Developmental / Lower Confidence"
+
+
+def hag_ufc_percentile_bar(label, value):
+    try:
+        pct = int(max(1, min(99, float(value))))
+    except Exception:
+        pct = 50
+    st.markdown(f"**{label}: {pct}%**")
+    st.progress(pct / 100)
+
+
+def hag_ufc_profile_df():
+    rows = []
+    for name, f in UFC_FIGHTERS.items():
+        score = hag_ufc_score(f)
+        row = {"Fighter": name, "Overall Grade": score, "Tier": hag_ufc_tier(score)}
+        row.update(f)
+        rows.append(row)
+    return pd.DataFrame(rows).sort_values("Overall Grade", ascending=False)
+
+
+def hag_ufc_matchup_result(fighter_a, fighter_b, boost_a=0, boost_b=0):
+    a = UFC_FIGHTERS.get(fighter_a, {})
+    b = UFC_FIGHTERS.get(fighter_b, {})
+    if not a or not b or fighter_a == fighter_b:
+        return None
+
+    a_score = hag_ufc_score(a) + float(boost_a)
+    b_score = hag_ufc_score(b) + float(boost_b)
+
+    a_reach = float(a.get("Reach", 70))
+    b_reach = float(b.get("Reach", 70))
+    reach_edge = max(-4, min(4, (a_reach - b_reach) * 0.35))
+
+    a_style_edge = (
+        (float(a.get("Wrestling", 75)) - float(b.get("Wrestling", 75))) * 0.035
+        + (float(a.get("Grappling", 75)) - float(b.get("Grappling", 75))) * 0.025
+        + (float(a.get("Striking", 75)) - float(b.get("Striking", 75))) * 0.030
+        + (float(a.get("Durability", 75)) - float(b.get("Power", 75))) * 0.020
+    )
+
+    score_diff = (a_score - b_score) + reach_edge + a_style_edge
+    prob_a = 1 / (1 + np.exp(-score_diff / 9.5))
+    prob_a = float(max(0.05, min(0.95, prob_a)))
+    prob_b = 1 - prob_a
+
+    a_finish = (float(a.get("Power", 75)) * 0.45 + float(a.get("Submission", 75)) * 0.35 + float(a.get("Grappling", 75)) * 0.20) / 100
+    b_durable = float(b.get("Durability", 80)) / 100
+    a_finish_prob = max(0.10, min(0.80, (a_finish * (1.12 - b_durable)) + 0.18))
+    b_finish = (float(b.get("Power", 75)) * 0.45 + float(b.get("Submission", 75)) * 0.35 + float(b.get("Grappling", 75)) * 0.20) / 100
+    a_durable = float(a.get("Durability", 80)) / 100
+    b_finish_prob = max(0.10, min(0.80, (b_finish * (1.12 - a_durable)) + 0.18))
+
+    a_ko_share = float(a.get("KO %", 35)) / max(1, float(a.get("KO %", 35)) + float(a.get("Sub %", 25)))
+    b_ko_share = float(b.get("KO %", 35)) / max(1, float(b.get("KO %", 35)) + float(b.get("Sub %", 25)))
+
+    return {
+        "Fighter A": fighter_a,
+        "Fighter B": fighter_b,
+        "A Grade": round(a_score, 1),
+        "B Grade": round(b_score, 1),
+        "A Win %": round(prob_a * 100, 1),
+        "B Win %": round(prob_b * 100, 1),
+        "A KO/TKO %": round(prob_a * a_finish_prob * a_ko_share * 100, 1),
+        "A Submission %": round(prob_a * a_finish_prob * (1 - a_ko_share) * 100, 1),
+        "A Decision %": round(prob_a * (1 - a_finish_prob) * 100, 1),
+        "B KO/TKO %": round(prob_b * b_finish_prob * b_ko_share * 100, 1),
+        "B Submission %": round(prob_b * b_finish_prob * (1 - b_ko_share) * 100, 1),
+        "B Decision %": round(prob_b * (1 - b_finish_prob) * 100, 1),
+        "Confidence": "High" if abs(prob_a - 0.5) >= 0.18 else "Medium" if abs(prob_a - 0.5) >= 0.09 else "Low",
+        "Predicted Winner": fighter_a if prob_a >= prob_b else fighter_b,
+    }
+
+
+def hag_ufc_simulation_df(result, sims=10000):
+    if not result:
+        return pd.DataFrame(), pd.DataFrame()
+    rows = [
+        {"Outcome": f"{result['Fighter A']} by KO/TKO", "Probability": result["A KO/TKO %"]},
+        {"Outcome": f"{result['Fighter A']} by Submission", "Probability": result["A Submission %"]},
+        {"Outcome": f"{result['Fighter A']} by Decision", "Probability": result["A Decision %"]},
+        {"Outcome": f"{result['Fighter B']} by KO/TKO", "Probability": result["B KO/TKO %"]},
+        {"Outcome": f"{result['Fighter B']} by Submission", "Probability": result["B Submission %"]},
+        {"Outcome": f"{result['Fighter B']} by Decision", "Probability": result["B Decision %"]},
+    ]
+    method_df = pd.DataFrame(rows)
+    probs = method_df["Probability"].to_numpy(dtype=float)
+    probs = probs / probs.sum() if probs.sum() else np.ones(len(probs)) / len(probs)
+    draws = np.random.choice(method_df["Outcome"].tolist(), size=int(sims), p=probs)
+    sim_summary = pd.Series(draws).value_counts(normalize=True).mul(100).round(1).reset_index()
+    sim_summary.columns = ["Simulated Outcome", "Simulated %"]
+    return method_df, sim_summary
+
+
+def hag_ufc_radar_chart(fighter_name):
+    f = UFC_FIGHTERS.get(fighter_name, {})
+    categories = ["Striking", "Grappling", "Wrestling", "Submission", "Durability", "Cardio", "Power", "Speed", "Fight IQ"]
+    values = [float(f.get(c, 75)) for c in categories]
+    fig = go.Figure()
+    fig.add_trace(go.Scatterpolar(r=values + [values[0]], theta=categories + [categories[0]], fill='toself', name=fighter_name))
+    fig.update_layout(height=420, polar=dict(radialaxis=dict(visible=True, range=[0, 100])), showlegend=False, margin=dict(l=40, r=40, t=30, b=30))
+    return fig
+
+
+def hag_render_ufc_fighter_lab():
+    st.title("🥊 UFC Fighter Lab")
+    st.caption("Starter Hag Labs fighter profiles. This is the UFC version of Player Lab; live UFCStats scraping can be added next.")
+
+    df = hag_ufc_profile_df()
+    divisions = ["All"] + sorted(df["Division"].dropna().unique().tolist())
+    division = st.selectbox("Filter by division:", divisions, key="ufc_lab_division")
+    filtered = df.copy() if division == "All" else df[df["Division"] == division].copy()
+
+    fighter = st.selectbox("Select fighter:", filtered["Fighter"].tolist(), key="ufc_lab_fighter")
+    f = UFC_FIGHTERS[fighter]
+    grade = hag_ufc_score(f)
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Overall Grade", f"{grade}/100")
+    with c2:
+        st.metric("Tier", hag_ufc_tier(grade))
+    with c3:
+        st.metric("Record", f.get("Record", "N/A"))
+    with c4:
+        st.metric("Division", f.get("Division", "N/A"))
+
+    left, right = st.columns([1, 1])
+    with left:
+        st.markdown(f"### {fighter}")
+        st.caption(f"{f.get('Style')} • {f.get('Stance')} • Age {f.get('Age')} • Reach {f.get('Reach')} in")
+        st.write(f.get("Notes", ""))
+        hag_ufc_percentile_bar("Striking", f.get("Striking", 75))
+        hag_ufc_percentile_bar("Grappling", f.get("Grappling", 75))
+        hag_ufc_percentile_bar("Wrestling", f.get("Wrestling", 75))
+        hag_ufc_percentile_bar("Durability", f.get("Durability", 75))
+        hag_ufc_percentile_bar("Fight IQ", f.get("Fight IQ", 75))
+    with right:
+        st.plotly_chart(hag_ufc_radar_chart(fighter), use_container_width=True)
+
+    st.markdown("### Fighter Database")
+    display_cols = ["Fighter", "Division", "Record", "Age", "Stance", "Overall Grade", "Tier", "Striking", "Grappling", "Wrestling", "Durability", "Power", "Fight IQ"]
+    st.dataframe(filtered[display_cols], use_container_width=True, hide_index=True)
+    st.download_button("⬇️ Export UFC Fighter Lab CSV", data=filtered.to_csv(index=False).encode("utf-8"), file_name="ufc_fighter_lab.csv", mime="text/csv")
+
+
+def hag_render_ufc_fight_predictor():
+    st.title("🥊 UFC Fight Predictor")
+    st.caption("Compare two fighters and estimate win probability plus method-of-victory lean.")
+    names = sorted(UFC_FIGHTERS.keys())
+    c1, c2 = st.columns(2)
+    with c1:
+        fighter_a = st.selectbox("Fighter A:", names, index=0, key="ufc_pred_a")
+    with c2:
+        default_b = 1 if len(names) > 1 else 0
+        fighter_b = st.selectbox("Fighter B:", names, index=default_b, key="ufc_pred_b")
+
+    result = hag_ufc_matchup_result(fighter_a, fighter_b)
+    if not result:
+        st.warning("Select two different fighters.")
+        return
+
+    m1, m2, m3 = st.columns(3)
+    with m1:
+        st.metric(f"{fighter_a} Win Probability", f"{result['A Win %']}%")
+    with m2:
+        st.metric(f"{fighter_b} Win Probability", f"{result['B Win %']}%")
+    with m3:
+        st.metric("Confidence", result["Confidence"])
+
+    st.success(f"Predicted Winner: {result['Predicted Winner']}")
+
+    method_df, sim_summary = hag_ufc_simulation_df(result, sims=10000)
+    st.markdown("### Method Breakdown")
+    st.dataframe(method_df, use_container_width=True, hide_index=True)
+    st.bar_chart(method_df.set_index("Outcome"))
+
+    with st.expander("View simulated outcome summary"):
+        st.dataframe(sim_summary, use_container_width=True, hide_index=True)
+
+    st.markdown("### Fighter Comparison")
+    comp = pd.DataFrame([
+        {"Metric": k, fighter_a: UFC_FIGHTERS[fighter_a].get(k), fighter_b: UFC_FIGHTERS[fighter_b].get(k)}
+        for k in ["Division", "Record", "Age", "Height", "Reach", "Stance", "Striking", "Grappling", "Wrestling", "Submission", "Durability", "Cardio", "Power", "Speed", "Fight IQ", "Recent Form"]
+    ])
+    st.dataframe(comp, use_container_width=True, hide_index=True)
+
+
+def hag_render_ufc_historical_simulator():
+    st.title("🕰️ UFC Historical Fight Simulator")
+    st.caption("Simulate dream fights, prime-vs-prime matchups, or current-vs-historical fighter comparisons.")
+    names = sorted(UFC_FIGHTERS.keys())
+
+    c1, c2 = st.columns(2)
+    with c1:
+        fighter_a = st.selectbox("Fighter A:", names, index=names.index("Khabib Nurmagomedov") if "Khabib Nurmagomedov" in names else 0, key="ufc_hist_a")
+        boost_a = st.slider("Fighter A prime/context boost", -10, 10, 0, key="ufc_hist_boost_a")
+    with c2:
+        fighter_b = st.selectbox("Fighter B:", names, index=names.index("Georges St-Pierre") if "Georges St-Pierre" in names else 1, key="ufc_hist_b")
+        boost_b = st.slider("Fighter B prime/context boost", -10, 10, 0, key="ufc_hist_boost_b")
+
+    sims = st.slider("Simulations", 1000, 50000, 10000, step=1000, key="ufc_hist_sims")
+    result = hag_ufc_matchup_result(fighter_a, fighter_b, boost_a=boost_a, boost_b=boost_b)
+    if not result:
+        st.warning("Select two different fighters.")
+        return
+
+    method_df, sim_summary = hag_ufc_simulation_df(result, sims=sims)
+
+    h1, h2, h3 = st.columns(3)
+    with h1:
+        st.metric(f"{fighter_a}", f"{result['A Win %']}%")
+    with h2:
+        st.metric(f"{fighter_b}", f"{result['B Win %']}%")
+    with h3:
+        st.metric("Most Likely", sim_summary.iloc[0]["Simulated Outcome"] if not sim_summary.empty else "N/A")
+
+    st.markdown("### Simulation Results")
+    st.dataframe(sim_summary, use_container_width=True, hide_index=True)
+    st.bar_chart(sim_summary.set_index("Simulated Outcome"))
+
+    st.markdown("### Base Method Probabilities")
+    st.dataframe(method_df, use_container_width=True, hide_index=True)
+    st.download_button("⬇️ Export UFC Simulation CSV", data=sim_summary.to_csv(index=False).encode("utf-8"), file_name="ufc_historical_simulation.csv", mime="text/csv")
+
+
 # ==========================================================
 # MASTER SPORT ROUTER
 # ==========================================================
@@ -1283,6 +1644,7 @@ sport = st.sidebar.selectbox(
         "🏠 Home",
         "⚾ MLB Baseball",
         "🏈 NFL Football",
+        "🥊 UFC Combat Sports",
         "🎓 NCAA Football",
         "🥎 NCAA Softball"
     ]
@@ -1297,6 +1659,7 @@ if sport == "🏠 Home":
     #### Active Engines
     - ⚾ MLB Baseball: betting model, player lab, fantasy projections
     - 🏈 NFL Football: simulation engine and fantasy projections in progress
+    - 🥊 UFC Combat Sports: Fighter Lab, Fight Predictor, and Historical Simulator
 
     #### Coming Soon
     - 🎓 NCAA Football
