@@ -1717,7 +1717,6 @@ def hag_ufc_body_zone_profile(fighter_name):
     head = 42 + (power - 75) * 0.23 + (striking - 75) * 0.18
     body = 27 + (cardio - 75) * 0.12 + (striking - 75) * 0.08
     legs = 20 + (speed - 75) * 0.11
-    clinch = 11 + (wrestling - 75) * 0.10 + (grappling - 75) * 0.08
 
     if "kick" in style or "muay" in style:
         legs += 8
@@ -1725,31 +1724,34 @@ def hag_ufc_body_zone_profile(fighter_name):
     if "boxing" in style:
         head += 8
         body += 2
-    if "wrest" in style or "sambo" in style or "grappl" in style:
-        clinch += 10
-        head -= 4
-    if "pressure" in style:
-        body += 4
-        clinch += 4
     if "range" in style:
         head += 4
         legs += 5
-        clinch -= 3
 
-    attack_raw = {"Head": head, "Body": body, "Legs": legs, "Clinch/Ground": clinch}
+    attack_raw = {
+        "Head": head,
+        "Body": body,
+        "Legs": legs
+    }
+
     total = max(1, sum(max(1, v) for v in attack_raw.values()))
     attack = {k: round(max(1, v) / total * 100, 1) for k, v in attack_raw.items()}
 
-    # Defensive vulnerability estimate: high durability/cardio/grappling lowers damage share.
+    phase_profile = {
+        "Distance": round(max(10, striking * 0.6), 1),
+        "Clinch": round(max(5, wrestling * 0.4), 1),
+        "Ground": round(max(5, grappling * 0.5), 1)
+    }
+
     head_v = 34 + (100 - durability) * 0.18 + (100 - striking) * 0.10
     body_v = 26 + (100 - cardio) * 0.16
-    leg_v = 22 + (100 - speed) * 0.12
-    grap_v = 18 + (100 - grappling) * 0.14 + (100 - wrestling) * 0.08
-    defense_raw = {"Head": head_v, "Body": body_v, "Legs": leg_v, "Clinch/Ground": grap_v}
-    dtotal = max(1, sum(max(1, v) for v in defense_raw.values()))
-    defense = {k: round(max(1, v) / dtotal * 100, 1) for k, v in defense_raw.items()}
+    leg_v = 20 + (100 - speed) * 0.14 + (100 - wrestling) * 0.08
 
-    return attack, defense
+    defense_raw = {"Head": head_v, "Body": body_v, "Legs": leg_v}
+    d_total = max(1, sum(max(1, v) for v in defense_raw.values()))
+    defense = {k: round(max(1, v) / d_total * 100, 1) for k, v in defense_raw.items()}
+
+    return attack, defense, phase_profile
 
 
 def hag_ufc_body_heatmap_figure(fighter_name, mode="Attack"):
@@ -1803,14 +1805,16 @@ def hag_ufc_body_heatmap_figure(fighter_name, mode="Attack"):
 
 
 def hag_ufc_strike_zone_df(fighter_name):
-    attack, defense = hag_ufc_body_zone_profile(fighter_name)
+    attack, defense, phase_profile = hag_ufc_body_zone_profile(fighter_name)
+
     rows = []
-    for zone in ["Head", "Body", "Legs", "Clinch/Ground"]:
+    for zone in ["Head", "Body", "Legs"]:
         rows.append({
             "Zone": zone,
             "Attack Share %": attack.get(zone, 0),
             "Damage Absorbed Risk %": defense.get(zone, 0),
         })
+
     return pd.DataFrame(rows)
 
 
