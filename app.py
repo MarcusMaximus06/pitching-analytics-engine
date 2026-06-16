@@ -123,9 +123,46 @@ requests.Session.request = custom_request
 
 st.set_page_config(page_title=APP_PAGE_TITLE, layout="wide")
 
-# Hag Labs Global Logo
-if os.path.exists("hag_labs_logo.png"):
-    st.image("hag_labs_logo.png", width=300)
+
+# ==========================================================
+# HAG LABS GLOBAL BRANDING
+# ==========================================================
+HAG_LOGO_FILES = [
+    "hag_labs_logo.png",
+    "hag labs logo.png",
+    "Hag Labs Logo.png",
+    "hag_labs_logo.PNG",
+]
+
+def hag_find_logo_path():
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+    except Exception:
+        base_dir = os.getcwd()
+
+    for fname in HAG_LOGO_FILES:
+        local_path = os.path.join(base_dir, fname)
+        if os.path.exists(local_path):
+            return local_path
+
+    for fname in HAG_LOGO_FILES:
+        if os.path.exists(fname):
+            return fname
+
+    return None
+
+def hag_render_global_logo(location="main", width=320):
+    logo_path = hag_find_logo_path()
+    if not logo_path:
+        return
+
+    if location == "sidebar":
+        st.sidebar.image(logo_path, width=min(width, 240))
+    else:
+        c1, c2, c3 = st.columns([1, 2, 1])
+        with c2:
+            st.image(logo_path, width=width)
+        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 
 
 
@@ -2731,6 +2768,7 @@ def hag_render_ufc_historical_simulator():
 # ==========================================================
 # MASTER SPORT ROUTER
 # ==========================================================
+hag_render_global_logo("sidebar", width=230)
 st.sidebar.title(APP_TITLE)
 sport = st.sidebar.selectbox(
     "Select Sport Engine:",
@@ -2744,6 +2782,8 @@ sport = st.sidebar.selectbox(
     ]
 )
 st.sidebar.markdown("---")
+
+hag_render_global_logo("main", width=360)
 
 if sport == "🏠 Home":
     st.title("🏠 Hag Labs Sports Analytics Hub")
