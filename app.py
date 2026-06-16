@@ -1647,6 +1647,7 @@ def hag_ufc_matchup_result(fighter_a, fighter_b, boost_a=0, boost_b=0):
 def hag_ufc_simulation_df(result, sims=10000):
     if not result:
         return pd.DataFrame(), pd.DataFrame()
+
     rows = [
         {"Outcome": f"{result['Fighter A']} by KO/TKO", "Probability": result["A KO/TKO %"]},
         {"Outcome": f"{result['Fighter A']} by Submission", "Probability": result["A Submission %"]},
@@ -1655,12 +1656,22 @@ def hag_ufc_simulation_df(result, sims=10000):
         {"Outcome": f"{result['Fighter B']} by Submission", "Probability": result["B Submission %"]},
         {"Outcome": f"{result['Fighter B']} by Decision", "Probability": result["B Decision %"]},
     ]
+
     method_df = pd.DataFrame(rows)
+    method_df["Probability"] = pd.to_numeric(method_df["Probability"], errors="coerce").fillna(0.0)
+
     probs = method_df["Probability"].to_numpy(dtype=float)
     probs = probs / probs.sum() if probs.sum() else np.ones(len(probs)) / len(probs)
+
     draws = np.random.choice(method_df["Outcome"].tolist(), size=int(sims), p=probs)
-    sim_summary = pd.Series(draws).value_counts(normalize=True).mul(100).round(1).reset_index()
-    sim_summary.columns = ["Simulated Outcome", "Simulated %"]
+
+    counts = pd.Series(draws).value_counts().reset_index()
+    counts.columns = ["Simulated Outcome", "Simulated Count"]
+    counts["Simulated %"] = (counts["Simulated Count"] / int(sims) * 100).round(1)
+
+    # Keep the expected chart/table order by highest simulated count.
+    sim_summary = counts.sort_values("Simulated Count", ascending=False).reset_index(drop=True)
+
     return method_df, sim_summary
 
 
