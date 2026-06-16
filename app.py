@@ -1674,6 +1674,292 @@ def hag_ufc_radar_chart(fighter_name):
     return fig
 
 
+# ==========================================================
+# UFC STATS / BODY MAP / EVENT CENTER HELPERS
+# ==========================================================
+def hag_ufc_style_badges(fighter_name):
+    f = UFC_FIGHTERS.get(fighter_name, {})
+    badges = []
+
+    if float(f.get("Power", 0)) >= 90 and float(f.get("KO %", 0)) >= 45:
+        badges.append("💥 Power Finisher")
+    if float(f.get("Striking", 0)) >= 90:
+        badges.append("🎯 Elite Striker")
+    if float(f.get("Wrestling", 0)) >= 90 or float(f.get("Grappling", 0)) >= 92:
+        badges.append("⛓️ Grappling Pressure")
+    if float(f.get("Submission", 0)) >= 88:
+        badges.append("🐍 Submission Threat")
+    if float(f.get("Cardio", 0)) >= 92:
+        badges.append("🔋 Pace Monster")
+    if float(f.get("Fight IQ", 0)) >= 94:
+        badges.append("🧠 Elite Fight IQ")
+    if float(f.get("Decision %", 0)) >= 45:
+        badges.append("⏱️ Decision Grinder")
+    if float(f.get("Recent Form", 0)) >= 94:
+        badges.append("🔥 Red Hot Form")
+
+    if not badges:
+        badges.append("⚖️ Balanced MMA Profile")
+    return badges[:6]
+
+
+def hag_ufc_body_zone_profile(fighter_name):
+    f = UFC_FIGHTERS.get(fighter_name, {})
+    style = str(f.get("Style", "")).lower()
+    striking = float(f.get("Striking", 75))
+    power = float(f.get("Power", 75))
+    speed = float(f.get("Speed", 75))
+    grappling = float(f.get("Grappling", 75))
+    wrestling = float(f.get("Wrestling", 75))
+    cardio = float(f.get("Cardio", 75))
+    durability = float(f.get("Durability", 75))
+
+    head = 42 + (power - 75) * 0.23 + (striking - 75) * 0.18
+    body = 27 + (cardio - 75) * 0.12 + (striking - 75) * 0.08
+    legs = 20 + (speed - 75) * 0.11
+    clinch = 11 + (wrestling - 75) * 0.10 + (grappling - 75) * 0.08
+
+    if "kick" in style or "muay" in style:
+        legs += 8
+        body += 3
+    if "boxing" in style:
+        head += 8
+        body += 2
+    if "wrest" in style or "sambo" in style or "grappl" in style:
+        clinch += 10
+        head -= 4
+    if "pressure" in style:
+        body += 4
+        clinch += 4
+    if "range" in style:
+        head += 4
+        legs += 5
+        clinch -= 3
+
+    attack_raw = {"Head": head, "Body": body, "Legs": legs, "Clinch/Ground": clinch}
+    total = max(1, sum(max(1, v) for v in attack_raw.values()))
+    attack = {k: round(max(1, v) / total * 100, 1) for k, v in attack_raw.items()}
+
+    # Defensive vulnerability estimate: high durability/cardio/grappling lowers damage share.
+    head_v = 34 + (100 - durability) * 0.18 + (100 - striking) * 0.10
+    body_v = 26 + (100 - cardio) * 0.16
+    leg_v = 22 + (100 - speed) * 0.12
+    grap_v = 18 + (100 - grappling) * 0.14 + (100 - wrestling) * 0.08
+    defense_raw = {"Head": head_v, "Body": body_v, "Legs": leg_v, "Clinch/Ground": grap_v}
+    dtotal = max(1, sum(max(1, v) for v in defense_raw.values()))
+    defense = {k: round(max(1, v) / dtotal * 100, 1) for k, v in defense_raw.items()}
+
+    return attack, defense
+
+
+def hag_ufc_body_heatmap_figure(fighter_name, mode="Attack"):
+    attack, defense = hag_ufc_body_zone_profile(fighter_name)
+    profile = attack if mode == "Attack" else defense
+
+    zones = [
+        {"zone": "Head", "x": 0.50, "y": 0.86, "size": profile.get("Head", 25)},
+        {"zone": "Body", "x": 0.50, "y": 0.58, "size": profile.get("Body", 25)},
+        {"zone": "Legs", "x": 0.50, "y": 0.28, "size": profile.get("Legs", 25)},
+        {"zone": "Clinch/Ground", "x": 0.50, "y": 0.44, "size": profile.get("Clinch/Ground", 25)},
+    ]
+
+    fig = go.Figure()
+
+    # Simple body silhouette using lines/shapes so no image asset is required.
+    fig.add_shape(type="circle", x0=0.42, y0=0.78, x1=0.58, y1=0.94, line=dict(width=2), fillcolor="rgba(148,163,184,0.10)")
+    fig.add_shape(type="rect", x0=0.38, y0=0.45, x1=0.62, y1=0.76, line=dict(width=2), fillcolor="rgba(148,163,184,0.08)")
+    fig.add_shape(type="line", x0=0.38, y0=0.70, x1=0.25, y1=0.48, line=dict(width=5))
+    fig.add_shape(type="line", x0=0.62, y0=0.70, x1=0.75, y1=0.48, line=dict(width=5))
+    fig.add_shape(type="line", x0=0.45, y0=0.45, x1=0.37, y1=0.08, line=dict(width=6))
+    fig.add_shape(type="line", x0=0.55, y0=0.45, x1=0.63, y1=0.08, line=dict(width=6))
+
+    fig.add_trace(go.Scatter(
+        x=[z["x"] for z in zones],
+        y=[z["y"] for z in zones],
+        mode="markers+text",
+        text=[f"{z['zone']}<br>{z['size']}%" for z in zones],
+        textposition="middle center",
+        marker=dict(
+            size=[max(34, z["size"] * 2.25) for z in zones],
+            color=[z["size"] for z in zones],
+            colorscale="Reds" if mode == "Attack" else "Blues",
+            showscale=True,
+            colorbar=dict(title=f"{mode} %")
+        ),
+        hovertemplate="%{text}<extra></extra>"
+    ))
+
+    fig.update_xaxes(visible=False, range=[0, 1])
+    fig.update_yaxes(visible=False, range=[0, 1], scaleanchor="x", scaleratio=1)
+    fig.update_layout(
+        title=f"{fighter_name} {mode} Body Map",
+        height=500,
+        margin=dict(l=20, r=20, t=55, b=20),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        showlegend=False,
+    )
+    return fig
+
+
+def hag_ufc_strike_zone_df(fighter_name):
+    attack, defense = hag_ufc_body_zone_profile(fighter_name)
+    rows = []
+    for zone in ["Head", "Body", "Legs", "Clinch/Ground"]:
+        rows.append({
+            "Zone": zone,
+            "Attack Share %": attack.get(zone, 0),
+            "Damage Absorbed Risk %": defense.get(zone, 0),
+        })
+    return pd.DataFrame(rows)
+
+
+@st.cache_data(ttl=CACHE_TTL_DAILY)
+def hag_fetch_ufc_statleaders_preview():
+    url = "https://statleaders.ufc.com/en/"
+    try:
+        tables = pd.read_html(url)
+        cleaned = []
+        for t in tables[:4]:
+            if isinstance(t, pd.DataFrame) and not t.empty:
+                cleaned.append(t.head(25))
+        return cleaned, "Loaded tables from UFC Stat Leaders."
+    except Exception as e:
+        return [], f"Could not auto-read statleaders tables from the app environment yet: {e}"
+
+
+def hag_render_ufc_statleaders_importer():
+    st.markdown("### 📥 UFC Stats Importer")
+    st.caption("Connects the UFC section to the official UFC Stat Leaders site as a future data source. Current Fighter Lab still uses the internal starter database plus derived Hag Labs ratings.")
+
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        if st.button("Try loading UFC Stat Leaders", key="ufc_statleaders_load"):
+            st.session_state["ufc_statleaders_loaded"] = True
+    with c2:
+        st.info("Source target: https://statleaders.ufc.com/en/")
+
+    if st.session_state.get("ufc_statleaders_loaded"):
+        tables, msg = hag_fetch_ufc_statleaders_preview()
+        if tables:
+            st.success(msg)
+            for i, table in enumerate(tables, start=1):
+                with st.expander(f"Imported table preview {i}", expanded=(i == 1)):
+                    st.dataframe(table, use_container_width=True, hide_index=True)
+        else:
+            st.warning(msg)
+            st.write("Next step would be a dedicated scraper/parser for the site's rendered leaderboard data.")
+
+
+def hag_render_ufc_body_map_section(fighter_name):
+    st.markdown("### 🎯 Savant-Style Body Strike Map")
+    st.caption("First version is a Hag Labs estimated strike-zone model from style, power, striking, grappling, cardio, and durability. Later we can replace the estimates with real zone data if we find a source with exact head/body/leg splits.")
+    mode = st.radio("Body map mode:", ["Attack", "Defense"], horizontal=True, key=f"ufc_body_mode_{fighter_name}")
+    c1, c2 = st.columns([1.15, 0.85])
+    with c1:
+        st.plotly_chart(hag_ufc_body_heatmap_figure(fighter_name, mode=mode), use_container_width=True)
+    with c2:
+        zone_df = hag_ufc_strike_zone_df(fighter_name)
+        st.dataframe(zone_df, use_container_width=True, hide_index=True)
+        st.download_button(
+            "⬇️ Export body map CSV",
+            data=zone_df.to_csv(index=False).encode("utf-8"),
+            file_name=f"{fighter_name.lower().replace(' ', '_')}_ufc_body_map.csv",
+            mime="text/csv",
+            key=f"ufc_body_export_{fighter_name}"
+        )
+
+
+def hag_render_ufc_style_badges(fighter_name):
+    badges = hag_ufc_style_badges(fighter_name)
+    badge_html = " ".join([
+        f"<span style='display:inline-block;background:#172033;border:1px solid #334155;border-radius:999px;padding:7px 11px;margin:3px;font-weight:700;'>{badge}</span>"
+        for badge in badges
+    ])
+    st.markdown("### 🧬 Fight Style Badges")
+    st.markdown(badge_html, unsafe_allow_html=True)
+
+
+def hag_render_ufc_event_center():
+    st.title("📋 UFC Event Center")
+    st.caption("Build a fight card and run Hag Labs predictions for every matchup.")
+    names = sorted(UFC_FIGHTERS.keys())
+
+    with st.expander("Build fight card", expanded=True):
+        fight_count = st.slider("Number of fights", 1, 8, 3, key="ufc_event_fight_count")
+        fights = []
+        for i in range(fight_count):
+            c1, c2 = st.columns(2)
+            with c1:
+                a = st.selectbox(f"Fight {i+1} - Fighter A", names, index=i % len(names), key=f"ufc_event_a_{i}")
+            with c2:
+                b_index = (i + 1) % len(names)
+                b = st.selectbox(f"Fight {i+1} - Fighter B", names, index=b_index, key=f"ufc_event_b_{i}")
+            if a != b:
+                fights.append((a, b))
+
+    rows = []
+    method_rows = []
+    for idx, (a, b) in enumerate(fights, start=1):
+        result = hag_ufc_matchup_result(a, b)
+        if not result:
+            continue
+        rows.append({
+            "Fight": idx,
+            "Fighter A": a,
+            "Fighter B": b,
+            "A Win %": result["A Win %"],
+            "B Win %": result["B Win %"],
+            "Pick": result["Predicted Winner"],
+            "Confidence": result["Confidence"],
+            "Most Likely Method": max([
+                (f"{a} by KO/TKO", result["A KO/TKO %"]),
+                (f"{a} by Submission", result["A Submission %"]),
+                (f"{a} by Decision", result["A Decision %"]),
+                (f"{b} by KO/TKO", result["B KO/TKO %"]),
+                (f"{b} by Submission", result["B Submission %"]),
+                (f"{b} by Decision", result["B Decision %"]),
+            ], key=lambda x: x[1])[0]
+        })
+        for label, pct in [
+            (f"{a} KO/TKO", result["A KO/TKO %"]),
+            (f"{a} Submission", result["A Submission %"]),
+            (f"{a} Decision", result["A Decision %"]),
+            (f"{b} KO/TKO", result["B KO/TKO %"]),
+            (f"{b} Submission", result["B Submission %"]),
+            (f"{b} Decision", result["B Decision %"]),
+        ]:
+            method_rows.append({"Fight": idx, "Outcome": label, "Probability %": pct})
+
+    event_df = pd.DataFrame(rows)
+    methods_df = pd.DataFrame(method_rows)
+
+    if event_df.empty:
+        st.info("Add at least one valid fight.")
+        return
+
+    st.markdown("### Event Prediction Board")
+    st.dataframe(event_df, use_container_width=True, hide_index=True)
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Fights", len(event_df))
+    with c2:
+        st.metric("High Confidence Picks", int((event_df["Confidence"] == "High").sum()))
+    with c3:
+        st.metric("Average Favorite Win %", f"{round(event_df[['A Win %','B Win %']].max(axis=1).mean(), 1)}%")
+
+    with st.expander("Full method probabilities"):
+        st.dataframe(methods_df, use_container_width=True, hide_index=True)
+
+    st.download_button(
+        "⬇️ Export UFC Event Board CSV",
+        data=event_df.to_csv(index=False).encode("utf-8"),
+        file_name="ufc_event_prediction_board.csv",
+        mime="text/csv"
+    )
+
+
 def hag_render_ufc_fighter_lab():
     st.title("🥊 UFC Fighter Lab")
     st.caption("Hag Labs fighter profiles with Savant-style percentiles, radar charts, fighter grades, and method profiles.")
@@ -1692,6 +1978,7 @@ def hag_render_ufc_fighter_lab():
     with left:
         st.markdown("### Fighter Notes")
         st.write(f.get("Notes", ""))
+        hag_render_ufc_style_badges(fighter)
 
         st.markdown("### Savant-Style Percentiles")
         for metric in ["Striking", "Grappling", "Wrestling", "Submission", "Durability", "Cardio", "Power", "Speed", "Fight IQ", "Recent Form"]:
@@ -1709,6 +1996,9 @@ def hag_render_ufc_fighter_lab():
         ])
         st.dataframe(method_profile, use_container_width=True, hide_index=True)
         st.bar_chart(method_profile.set_index("Method"))
+
+    hag_render_ufc_body_map_section(fighter)
+    hag_render_ufc_statleaders_importer()
 
     st.markdown("### Fighter Database")
     display_cols = ["Fighter", "Division", "Record", "Age", "Stance", "Overall Grade", "Tier", "Striking", "Grappling", "Wrestling", "Submission", "Durability", "Cardio", "Power", "Speed", "Fight IQ"]
@@ -1834,7 +2124,7 @@ if sport == "🏠 Home":
     #### Active Engines
     - ⚾ MLB Baseball: betting model, player lab, fantasy projections
     - 🏈 NFL Football: simulation engine and fantasy projections in progress
-    - 🥊 UFC Combat Sports: Fighter Lab, Fight Predictor, Fighter Comparison, and Historical Simulator
+    - 🥊 UFC Combat Sports: Fighter Lab, Fight Predictor, Fighter Comparison, Event Center, and Historical Simulator
 
     #### Coming Soon
     - 🎓 NCAA Football
@@ -1854,6 +2144,7 @@ if sport == "🥊 UFC Combat Sports":
             "🥊 UFC Fighter Lab",
             "⚔️ UFC Fight Predictor",
             "🧬 Fighter Comparison",
+            "📋 UFC Event Center",
             "🕰️ Historical Fight Simulator"
         ]
     )
@@ -1867,6 +2158,9 @@ if sport == "🥊 UFC Combat Sports":
 
     elif page == "🧬 Fighter Comparison":
         hag_render_ufc_comparison_tool()
+
+    elif page == "📋 UFC Event Center":
+        hag_render_ufc_event_center()
 
     elif page == "🕰️ Historical Fight Simulator":
         hag_render_ufc_historical_simulator()
