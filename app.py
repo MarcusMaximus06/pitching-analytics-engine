@@ -1668,6 +1668,32 @@ if sport == "🏠 Home":
 
     st.stop()
 
+
+# ==========================================================
+# SPORT BRANCH: UFC COMBAT SPORTS
+# ==========================================================
+if sport == "🥊 UFC Combat Sports":
+    page = st.sidebar.radio(
+        "Select UFC Engine:",
+        [
+            "🥊 UFC Fighter Lab",
+            "⚔️ UFC Fight Predictor",
+            "🕰️ Historical Fight Simulator"
+        ]
+    )
+    st.sidebar.markdown("---")
+
+    if page == "🥊 UFC Fighter Lab":
+        hag_render_ufc_fighter_lab()
+
+    elif page == "⚔️ UFC Fight Predictor":
+        hag_render_ufc_fight_predictor()
+
+    elif page == "🕰️ Historical Fight Simulator":
+        hag_render_ufc_historical_simulator()
+
+    st.stop()
+
 # ==========================================================
 # SPORT BRANCH 1: MLB BASEBALL
 # ==========================================================
