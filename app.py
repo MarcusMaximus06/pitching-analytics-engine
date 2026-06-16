@@ -1437,10 +1437,44 @@ def hag_ufc_percentile_bar(label, value):
     )
 
 
+@st.cache_data(ttl=CACHE_TTL_DAILY)
 def hag_ufc_fighter_image_url(fighter_name):
     f = UFC_FIGHTERS.get(fighter_name, {})
-    if f.get("Headshot"):
-        return f.get("Headshot")
+
+    for key in ["Headshot", "Headshot URL", "Image URL", "Photo"]:
+        if f.get(key):
+            return f.get(key)
+
+    # Pull a real public thumbnail when available. This keeps the starter UFC database lightweight
+    # while avoiding the initials-only placeholder for most well-known fighters.
+    wiki_titles = {
+        "Georges St-Pierre": "Georges_St-Pierre",
+        "Khabib Nurmagomedov": "Khabib_Nurmagomedov",
+        "Demetrious Johnson": "Demetrious_Johnson_(fighter)",
+        "Sean O'Malley": "Sean_O'Malley_(fighter)",
+        "Jon Jones": "Jon_Jones",
+        "Anderson Silva": "Anderson_Silva",
+        "Alex Pereira": "Alex_Pereira",
+        "Alexander Volkanovski": "Alexander_Volkanovski",
+        "Islam Makhachev": "Islam_Makhachev",
+        "Ilia Topuria": "Ilia_Topuria",
+        "Khamzat Chimaev": "Khamzat_Chimaev",
+        "Dricus Du Plessis": "Dricus_du_Plessis",
+        "Merab Dvalishvili": "Merab_Dvalishvili",
+        "Tom Aspinall": "Tom_Aspinall",
+    }
+
+    title = wiki_titles.get(fighter_name, str(fighter_name).replace(" ", "_"))
+
+    try:
+        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(title)}"
+        data = requests.get(url, timeout=8).json()
+        thumb = data.get("thumbnail", {}).get("source") or data.get("originalimage", {}).get("source")
+        if thumb:
+            return thumb
+    except Exception:
+        pass
+
     safe_name = quote(str(fighter_name))
     return f"https://ui-avatars.com/api/?name={safe_name}&size=256&background=111827&color=ffffff&bold=true&format=png"
 
