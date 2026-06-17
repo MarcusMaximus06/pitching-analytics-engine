@@ -127,40 +127,43 @@ st.set_page_config(page_title=APP_PAGE_TITLE, layout="wide")
 
 
 # ==========================================================
-# HAG LABS GLOBAL BRANDING - FILE BASED
+# HAG LABS GLOBAL BRANDING - VERIFIED FILE LOADER
 # ==========================================================
-def hag_logo_path():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    candidates = [
-        os.path.join(base_dir, "hag_labs_logo.png"),
-        os.path.join(base_dir, "hag_labs_logo.PNG"),
+def hag_logo_candidates():
+    try:
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+    except Exception:
+        app_dir = os.getcwd()
+
+    return [
+        os.path.join(app_dir, "hag_labs_logo.png"),
         os.path.join(os.getcwd(), "hag_labs_logo.png"),
-        os.path.join(os.getcwd(), "hag_labs_logo.PNG"),
+        "hag_labs_logo.png",
     ]
 
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-
+def hag_logo_path():
+    for p in hag_logo_candidates():
+        if os.path.exists(p):
+            return p
     return None
 
 def hag_render_global_logo(location="main"):
     logo_path = hag_logo_path()
 
-    if not logo_path:
-        # This intentionally shows the problem instead of silently failing.
-        if location == "sidebar":
-            st.sidebar.warning("Logo not found: hag_labs_logo.png")
-        else:
-            st.warning("Logo not found. Put hag_labs_logo.png in the same folder as app.py.")
-        return
-
     if location == "sidebar":
-        st.sidebar.image(logo_path, width=220)
+        st.sidebar.caption("Logo loader active")
+        if logo_path:
+            st.sidebar.image(logo_path, width=220)
+        else:
+            st.sidebar.error("Logo not found: hag_labs_logo.png")
+            st.sidebar.caption("Checked: " + " | ".join(hag_logo_candidates()))
     else:
-        st.image(logo_path, width=420)
-
-
+        st.caption("Logo loader active")
+        if logo_path:
+            st.image(logo_path, width=420)
+        else:
+            st.error("Logo not found: hag_labs_logo.png")
+            st.caption("Checked: " + " | ".join(hag_logo_candidates()))
 
 # ==========================================================
 # DAILY PROBABILITY BOARD HELPERS
