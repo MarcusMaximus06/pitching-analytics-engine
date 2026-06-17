@@ -131,13 +131,9 @@ st.set_page_config(page_title=APP_PAGE_TITLE, layout="wide")
 
 
 # ==========================================================
-# HAG LABS GLOBAL BRANDING - CLEAN PIL IMAGE RENDERER
+# HAG LABS GLOBAL BRANDING - CLEANED/CROPPED FILE RENDERER
 # ==========================================================
 def hag_logo_path():
-    """
-    Finds the logo file from the same folder as app.py first.
-    This avoids base64/HTML rendering and keeps the logo crisp.
-    """
     try:
         app_dir = os.path.dirname(os.path.abspath(__file__))
     except Exception:
@@ -155,31 +151,56 @@ def hag_logo_path():
     for path in candidates:
         if os.path.exists(path):
             return path
-
     return None
 
 
-def hag_render_global_logo(location="main"):
+def hag_prepare_logo_image():
     """
-    Uses Streamlit's native image renderer with PIL.
-    No base64. No HTML <img>. No forced browser scaling.
+    Cleans the logo file at runtime:
+    - removes the fake checkerboard/near-white background
+    - crops empty canvas padding
+    - keeps the logo transparent against the dark app theme
     """
-    logo_path = hag_logo_path()
-
-    if not logo_path:
-        # Silent fail on public page instead of ugly warnings.
-        return
+    path = hag_logo_path()
+    if not path:
+        return None
 
     try:
-        logo = Image.open(logo_path)
+        img = Image.open(path).convert("RGBA")
     except Exception:
+        return None
+
+    pixels = img.load()
+    w, h = img.size
+
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = pixels[x, y]
+
+            # Remove fake transparent checkerboard / white background.
+            # This targets very light neutral pixels while preserving red/blue/gray logo parts.
+            near_white = (r > 215 and g > 215 and b > 215)
+            light_neutral = (r > 185 and g > 185 and b > 185 and abs(r - g) < 12 and abs(g - b) < 12)
+            if a < 10 or near_white or light_neutral:
+                pixels[x, y] = (255, 255, 255, 0)
+
+    bbox = img.getchannel("A").getbbox()
+    if bbox:
+        img = img.crop(bbox)
+
+    return img
+
+
+def hag_render_global_logo(location="main"):
+    logo = hag_prepare_logo_image()
+    if logo is None:
         return
 
     if location == "sidebar":
-        st.sidebar.image(logo, width=220)
+        st.sidebar.image(logo, width=210)
     else:
-        # Keep this modest so the browser is not aggressively scaling it.
-        st.image(logo, width=460)
+        # Smaller, cropped, and no giant white/checker canvas.
+        st.image(logo, width=430)
 
 # ==========================================================
 # DAILY PROBABILITY BOARD HELPERS
