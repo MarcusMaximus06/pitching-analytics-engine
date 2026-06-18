@@ -3619,14 +3619,19 @@ def hag_ufc_read_log():
     for col in UFC_LOG_COLUMNS:
         if col not in df.columns:
             df[col] = ""
-    return df[UFC_LOG_COLUMNS]
+
+    # Keep the UFC log columns flexible. Some columns start as blank strings,
+    # but later receive odds/probability values. Pandas can infer strict string
+    # dtypes from the CSV, so force object dtype before in-place updates.
+    return df[UFC_LOG_COLUMNS].astype(object)
 
 def hag_ufc_write_log(df):
     out = df.copy()
     for col in UFC_LOG_COLUMNS:
         if col not in out.columns:
             out[col] = ""
-    out[UFC_LOG_COLUMNS].to_csv(hag_ufc_log_path(), index=False)
+    out = out[UFC_LOG_COLUMNS].astype(object).fillna("")
+    out.to_csv(hag_ufc_log_path(), index=False)
 
 def hag_ufc_prediction_row(fighter_a, fighter_b, event_name="Manual Fight", date_str=None, boost_a=0, boost_b=0):
     date_str = date_str or get_local_date_str()
@@ -3772,15 +3777,15 @@ def hag_ufc_update_closing_lines_from_board(board_df, event_filter=None):
             line_movement = round(float(closing_edge) - float(opening_edge), 1)
 
         early_pick = str(logged.get("Vegas Pick", "")).strip()
-        df.loc[idx, "Closing A ML"] = closing_a_ml
-        df.loc[idx, "Closing B ML"] = closing_b_ml
-        df.loc[idx, "Closing Vegas A %"] = close_a_prob
-        df.loc[idx, "Closing Vegas B %"] = close_b_prob
+        df.loc[idx, "Closing A ML"] = str(closing_a_ml)
+        df.loc[idx, "Closing B ML"] = str(closing_b_ml)
+        df.loc[idx, "Closing Vegas A %"] = f"{float(close_a_prob):.1f}"
+        df.loc[idx, "Closing Vegas B %"] = f"{float(close_b_prob):.1f}"
         df.loc[idx, "Closing Vegas Pick"] = closing_pick
-        df.loc[idx, "Closing Model Edge %"] = closing_edge
-        df.loc[idx, "Line Movement"] = line_movement
+        df.loc[idx, "Closing Model Edge %"] = f"{float(closing_edge):+.1f}"
+        df.loc[idx, "Line Movement"] = "" if line_movement == "" else f"{float(line_movement):+.1f}"
         df.loc[idx, "Market Move Note"] = hag_ufc_line_move_note(model_pick, early_pick, closing_pick)
-        df.loc[idx, "Closing Odds Source"] = match.get("Odds Source", "Live Odds")
+        df.loc[idx, "Closing Odds Source"] = str(match.get("Odds Source", "Live Odds"))
         df.loc[idx, "Closing Snapshot Time"] = now_label
         df.loc[idx, "Official Pick"] = "YES" if hag_ufc_official_confidence(logged.get("Confidence", "")) else "NO"
         updated += 1
@@ -3951,7 +3956,7 @@ def hag_ufc_accuracy_summary(df):
 def hag_render_ufc_prediction_log():
     st.title("📒 UFC Prediction Log & Vegas Tracking")
     st.caption("Track UFC model picks against market/ Vegas moneyline picks, grade fight results, and build an accuracy record like the MLB dashboard.")
-    st.info("Active build: UFC VEGAS BOARD v2.4 - closing line snapshot + official pick tracking")
+    st.info("Active build: UFC VEGAS BOARD v2.4.1 - closing line snapshot + type fix")
 
     df = hag_ufc_read_log()
     summary = hag_ufc_accuracy_summary(df)
