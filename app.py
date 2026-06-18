@@ -3937,11 +3937,33 @@ if sport == "⚾ MLB Baseball":
         st.markdown("### 📊 Live Model Log & Automation")
         st.subheader("📈 MLB V2 Performance Dashboard")
 
-        v2_total = 0
-        v2_wins = 0
-        v2_losses = 0
-        vegas_wins = 0
-        vegas_losses = 0
+        official_confidence_tiers = {"High", "Medium", "Low"}
+
+        def normalize_mlb_confidence(value):
+            raw = str(value or "Unknown").strip()
+            lower = raw.lower()
+
+            if "high" in lower:
+                return "High"
+            if "medium" in lower:
+                return "Medium"
+            if "low" in lower:
+                return "Low"
+            if "tracking" in lower:
+                return "Tracking"
+            return "Unknown"
+
+        all_total = 0
+        all_wins = 0
+        all_losses = 0
+        all_vegas_wins = 0
+        all_vegas_losses = 0
+
+        official_total = 0
+        official_wins = 0
+        official_losses = 0
+        official_vegas_wins = 0
+        official_vegas_losses = 0
 
         try:
             worksheet = get_google_worksheet("MLB Daily Prediction Model", "MLB Log V2")
@@ -3964,52 +3986,98 @@ if sport == "⚾ MLB Baseball":
                 if result not in ["WIN", "LOSS"]:
                     continue
 
-                v2_total += 1
+                confidence = normalize_mlb_confidence(parsed.get("confidence", "Unknown"))
+                if confidence not in tier_stats:
+                    tier_stats[confidence] = {"wins": 0, "losses": 0}
+
+                all_total += 1
 
                 if result == "WIN":
-                    v2_wins += 1
+                    all_wins += 1
+                    tier_stats[confidence]["wins"] += 1
                 else:
-                    v2_losses += 1
+                    all_losses += 1
+                    tier_stats[confidence]["losses"] += 1
 
                 actual_winner = hag_mlb_actual_winner_from_status(parsed)
                 vegas_pick = parsed.get("vegas_pick", "")
 
                 if vegas_pick and vegas_pick == actual_winner:
-                    vegas_wins += 1
+                    all_vegas_wins += 1
                 elif vegas_pick:
-                    vegas_losses += 1
+                    all_vegas_losses += 1
 
-                confidence = parsed.get("confidence", "Unknown")
-                if confidence not in tier_stats:
-                    tier_stats[confidence] = {"wins": 0, "losses": 0}
+                if confidence in official_confidence_tiers:
+                    official_total += 1
 
-                if result == "WIN":
-                    tier_stats[confidence]["wins"] += 1
-                else:
-                    tier_stats[confidence]["losses"] += 1
+                    if result == "WIN":
+                        official_wins += 1
+                    else:
+                        official_losses += 1
 
-            v2_acc = (v2_wins / v2_total * 100) if v2_total > 0 else 0
-            vegas_total = vegas_wins + vegas_losses
-            vegas_acc = (vegas_wins / vegas_total * 100) if vegas_total > 0 else 0
-            hag_advantage = v2_acc - vegas_acc
+                    if vegas_pick and vegas_pick == actual_winner:
+                        official_vegas_wins += 1
+                    elif vegas_pick:
+                        official_vegas_losses += 1
+
+            official_hag_acc = (official_wins / official_total * 100) if official_total > 0 else 0
+            official_vegas_total = official_vegas_wins + official_vegas_losses
+            official_vegas_acc = (official_vegas_wins / official_vegas_total * 100) if official_vegas_total > 0 else 0
+            official_advantage = official_hag_acc - official_vegas_acc
+
+            all_hag_acc = (all_wins / all_total * 100) if all_total > 0 else 0
+            all_vegas_total = all_vegas_wins + all_vegas_losses
+            all_vegas_acc = (all_vegas_wins / all_vegas_total * 100) if all_vegas_total > 0 else 0
+            all_advantage = all_hag_acc - all_vegas_acc
+
+            tracking_wins = tier_stats.get("Tracking", {}).get("wins", 0)
+            tracking_losses = tier_stats.get("Tracking", {}).get("losses", 0)
+            tracking_total = tracking_wins + tracking_losses
+            tracking_acc = (tracking_wins / tracking_total * 100) if tracking_total > 0 else 0
+
+            st.markdown("#### Official Model Record")
+            st.caption("Official accuracy excludes Tracking and Unknown rows. Tracking is now treated as research only, not part of the main Hag Labs record.")
 
             d1, d2, d3, d4 = st.columns(4)
 
             with d1:
-                st.metric("Graded Games", v2_total)
+                st.metric("Official Graded Games", official_total)
+                st.caption(f"Record: {official_wins}-{official_losses}")
 
             with d2:
-                st.metric("Hag Labs Accuracy", f"{v2_acc:.1f}%")
+                st.metric("Official Hag Labs Accuracy", f"{official_hag_acc:.1f}%")
 
             with d3:
-                st.metric("Vegas Accuracy", f"{vegas_acc:.1f}%")
+                st.metric("Vegas Accuracy on Official Games", f"{official_vegas_acc:.1f}%")
+                st.caption(f"Vegas record: {official_vegas_wins}-{official_vegas_losses}")
 
             with d4:
-                st.metric("Hag Labs Advantage", f"{hag_advantage:+.1f}%")
+                st.metric("Official Hag Labs Advantage", f"{official_advantage:+.1f}%")
+
+            st.markdown("#### Research / Full Log View")
+            r1, r2, r3, r4 = st.columns(4)
+
+            with r1:
+                st.metric("All Logged Graded Games", all_total)
+                st.caption(f"Includes Tracking: {all_wins}-{all_losses}")
+
+            with r2:
+                st.metric("All Logged Hag Labs Accuracy", f"{all_hag_acc:.1f}%")
+
+            with r3:
+                st.metric("All Logged Vegas Accuracy", f"{all_vegas_acc:.1f}%")
+                st.caption(f"Vegas all logged: {all_vegas_wins}-{all_vegas_losses}")
+
+            with r4:
+                st.metric("Tracking Research Accuracy", f"{tracking_acc:.1f}%")
+                st.caption(f"Tracking record: {tracking_wins}-{tracking_losses}")
 
             st.markdown("#### Accuracy by Confidence Tier")
 
-            visible_tiers = [t for t in ["High", "Medium", "Low", "Tracking", "Unknown"] if (tier_stats.get(t, {}).get("wins", 0) + tier_stats.get(t, {}).get("losses", 0)) > 0]
+            visible_tiers = [
+                t for t in ["High", "Medium", "Low", "Tracking", "Unknown"]
+                if (tier_stats.get(t, {}).get("wins", 0) + tier_stats.get(t, {}).get("losses", 0)) > 0
+            ]
 
             if not visible_tiers:
                 st.info("No graded confidence-tier results yet.")
@@ -4021,6 +4089,7 @@ if sport == "⚾ MLB Baseball":
                     losses = tier_stats[tier]["losses"]
                     total = wins + losses
                     acc = (wins / total * 100) if total > 0 else 0
+                    official_note = "Official" if tier in official_confidence_tiers else "Research Only"
 
                     with tier_cols[idx]:
                         st.metric(
@@ -4028,6 +4097,16 @@ if sport == "⚾ MLB Baseball":
                             f"{acc:.1f}%",
                             f"{wins}-{losses}"
                         )
+                        st.caption(official_note)
+
+            with st.expander("What changed in this dashboard?"):
+                st.markdown("""
+                **Official Hag Labs Accuracy** now counts only **High**, **Medium**, and **Low** confidence games.
+
+                **Tracking Confidence** is still shown, but it is treated as a research bucket. This prevents experimental or market-agreement rows from dragging down the official model record.
+
+                **All Logged Accuracy** is still available below the official record so you can keep monitoring every graded row without confusing it with the official pick engine.
+                """)
 
         except Exception as e:
             st.warning(f"Dashboard unavailable: {e}")
