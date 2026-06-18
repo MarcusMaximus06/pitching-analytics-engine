@@ -1,4 +1,3 @@
-# HAG LABS VERIFIED BUILD: UFC VEGAS BOARD v2.3 - full live odds fighter coverage starter profiles
 import plotly.graph_objects as go
 import streamlit as st
 import pandas as pd
@@ -20,7 +19,6 @@ except ModuleNotFoundError:
 import re
 import requests
 from urllib.parse import quote
-from difflib import SequenceMatcher
 from utils import get_local_date_str, clean_name, calculate_implied_prob, get_confidence_tier
 from google_sheets import get_google_client, get_google_worksheet
 from config import APP_TITLE, APP_PAGE_TITLE, CACHE_TTL_SHORT, CACHE_TTL_ODDS, CACHE_TTL_STATS, CACHE_TTL_DAILY, DEFAULT_SIMULATION_SIZE, MIN_ACTIONABLE_EDGE
@@ -1556,142 +1554,7 @@ def hag_apply_external_ufc_database():
     if loaded:
         UFC_FIGHTERS.update(loaded)
 
-
 hag_apply_external_ufc_database()
-
-# ==========================================================
-# UFC UPCOMING CARD STARTER PROFILES
-# ==========================================================
-# These are intentionally labeled as manual starter profiles. They let Hag Labs
-# run this weekend's and next weekend's cards immediately while the CSV/database
-# gets expanded with true UFCStats-style columns over time.
-UFC_UPCOMING_FIGHTER_PROFILES = {
-    "Manel Kape": {"Division": "Flyweight", "Status": "Active", "Record": "22-7-0", "Age": 32, "Height": 65, "Reach": 68.0, "Stance": "Southpaw", "Style": "Explosive kickboxing / pressure", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 90, "Grappling": 78, "Wrestling": 76, "Submission": 74, "Durability": 86, "Cardio": 86, "Power": 90, "Speed": 91, "Fight IQ": 85, "Experience": 88, "KO %": 55, "Sub %": 18, "Decision %": 27, "Recent Form": 90, "Strength of Schedule": 86, "Notes": "Upcoming-card starter profile. Explosive flyweight striker with finishing upside; replace with real stat columns as database grows."},
-    "Kyoji Horiguchi": {"Division": "Flyweight", "Status": "Active", "Record": "36-5-0", "Age": 35, "Height": 65, "Reach": 66.0, "Stance": "Orthodox", "Style": "Karate / wrestling / submissions", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 88, "Grappling": 88, "Wrestling": 86, "Submission": 85, "Durability": 88, "Cardio": 92, "Power": 82, "Speed": 90, "Fight IQ": 92, "Experience": 95, "KO %": 39, "Sub %": 31, "Decision %": 30, "Recent Form": 88, "Strength of Schedule": 88, "Notes": "Upcoming-card starter profile. Elite veteran with karate entries, experience, wrestling, and submission threats."},
-    "Ion Cutelaba": {"Division": "Light Heavyweight", "Status": "Active", "Record": "20-11-1", "Age": 32, "Height": 73, "Reach": 75.0, "Stance": "Orthodox", "Style": "Power wrestling / chaos pressure", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 78, "Grappling": 78, "Wrestling": 84, "Submission": 67, "Durability": 72, "Cardio": 70, "Power": 89, "Speed": 77, "Fight IQ": 69, "Experience": 86, "KO %": 63, "Sub %": 12, "Decision %": 25, "Recent Form": 67, "Strength of Schedule": 83, "Notes": "Upcoming-card starter profile. Dangerous early power and wrestling but volatile durability/cardio profile."},
-    "Navajo Stirling": {"Division": "Light Heavyweight", "Status": "Active", "Record": "9-0-0", "Age": 27, "Height": 76, "Reach": 79.0, "Stance": "Orthodox", "Style": "Kickboxing / long-range power", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 86, "Grappling": 72, "Wrestling": 70, "Submission": 60, "Durability": 84, "Cardio": 82, "Power": 90, "Speed": 82, "Fight IQ": 80, "Experience": 66, "KO %": 78, "Sub %": 0, "Decision %": 22, "Recent Form": 91, "Strength of Schedule": 58, "Notes": "Upcoming-card starter profile. Undefeated long-range striker with power and prospect upside; lower SOS due to limited UFC sample."},
-    "Vinicius Oliveira": {"Division": "Featherweight", "Status": "Active", "Record": "23-4-0", "Age": 29, "Height": 69, "Reach": 72.0, "Stance": "Orthodox", "Style": "Striker / finishing pressure", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 84, "Grappling": 72, "Wrestling": 70, "Submission": 65, "Durability": 78, "Cardio": 78, "Power": 86, "Speed": 83, "Fight IQ": 76, "Experience": 78, "KO %": 65, "Sub %": 8, "Decision %": 27, "Recent Form": 76, "Strength of Schedule": 72, "Notes": "Upcoming-card starter profile. Dangerous finisher moving into a veteran matchup."},
-    "Andre Fili": {"Division": "Featherweight", "Status": "Active", "Record": "25-13-0", "Age": 35, "Height": 71, "Reach": 74.0, "Stance": "Orthodox", "Style": "Veteran kickboxing / wrestling mix", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 79, "Grappling": 76, "Wrestling": 76, "Submission": 70, "Durability": 80, "Cardio": 82, "Power": 76, "Speed": 78, "Fight IQ": 84, "Experience": 90, "KO %": 39, "Sub %": 17, "Decision %": 44, "Recent Form": 72, "Strength of Schedule": 86, "Notes": "Upcoming-card starter profile. Experienced featherweight with solid all-around tools and decision paths."},
-    "Hyder Amil": {"Division": "Featherweight", "Status": "Active", "Record": "11-2-0", "Age": 35, "Height": 69, "Reach": 70.0, "Stance": "Southpaw", "Style": "Pressure striking / pace", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 78, "Grappling": 70, "Wrestling": 69, "Submission": 62, "Durability": 82, "Cardio": 84, "Power": 79, "Speed": 78, "Fight IQ": 73, "Experience": 68, "KO %": 55, "Sub %": 9, "Decision %": 36, "Recent Form": 74, "Strength of Schedule": 63, "Notes": "Upcoming-card starter profile. Pressure/pacesetter profile with developing UFC sample."},
-    "Christian Rodriguez": {"Division": "Featherweight", "Status": "Active", "Record": "12-4-0", "Age": 28, "Height": 67, "Reach": 71.0, "Stance": "Orthodox", "Style": "Technical boxing / grappling defense", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 80, "Grappling": 77, "Wrestling": 75, "Submission": 71, "Durability": 83, "Cardio": 84, "Power": 73, "Speed": 80, "Fight IQ": 82, "Experience": 76, "KO %": 25, "Sub %": 25, "Decision %": 50, "Recent Form": 78, "Strength of Schedule": 75, "Notes": "Upcoming-card starter profile. Composed technician with durable decision-heavy paths."},
-    "Melsik Baghdasaryan": {"Division": "Featherweight", "Status": "Active", "Record": "8-3-0", "Age": 34, "Height": 69, "Reach": 70.0, "Stance": "Southpaw", "Style": "Kickboxing / counter power", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 82, "Grappling": 63, "Wrestling": 61, "Submission": 55, "Durability": 76, "Cardio": 75, "Power": 83, "Speed": 81, "Fight IQ": 74, "Experience": 68, "KO %": 62, "Sub %": 0, "Decision %": 38, "Recent Form": 70, "Strength of Schedule": 68, "Notes": "Upcoming-card starter profile. Sharp striker with questions if forced into extended grappling."},
-    "Murtazali Magomedov": {"Division": "Featherweight", "Status": "Active", "Record": "10-0-0", "Age": 29, "Height": 70, "Reach": 72.0, "Stance": "Orthodox", "Style": "Grappling / aggressive finishing", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 76, "Grappling": 85, "Wrestling": 86, "Submission": 84, "Durability": 83, "Cardio": 84, "Power": 78, "Speed": 80, "Fight IQ": 80, "Experience": 62, "KO %": 30, "Sub %": 50, "Decision %": 20, "Recent Form": 91, "Strength of Schedule": 55, "Notes": "Upcoming-card starter profile. Undefeated grappling-oriented prospect with finishing upside; lower SOS due to limited top-level sample."},
-    "Andre Lima": {"Division": "Flyweight", "Status": "Active", "Record": "11-0-0", "Age": 27, "Height": 67, "Reach": 70.0, "Stance": "Orthodox", "Style": "Muay Thai / high-volume striking", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 87, "Grappling": 72, "Wrestling": 70, "Submission": 63, "Durability": 86, "Cardio": 86, "Power": 84, "Speed": 84, "Fight IQ": 80, "Experience": 64, "KO %": 54, "Sub %": 0, "Decision %": 46, "Recent Form": 92, "Strength of Schedule": 61, "Notes": "Upcoming-card starter profile. Undefeated Muay Thai striker with strong favorite profile."},
-    "Kevin Borjas": {"Division": "Flyweight", "Status": "Active", "Record": "10-4-0", "Age": 28, "Height": 65, "Reach": 66.0, "Stance": "Orthodox", "Style": "Boxing / pressure", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 72, "Grappling": 66, "Wrestling": 65, "Submission": 58, "Durability": 75, "Cardio": 78, "Power": 72, "Speed": 75, "Fight IQ": 68, "Experience": 60, "KO %": 40, "Sub %": 0, "Decision %": 60, "Recent Form": 61, "Strength of Schedule": 58, "Notes": "Upcoming-card starter profile. Tough flyweight but currently projects as underdog in high-skill striking matchup."},
-    "Rafael Fiziev": {"Division": "Lightweight", "Status": "Active", "Record": "13-5-0", "Age": 33, "Height": 68, "Reach": 71.0, "Stance": "Switch", "Style": "Muay Thai / elite kickboxing", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 91, "Grappling": 74, "Wrestling": 73, "Submission": 62, "Durability": 80, "Cardio": 82, "Power": 87, "Speed": 88, "Fight IQ": 86, "Experience": 85, "KO %": 69, "Sub %": 8, "Decision %": 23, "Recent Form": 68, "Strength of Schedule": 88, "Notes": "Upcoming-card starter profile. Elite striker with high SOS; recent form penalty reflects rough stretch and volatility."},
-    "Manuel Torres": {"Division": "Lightweight", "Status": "Active", "Record": "17-3-0", "Age": 30, "Height": 70, "Reach": 73.0, "Stance": "Orthodox", "Style": "Aggressive finishing / boxing", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 83, "Grappling": 76, "Wrestling": 72, "Submission": 75, "Durability": 78, "Cardio": 77, "Power": 89, "Speed": 84, "Fight IQ": 76, "Experience": 73, "KO %": 59, "Sub %": 29, "Decision %": 12, "Recent Form": 88, "Strength of Schedule": 72, "Notes": "Upcoming-card starter profile. Fast-starting finisher with power and submission threat; lower SOS than Fiziev."},
-    "Shara Magomedov": {"Division": "Middleweight", "Status": "Active", "Record": "16-1-0", "Age": 32, "Height": 74, "Reach": 73.0, "Stance": "Orthodox", "Style": "Kickboxing / range striking", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 87, "Grappling": 65, "Wrestling": 62, "Submission": 55, "Durability": 84, "Cardio": 82, "Power": 84, "Speed": 82, "Fight IQ": 80, "Experience": 74, "KO %": 75, "Sub %": 0, "Decision %": 25, "Recent Form": 82, "Strength of Schedule": 72, "Notes": "Upcoming-card starter profile. Dynamic range striker with strong finishing profile but grappling questions."},
-    "Michel Pereira": {"Division": "Middleweight", "Status": "Active", "Record": "32-14-0", "Age": 32, "Height": 73, "Reach": 73.0, "Stance": "Orthodox", "Style": "Explosive striker / athletic grappling", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 84, "Grappling": 78, "Wrestling": 74, "Submission": 75, "Durability": 82, "Cardio": 79, "Power": 85, "Speed": 86, "Fight IQ": 76, "Experience": 86, "KO %": 38, "Sub %": 31, "Decision %": 31, "Recent Form": 75, "Strength of Schedule": 82, "Notes": "Upcoming-card starter profile. Wildly athletic veteran with multiple paths but volatility."},
-}
-
-# ==========================================================
-# UFC LIVE ODDS COVERAGE EXPANSION - 2026-06-18
-# ==========================================================
-# These profiles cover the fighters that appeared in the live odds feed but were
-# not yet modeled by Hag Labs. They are intentionally low-confidence starter
-# profiles so the live board can model every listed fight, while still keeping
-# official confidence conservative until true UFCStats-style rows are added.
-def hag_seed_ufc_profile(division, style, striking=75, grappling=75, wrestling=75, submission=65,
-                         durability=75, cardio=75, power=75, speed=75, iq=75, experience=65,
-                         ko=35, sub=20, decision=45, form=75, sos=60,
-                         age=0, height=0, reach=0, stance="", record=""):
-    return {
-        "Division": division, "Status": "Active", "Record": record,
-        "Age": age, "Height": height, "Reach": reach, "Stance": stance,
-        "Style": style, "Data Quality": "Manual live-odds starter profile",
-        "Data Source": "Hag Labs manual seed from live odds coverage list",
-        "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0,
-        "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0,
-        "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0,
-        "Striking": striking, "Grappling": grappling, "Wrestling": wrestling,
-        "Submission": submission, "Durability": durability, "Cardio": cardio,
-        "Power": power, "Speed": speed, "Fight IQ": iq, "Experience": experience,
-        "KO %": ko, "Sub %": sub, "Decision %": decision,
-        "Recent Form": form, "Strength of Schedule": sos,
-        "Notes": "Live-odds coverage seed profile. Replace with true UFCStats-style columns when available. Keep confidence conservative."
-    }
-
-UFC_UPCOMING_FIGHTER_PROFILES.update({
-    "Otari Tanzilovi": hag_seed_ufc_profile("Lightweight", "Prospect striker / mixed martial artist", 74, 70, 69, 62, 75, 76, 76, 77, 70, 54, 45, 10, 45, 72, 52),
-    "Shane Collins": hag_seed_ufc_profile("Lightweight", "Favorite profile / balanced finishing threat", 80, 74, 73, 68, 79, 80, 80, 79, 75, 60, 50, 20, 30, 82, 58),
-    "Leon Shahbazyan": hag_seed_ufc_profile("Welterweight", "Striking prospect / developing grappling", 72, 66, 65, 58, 72, 73, 77, 76, 68, 52, 55, 5, 40, 70, 48),
-    "Levan Chokheli": hag_seed_ufc_profile("Welterweight", "Power striker / favorite profile", 82, 72, 70, 62, 79, 78, 84, 78, 76, 65, 60, 10, 30, 84, 60),
-    "Karol Rosa": hag_seed_ufc_profile("Women Bantamweight", "Volume striking / veteran decision profile", 79, 74, 72, 62, 80, 83, 68, 76, 82, 82, 15, 5, 80, 76, 78),
-    "Luana Santos": hag_seed_ufc_profile("Women Bantamweight", "Judo / grappling pressure", 73, 80, 79, 72, 78, 80, 70, 75, 76, 66, 20, 30, 50, 78, 64),
-    "Gaston Bolanos": hag_seed_ufc_profile("Bantamweight", "Kickboxing / power striking", 78, 62, 60, 52, 72, 70, 82, 78, 68, 66, 75, 0, 25, 65, 62),
-    "Michael Aswell": hag_seed_ufc_profile("Bantamweight", "Favorite profile / well-rounded pressure", 82, 73, 72, 64, 80, 80, 82, 80, 75, 58, 55, 15, 30, 84, 56),
-    "Allan Nascimento": hag_seed_ufc_profile("Flyweight", "Submission grappler / veteran flyweight", 72, 86, 80, 88, 82, 84, 65, 76, 84, 82, 10, 55, 35, 78, 78),
-    "Mitch Raposo": hag_seed_ufc_profile("Flyweight", "Fast wrestling-boxing prospect", 74, 76, 77, 68, 76, 79, 72, 82, 72, 58, 30, 25, 45, 70, 55),
-    "Beatriz Mesquita": hag_seed_ufc_profile("Women Bantamweight", "Elite jiu-jitsu / submission grappling", 68, 91, 82, 96, 82, 82, 66, 75, 82, 62, 10, 75, 15, 88, 58),
-    "Melissa Mullins": hag_seed_ufc_profile("Women Bantamweight", "Developing striker-grappler", 66, 65, 64, 58, 70, 72, 68, 70, 65, 54, 30, 10, 60, 62, 48),
-    "Elisha Ellison": hag_seed_ufc_profile("Heavyweight", "Heavyweight underdog / developmental profile", 62, 60, 60, 50, 66, 60, 78, 62, 58, 46, 55, 5, 40, 58, 42),
-    "Gable Steveson": hag_seed_ufc_profile("Heavyweight", "Olympic wrestling / control-heavy prospect", 70, 84, 96, 65, 82, 82, 84, 78, 78, 52, 45, 10, 45, 90, 54),
-    "Cory Sandhagen": hag_seed_ufc_profile("Bantamweight", "Elite range striking / high-volume kickboxing", 90, 78, 76, 66, 84, 90, 78, 90, 91, 90, 35, 10, 55, 82, 92),
-    "Mario Bautista": hag_seed_ufc_profile("Bantamweight", "Pressure grappling / well-rounded bantamweight", 82, 82, 82, 76, 83, 86, 76, 84, 84, 82, 30, 25, 45, 84, 84),
-    "Benoit Saint-Denis": hag_seed_ufc_profile("Lightweight", "Aggressive southpaw grappling-pressure finisher", 84, 86, 84, 86, 82, 86, 86, 82, 83, 82, 35, 45, 20, 80, 88),
-    "Paddy Pimblett": hag_seed_ufc_profile("Lightweight", "Submission grappler / momentum fighter", 78, 84, 78, 88, 82, 84, 76, 78, 82, 82, 20, 55, 25, 84, 82),
-    "Brandon Royval": hag_seed_ufc_profile("Flyweight", "Chaotic submission-striking flyweight", 86, 86, 76, 90, 80, 88, 78, 88, 86, 90, 30, 45, 25, 82, 92),
-    "Lone'er Kavanagh": hag_seed_ufc_profile("Flyweight", "Explosive striking prospect", 84, 72, 70, 62, 78, 80, 84, 90, 76, 58, 55, 10, 35, 88, 58),
-    "Khalil Rountree": hag_seed_ufc_profile("Light Heavyweight", "Explosive Muay Thai / knockout power", 88, 66, 64, 55, 82, 78, 94, 80, 78, 86, 70, 0, 30, 76, 90),
-    "Magomed Ankalaev": hag_seed_ufc_profile("Light Heavyweight", "Elite kickboxing-wrestling / championship profile", 90, 86, 88, 70, 90, 88, 88, 84, 90, 92, 50, 0, 50, 88, 96),
-    "Gillian Robertson": hag_seed_ufc_profile("Women Strawweight", "Submission grappler / control specialist", 72, 86, 80, 90, 80, 84, 66, 76, 82, 84, 10, 60, 30, 78, 82),
-    "Mackenzie Dern": hag_seed_ufc_profile("Women Strawweight", "Elite jiu-jitsu / submission threat", 74, 90, 80, 96, 82, 82, 72, 76, 84, 88, 10, 65, 25, 82, 88),
-    "Ian Garry": hag_seed_ufc_profile("Welterweight", "Long-range technical striker / undefeated-style contender profile", 88, 76, 74, 66, 86, 86, 80, 86, 88, 84, 45, 5, 50, 84, 88),
-})
-
-
-def hag_apply_upcoming_ufc_profiles():
-    for name, data in UFC_UPCOMING_FIGHTER_PROFILES.items():
-        if name not in UFC_FIGHTERS:
-            UFC_FIGHTERS[name] = data
-        else:
-            for key, value in data.items():
-                if key not in UFC_FIGHTERS[name] or UFC_FIGHTERS[name].get(key, "") in ["", 0, None]:
-                    UFC_FIGHTERS[name][key] = value
-
-hag_apply_upcoming_ufc_profiles()
-
-UFC_SAMPLE_CARD = [
-    ("Otari Tanzilovi", "Shane Collins"),
-    ("Leon Shahbazyan", "Levan Chokheli"),
-    ("Karol Rosa", "Luana Santos"),
-    ("Gaston Bolanos", "Michael Aswell"),
-    ("Allan Nascimento", "Mitch Raposo"),
-    ("Beatriz Mesquita", "Melissa Mullins"),
-    ("Andre Lima", "Kevin Borjas"),
-    ("Melsik Baghdasaryan", "Murtazali Magomedov"),
-    ("Christian Rodriguez", "Hyder Amil"),
-    ("Andre Fili", "Vinicius Oliveira"),
-    ("Ion Cutelaba", "Navajo Stirling"),
-    ("Kyoji Horiguchi", "Manel Kape"),
-]
-
-UFC_UPCOMING_SAMPLE_CARDS = {
-    "UFC Fight Night: Kape vs. Horiguchi": {
-        "date": "2026-06-20",
-        "fights": UFC_SAMPLE_CARD,
-    },
-    "UFC Fight Night: Fiziev vs. Torres": {
-        "date": "2026-06-27",
-        "fights": [
-            ("Rafael Fiziev", "Manuel Torres"),
-            ("Shara Magomedov", "Michel Pereira"),
-        ],
-    },
-    "UFC Live Odds Future Watchlist": {
-        "date": "2026-07-11",
-        "fights": [
-            ("Elisha Ellison", "Gable Steveson"),
-            ("Cory Sandhagen", "Mario Bautista"),
-            ("Benoit Saint-Denis", "Paddy Pimblett"),
-            ("Conor McGregor", "Max Holloway"),
-            ("Brandon Royval", "Lone'er Kavanagh"),
-            ("Khalil Rountree", "Magomed Ankalaev"),
-            ("Gillian Robertson", "Mackenzie Dern"),
-            ("Ian Garry", "Islam Makhachev"),
-        ],
-    },
-}
 
 def hag_render_ufc_database_manager():
     st.title("🗂️ UFC Fighter Database")
@@ -2243,211 +2106,46 @@ def hag_ufc_profile_df():
     return pd.DataFrame(rows).sort_values("Overall Grade", ascending=False)
 
 
-def hag_ufc_safe_float(value, default=0.0):
-    try:
-        if value is None or str(value).strip() == "":
-            return None if default is None else float(default)
-        return float(value)
-    except Exception:
-        return None if default is None else float(default)
-
-
-def hag_ufc_scale(value, low, high, reverse=False, default=50.0):
-    v = hag_ufc_safe_float(value, None)
-    if v is None:
-        return float(default)
-    if high <= low:
-        return float(default)
-    pct = (v - low) / (high - low) * 100
-    pct = max(1, min(99, pct))
-    return round(100 - pct if reverse else pct, 1)
-
-
-def hag_ufc_profile_quality(f):
-    if not isinstance(f, dict):
-        return 0.0
-    real_hits = 0
-    for col in UFC_RAW_STAT_COLUMNS:
-        if hag_ufc_safe_float(f.get(col, 0), 0) > 0:
-            real_hits += 1
-    stat_quality = real_hits / max(1, len(UFC_RAW_STAT_COLUMNS))
-    sample = hag_ufc_safe_float(f.get("UFC Stat Sample", 0), 0)
-    sample_quality = max(0, min(1, sample / 8.0)) if sample > 0 else 0
-    manual_bonus = 0.35 if str(f.get("Data Quality", "")).lower().startswith("manual") else 0.45
-    return round(max(stat_quality, sample_quality, manual_bonus), 2)
-
-
-def hag_ufc_model_components(f):
-    f = f or {}
-    quality = hag_ufc_profile_quality(f)
-
-    manual_striking_off = (
-        hag_ufc_safe_float(f.get("Striking", 75), 75) * 0.38
-        + hag_ufc_safe_float(f.get("Power", 75), 75) * 0.22
-        + hag_ufc_safe_float(f.get("Speed", 75), 75) * 0.15
-        + hag_ufc_safe_float(f.get("Fight IQ", 75), 75) * 0.15
-        + hag_ufc_safe_float(f.get("Recent Form", 75), 75) * 0.10
-    )
-    real_striking_off = (
-        hag_ufc_scale(f.get("SLpM", 0), 1.0, 7.5, default=50) * 0.36
-        + hag_ufc_scale(f.get("Str Acc %", 0), 25, 65, default=50) * 0.24
-        + hag_ufc_scale(f.get("KD Avg", 0), 0.0, 1.2, default=50) * 0.20
-        + hag_ufc_safe_float(f.get("Power", 75), 75) * 0.20
-    )
-
-    manual_striking_def = (
-        hag_ufc_safe_float(f.get("Durability", 75), 75) * 0.32
-        + hag_ufc_safe_float(f.get("Striking", 75), 75) * 0.23
-        + hag_ufc_safe_float(f.get("Speed", 75), 75) * 0.18
-        + hag_ufc_safe_float(f.get("Fight IQ", 75), 75) * 0.17
-        + hag_ufc_safe_float(f.get("Cardio", 75), 75) * 0.10
-    )
-    real_striking_def = (
-        hag_ufc_scale(f.get("Str Def %", 0), 35, 75, default=50) * 0.42
-        + hag_ufc_scale(f.get("SApM", 0), 1.0, 7.0, reverse=True, default=50) * 0.32
-        + hag_ufc_safe_float(f.get("Durability", 75), 75) * 0.26
-    )
-
-    manual_grappling_off = (
-        hag_ufc_safe_float(f.get("Wrestling", 75), 75) * 0.35
-        + hag_ufc_safe_float(f.get("Grappling", 75), 75) * 0.27
-        + hag_ufc_safe_float(f.get("Submission", 75), 75) * 0.20
-        + hag_ufc_safe_float(f.get("Cardio", 75), 75) * 0.10
-        + hag_ufc_safe_float(f.get("Fight IQ", 75), 75) * 0.08
-    )
-    real_grappling_off = (
-        hag_ufc_scale(f.get("TD Avg", 0), 0.0, 5.5, default=50) * 0.38
-        + hag_ufc_scale(f.get("TD Acc %", 0), 15, 65, default=50) * 0.22
-        + hag_ufc_scale(f.get("Sub Avg", 0), 0.0, 3.0, default=50) * 0.22
-        + hag_ufc_safe_float(f.get("Control Score", 0), 0) * 0.18
-    )
-
-    manual_grappling_def = (
-        hag_ufc_safe_float(f.get("Wrestling", 75), 75) * 0.31
-        + hag_ufc_safe_float(f.get("Grappling", 75), 75) * 0.26
-        + hag_ufc_safe_float(f.get("Cardio", 75), 75) * 0.18
-        + hag_ufc_safe_float(f.get("Durability", 75), 75) * 0.15
-        + hag_ufc_safe_float(f.get("Fight IQ", 75), 75) * 0.10
-    )
-    real_grappling_def = (
-        hag_ufc_scale(f.get("TD Def %", 0), 30, 95, default=50) * 0.55
-        + hag_ufc_safe_float(f.get("Grappling", 75), 75) * 0.25
-        + hag_ufc_safe_float(f.get("Cardio", 75), 75) * 0.20
-    )
-
-    real_weight = max(0.0, min(0.55, quality - 0.20))
-    manual_weight = 1 - real_weight
-
-    return {
-        "quality": quality,
-        "overall": hag_ufc_score(f),
-        "striking_off": round((manual_striking_off * manual_weight) + (real_striking_off * real_weight), 1),
-        "striking_def": round((manual_striking_def * manual_weight) + (real_striking_def * real_weight), 1),
-        "grappling_off": round((manual_grappling_off * manual_weight) + (real_grappling_off * real_weight), 1),
-        "grappling_def": round((manual_grappling_def * manual_weight) + (real_grappling_def * real_weight), 1),
-        "cardio": hag_ufc_safe_float(f.get("Cardio", 75), 75),
-        "durability": hag_ufc_safe_float(f.get("Durability", 75), 75),
-        "form": hag_ufc_safe_float(f.get("Recent Form", 75), 75),
-        "iq": hag_ufc_safe_float(f.get("Fight IQ", 75), 75),
-        "experience": hag_ufc_safe_float(f.get("Experience", 75), 75),
-        "sos": hag_ufc_safe_float(f.get("Strength of Schedule", 70), 70),
-        "reach": hag_ufc_safe_float(f.get("Reach", 70), 70),
-    }
-
-
-def hag_ufc_confidence_from_probability(prob, quality=0.5, edge_vs_vegas=None):
-    p = float(prob)
-    separation = abs(p - 0.50)
-    if quality < 0.40:
-        if separation >= 0.17:
-            return "Medium"
-        return "Tracking"
-    if edge_vs_vegas is not None:
-        try:
-            if abs(float(edge_vs_vegas)) < 0.025:
-                return "Tracking"
-        except Exception:
-            pass
-    if separation >= 0.16:
-        return "High"
-    if separation >= 0.08:
-        return "Medium"
-    if separation >= 0.04:
-        return "Low"
-    return "Tracking"
-
-
 def hag_ufc_matchup_result(fighter_a, fighter_b, boost_a=0, boost_b=0):
     a = UFC_FIGHTERS.get(fighter_a, {})
     b = UFC_FIGHTERS.get(fighter_b, {})
     if not a or not b or fighter_a == fighter_b:
         return None
 
-    ac = hag_ufc_model_components(a)
-    bc = hag_ufc_model_components(b)
+    a_score = hag_ufc_score(a) + float(boost_a)
+    b_score = hag_ufc_score(b) + float(boost_b)
 
-    # Style paths: not just overall grade. This lets a wrestler with a lower overall
-    # grade win the matchup if the opponent has a major takedown/grappling weakness,
-    # and vice versa for elite strikers against low-defense opponents.
-    a_striking_path = (ac["striking_off"] - bc["striking_def"]) * 0.115
-    b_striking_path = (bc["striking_off"] - ac["striking_def"]) * 0.115
-    a_grappling_path = (ac["grappling_off"] - bc["grappling_def"]) * 0.105
-    b_grappling_path = (bc["grappling_off"] - ac["grappling_def"]) * 0.105
+    a_reach = float(a.get("Reach", 70))
+    b_reach = float(b.get("Reach", 70))
+    reach_edge = max(-4, min(4, (a_reach - b_reach) * 0.35))
 
-    a_context = (
-        (ac["overall"] - bc["overall"]) * 0.52
-        + (ac["form"] - bc["form"]) * 0.075
-        + (ac["sos"] - bc["sos"]) * 0.055
-        + (ac["iq"] - bc["iq"]) * 0.045
-        + (ac["experience"] - bc["experience"]) * 0.030
-        + max(-3.0, min(3.0, (ac["reach"] - bc["reach"]) * 0.22))
+    a_style_edge = (
+        (float(a.get("Wrestling", 75)) - float(b.get("Wrestling", 75))) * 0.035
+        + (float(a.get("Grappling", 75)) - float(b.get("Grappling", 75))) * 0.025
+        + (float(a.get("Striking", 75)) - float(b.get("Striking", 75))) * 0.030
+        + (float(a.get("Durability", 75)) - float(b.get("Power", 75))) * 0.020
     )
 
-    score_diff = a_context + (a_striking_path - b_striking_path) + (a_grappling_path - b_grappling_path) + float(boost_a) - float(boost_b)
-
-    # MMA is noisy and fighter samples are small, so shrink low-quality profiles toward 50/50.
-    avg_quality = (ac["quality"] + bc["quality"]) / 2
-    raw_prob_a = 1 / (1 + np.exp(-score_diff / 8.25))
-    shrink = 0.72 + (avg_quality * 0.28)
-    prob_a = 0.50 + ((raw_prob_a - 0.50) * shrink)
-    max_cap = 0.88 if avg_quality >= 0.60 else 0.82
-    prob_a = float(max(1 - max_cap, min(max_cap, prob_a)))
+    score_diff = (a_score - b_score) + reach_edge + a_style_edge
+    prob_a = 1 / (1 + np.exp(-score_diff / 9.5))
+    prob_a = float(max(0.05, min(0.95, prob_a)))
     prob_b = 1 - prob_a
 
-    a_finish = (
-        hag_ufc_safe_float(a.get("Power", 75), 75) * 0.34
-        + hag_ufc_safe_float(a.get("Submission", 75), 75) * 0.26
-        + ac["striking_off"] * 0.18
-        + ac["grappling_off"] * 0.12
-        + hag_ufc_safe_float(a.get("Recent Form", 75), 75) * 0.10
-    ) / 100
-    b_survival = (bc["durability"] * 0.58 + bc["cardio"] * 0.27 + bc["iq"] * 0.15) / 100
-    a_finish_prob = max(0.10, min(0.78, (a_finish * (1.15 - b_survival)) + 0.20))
+    a_finish = (float(a.get("Power", 75)) * 0.45 + float(a.get("Submission", 75)) * 0.35 + float(a.get("Grappling", 75)) * 0.20) / 100
+    b_durable = float(b.get("Durability", 80)) / 100
+    a_finish_prob = max(0.10, min(0.80, (a_finish * (1.12 - b_durable)) + 0.18))
+    b_finish = (float(b.get("Power", 75)) * 0.45 + float(b.get("Submission", 75)) * 0.35 + float(b.get("Grappling", 75)) * 0.20) / 100
+    a_durable = float(a.get("Durability", 80)) / 100
+    b_finish_prob = max(0.10, min(0.80, (b_finish * (1.12 - a_durable)) + 0.18))
 
-    b_finish = (
-        hag_ufc_safe_float(b.get("Power", 75), 75) * 0.34
-        + hag_ufc_safe_float(b.get("Submission", 75), 75) * 0.26
-        + bc["striking_off"] * 0.18
-        + bc["grappling_off"] * 0.12
-        + hag_ufc_safe_float(b.get("Recent Form", 75), 75) * 0.10
-    ) / 100
-    a_survival = (ac["durability"] * 0.58 + ac["cardio"] * 0.27 + ac["iq"] * 0.15) / 100
-    b_finish_prob = max(0.10, min(0.78, (b_finish * (1.15 - a_survival)) + 0.20))
-
-    a_ko = hag_ufc_safe_float(a.get("KO %", 35), 35)
-    a_sub = hag_ufc_safe_float(a.get("Sub %", 25), 25)
-    b_ko = hag_ufc_safe_float(b.get("KO %", 35), 35)
-    b_sub = hag_ufc_safe_float(b.get("Sub %", 25), 25)
-    a_ko_share = a_ko / max(1, a_ko + a_sub)
-    b_ko_share = b_ko / max(1, b_ko + b_sub)
-
-    confidence = hag_ufc_confidence_from_probability(max(prob_a, prob_b), avg_quality)
+    a_ko_share = float(a.get("KO %", 35)) / max(1, float(a.get("KO %", 35)) + float(a.get("Sub %", 25)))
+    b_ko_share = float(b.get("KO %", 35)) / max(1, float(b.get("KO %", 35)) + float(b.get("Sub %", 25)))
 
     return {
         "Fighter A": fighter_a,
         "Fighter B": fighter_b,
-        "A Grade": round(ac["overall"] + float(boost_a), 1),
-        "B Grade": round(bc["overall"] + float(boost_b), 1),
+        "A Grade": round(a_score, 1),
+        "B Grade": round(b_score, 1),
         "A Win %": round(prob_a * 100, 1),
         "B Win %": round(prob_b * 100, 1),
         "A KO/TKO %": round(prob_a * a_finish_prob * a_ko_share * 100, 1),
@@ -2456,15 +2154,10 @@ def hag_ufc_matchup_result(fighter_a, fighter_b, boost_a=0, boost_b=0):
         "B KO/TKO %": round(prob_b * b_finish_prob * b_ko_share * 100, 1),
         "B Submission %": round(prob_b * b_finish_prob * (1 - b_ko_share) * 100, 1),
         "B Decision %": round(prob_b * (1 - b_finish_prob) * 100, 1),
-        "Confidence": confidence,
+        "Confidence": "High" if abs(prob_a - 0.5) >= 0.18 else "Medium" if abs(prob_a - 0.5) >= 0.09 else "Low",
         "Predicted Winner": fighter_a if prob_a >= prob_b else fighter_b,
-        "Model Quality": round(avg_quality * 100, 0),
-        "A Striking Path": round(a_striking_path, 2),
-        "B Striking Path": round(b_striking_path, 2),
-        "A Grappling Path": round(a_grappling_path, 2),
-        "B Grappling Path": round(b_grappling_path, 2),
-        "Style Score Diff": round(score_diff, 2),
     }
+
 
 def hag_ufc_simulation_df(result, sims=10000):
     if not result:
@@ -3299,232 +2992,6 @@ def hag_render_ufc_fight_predictor():
 
 
 # ==========================================================
-# UFC VEGAS / MARKET COMPARISON HELPERS
-# ==========================================================
-def hag_ufc_american_to_implied(odds):
-    try:
-        o = int(float(odds))
-    except Exception:
-        return None
-    if o < 0:
-        return abs(o) / (abs(o) + 100)
-    return 100 / (o + 100)
-
-
-def hag_ufc_no_vig_probs(a_ml, b_ml):
-    a_imp = hag_ufc_american_to_implied(a_ml)
-    b_imp = hag_ufc_american_to_implied(b_ml)
-    if a_imp is None or b_imp is None or (a_imp + b_imp) <= 0:
-        return None, None
-    total = a_imp + b_imp
-    return round(a_imp / total * 100, 1), round(b_imp / total * 100, 1)
-
-
-def hag_ufc_name_key(name):
-    return re.sub(r"[^a-z0-9]", "", str(name or "").lower())
-
-
-def hag_ufc_name_similarity(a, b):
-    ak = hag_ufc_name_key(a)
-    bk = hag_ufc_name_key(b)
-    if not ak or not bk:
-        return 0.0
-    if ak == bk:
-        return 1.0
-    if ak in bk or bk in ak:
-        return 0.92
-    return SequenceMatcher(None, ak, bk).ratio()
-
-
-def hag_ufc_find_known_fighter(name, min_score=0.82):
-    if name in UFC_FIGHTERS:
-        return name
-    best_name = None
-    best_score = 0.0
-    for known in UFC_FIGHTERS.keys():
-        score = hag_ufc_name_similarity(name, known)
-        if score > best_score:
-            best_name = known
-            best_score = score
-    return best_name if best_score >= min_score else None
-
-
-@st.cache_data(ttl=CACHE_TTL_ODDS)
-def hag_ufc_fetch_live_odds():
-    api_key = os.environ.get("ODDS_API_KEY") or "19d9ef9331ef61b3a2589d81ba676e11"
-    url = (
-        "https://api.the-odds-api.com/v4/sports/mma_mixed_martial_arts/odds/"
-        f"?apiKey={api_key}&regions=us&markets=h2h&oddsFormat=american&bookmakers=draftkings,fanduel,betmgm,caesars,espnbet"
-    )
-    try:
-        response = requests.get(url, timeout=18)
-        status_code = getattr(response, "status_code", "UNKNOWN")
-        if status_code != 200:
-            return pd.DataFrame(), {
-                "ok": False,
-                "message": f"Odds API returned status {status_code}.",
-                "raw": getattr(response, "text", "")[:1000],
-            }
-        data = response.json()
-    except Exception as e:
-        return pd.DataFrame(), {"ok": False, "message": f"Could not load UFC odds: {e}", "raw": ""}
-
-    rows = []
-    for game in data:
-        price_map = {}
-        book_count = {}
-        for book in game.get("bookmakers", []) or []:
-            for market in book.get("markets", []) or []:
-                if market.get("key") != "h2h":
-                    continue
-                for outcome in market.get("outcomes", []) or []:
-                    name = outcome.get("name", "")
-                    price = outcome.get("price", None)
-                    if name and price not in [None, ""]:
-                        price_map.setdefault(name, []).append(float(price))
-                        book_count[name] = book_count.get(name, 0) + 1
-
-        if len(price_map) < 2:
-            continue
-
-        names = list(price_map.keys())[:2]
-        a_name, b_name = names[0], names[1]
-        a_prices = price_map.get(a_name, [])
-        b_prices = price_map.get(b_name, [])
-        if not a_prices or not b_prices:
-            continue
-
-        a_ml = int(round(sum(a_prices) / len(a_prices)))
-        b_ml = int(round(sum(b_prices) / len(b_prices)))
-        a_novig, b_novig = hag_ufc_no_vig_probs(a_ml, b_ml)
-
-        commence_raw = game.get("commence_time", "")
-        try:
-            event_dt = pd.to_datetime(commence_raw, utc=True).tz_convert("US/Eastern")
-            date_str = event_dt.strftime("%Y-%m-%d")
-            start_time = event_dt.strftime("%I:%M %p ET").lstrip("0")
-        except Exception:
-            date_str = str(commence_raw)[:10]
-            start_time = ""
-
-        known_a = hag_ufc_find_known_fighter(a_name)
-        known_b = hag_ufc_find_known_fighter(b_name)
-
-        rows.append({
-            "Date": date_str,
-            "Start Time": start_time,
-            "Event ID": game.get("id", ""),
-            "Fighter A Odds Name": a_name,
-            "Fighter B Odds Name": b_name,
-            "Fighter A": known_a or a_name,
-            "Fighter B": known_b or b_name,
-            "A ML": a_ml,
-            "B ML": b_ml,
-            "Vegas A %": a_novig,
-            "Vegas B %": b_novig,
-            "Book Count A": book_count.get(a_name, 0),
-            "Book Count B": book_count.get(b_name, 0),
-            "Odds Source": "The Odds API avg US books",
-            "Known Fighters": bool(known_a and known_b),
-        })
-
-    df = pd.DataFrame(rows)
-    if not df.empty:
-        df = df.sort_values(["Date", "Start Time", "Fighter A"]).reset_index(drop=True)
-    return df, {"ok": True, "message": f"Loaded {len(df)} MMA moneyline fights.", "raw": ""}
-
-
-def hag_ufc_market_pick(a_ml, b_ml, fighter_a, fighter_b):
-    a_prob, b_prob = hag_ufc_no_vig_probs(a_ml, b_ml)
-    if a_prob is None or b_prob is None:
-        return "", "", ""
-    if a_prob >= b_prob:
-        return fighter_a, a_prob, b_prob
-    return fighter_b, a_prob, b_prob
-
-
-def hag_ufc_enrich_with_vegas(row, result):
-    out = dict(row)
-    a_ml = out.get("A ML", "")
-    b_ml = out.get("B ML", "")
-    vegas_pick, vegas_a, vegas_b = hag_ufc_market_pick(a_ml, b_ml, result["Fighter A"], result["Fighter B"])
-    out["Vegas A %"] = vegas_a
-    out["Vegas B %"] = vegas_b
-    out["Vegas Pick"] = vegas_pick
-
-    model_pick = result["Predicted Winner"]
-    model_pick_prob = float(result["A Win %"] if model_pick == result["Fighter A"] else result["B Win %"])
-    vegas_pick_prob = float(vegas_a if model_pick == result["Fighter A"] else vegas_b) if vegas_a != "" and vegas_b != "" else 0.0
-    out["Model Edge %"] = round(model_pick_prob - vegas_pick_prob, 1) if vegas_pick_prob else ""
-    out["Confidence"] = hag_ufc_confidence_from_probability(model_pick_prob / 100, (float(result.get("Model Quality", 50)) / 100), (float(out["Model Edge %"]) / 100 if out.get("Model Edge %") != "" else None))
-    return out
-
-
-def hag_ufc_market_board_from_odds(odds_df):
-    if odds_df is None or odds_df.empty:
-        return pd.DataFrame()
-
-    rows = []
-    for _, odds_row in odds_df.iterrows():
-        fighter_a = str(odds_row.get("Fighter A", "")).strip()
-        fighter_b = str(odds_row.get("Fighter B", "")).strip()
-        if fighter_a not in UFC_FIGHTERS or fighter_b not in UFC_FIGHTERS or fighter_a == fighter_b:
-            continue
-
-        result = hag_ufc_matchup_result(fighter_a, fighter_b)
-        if not result:
-            continue
-
-        base = {
-            "Date": odds_row.get("Date", ""),
-            "Start Time": odds_row.get("Start Time", ""),
-            "Fighter A": fighter_a,
-            "Fighter B": fighter_b,
-            "A ML": odds_row.get("A ML", ""),
-            "B ML": odds_row.get("B ML", ""),
-            "Odds Source": odds_row.get("Odds Source", "Live Odds"),
-        }
-        enriched = hag_ufc_enrich_with_vegas(base, result)
-        rows.append({
-            "Date": enriched.get("Date", ""),
-            "Start Time": enriched.get("Start Time", ""),
-            "Fight": f"{fighter_a} vs {fighter_b}",
-            "Fighter A": fighter_a,
-            "Fighter B": fighter_b,
-            "A ML": enriched.get("A ML", ""),
-            "B ML": enriched.get("B ML", ""),
-            "Vegas A %": enriched.get("Vegas A %", ""),
-            "Vegas B %": enriched.get("Vegas B %", ""),
-            "A Win %": result["A Win %"],
-            "B Win %": result["B Win %"],
-            "Model Pick": result["Predicted Winner"],
-            "Vegas Pick": enriched.get("Vegas Pick", ""),
-            "Model Edge %": enriched.get("Model Edge %", ""),
-            "Confidence": enriched.get("Confidence", result.get("Confidence", "Tracking")),
-            "Top Method": hag_ufc_top_method_from_result(result),
-            "Model Quality": result.get("Model Quality", ""),
-            "Odds Source": enriched.get("Odds Source", ""),
-        })
-
-    if not rows:
-        return pd.DataFrame()
-    return pd.DataFrame(rows).sort_values(["Date", "Confidence", "Model Edge %"], ascending=[True, True, False]).reset_index(drop=True)
-
-
-def hag_ufc_market_row_to_prediction(row, event_name="Live UFC Board"):
-    fighter_a = str(row.get("Fighter A", "")).strip()
-    fighter_b = str(row.get("Fighter B", "")).strip()
-    date_str = str(row.get("Date", "") or get_local_date_str()).strip()
-    pred = hag_ufc_prediction_row(fighter_a, fighter_b, event_name=event_name, date_str=date_str)
-    if not pred:
-        return None
-    for col in ["A ML", "B ML", "Vegas A %", "Vegas B %", "Vegas Pick", "Model Edge %", "Odds Source"]:
-        pred[col] = row.get(col, "")
-    pred["Confidence"] = row.get("Confidence", pred.get("Confidence", "Tracking"))
-    return pred
-
-
-# ==========================================================
 # UFC PREDICTION LOGGING + GRADING
 # ==========================================================
 UFC_LOG_COLUMNS = [
@@ -3532,10 +2999,7 @@ UFC_LOG_COLUMNS = [
     "A Win %", "B Win %", "Model Pick", "Confidence",
     "Top Method", "A KO/TKO %", "A Submission %", "A Decision %",
     "B KO/TKO %", "B Submission %", "B Decision %",
-    "A ML", "B ML", "Vegas A %", "Vegas B %", "Vegas Pick",
-    "Model Edge %", "Odds Source",
-    "Actual Winner", "Actual Method", "Pick Result", "Method Result",
-    "Vegas Result", "Status"
+    "Actual Winner", "Actual Method", "Pick Result", "Method Result", "Status"
 ]
 
 def hag_ufc_log_path():
@@ -3600,18 +3064,10 @@ def hag_ufc_prediction_row(fighter_a, fighter_b, event_name="Manual Fight", date
         "B KO/TKO %": result["B KO/TKO %"],
         "B Submission %": result["B Submission %"],
         "B Decision %": result["B Decision %"],
-        "A ML": "",
-        "B ML": "",
-        "Vegas A %": "",
-        "Vegas B %": "",
-        "Vegas Pick": "",
-        "Model Edge %": "",
-        "Odds Source": "Manual / No Odds",
         "Actual Winner": "",
         "Actual Method": "",
         "Pick Result": "",
         "Method Result": "",
-        "Vegas Result": "",
         "Status": "PENDING",
     }
 
@@ -3634,19 +3090,14 @@ def hag_ufc_grade_prediction(log_id, actual_winner, actual_method):
     idx = df.index[df["Log ID"].astype(str) == str(log_id)][0]
     model_pick = str(df.loc[idx, "Model Pick"])
     top_method = str(df.loc[idx, "Top Method"])
-    vegas_pick = str(df.loc[idx, "Vegas Pick"]) if "Vegas Pick" in df.columns else ""
 
     pick_result = "WIN" if model_pick == actual_winner else "LOSS"
     method_result = "WIN" if actual_method and actual_method.lower() in top_method.lower() and pick_result == "WIN" else "LOSS"
-    vegas_result = ""
-    if vegas_pick and vegas_pick.lower() not in ["nan", "none"]:
-        vegas_result = "WIN" if vegas_pick == actual_winner else "LOSS"
 
     df.loc[idx, "Actual Winner"] = actual_winner
     df.loc[idx, "Actual Method"] = actual_method
     df.loc[idx, "Pick Result"] = pick_result
     df.loc[idx, "Method Result"] = method_result
-    df.loc[idx, "Vegas Result"] = vegas_result
     df.loc[idx, "Status"] = "GRADED"
 
     hag_ufc_write_log(df)
@@ -3657,7 +3108,6 @@ def hag_ufc_accuracy_summary(df):
         return {
             "total": 0, "pending": 0, "graded": 0,
             "pick_accuracy": 0.0, "method_accuracy": 0.0,
-            "vegas_accuracy": 0.0, "hag_edge": 0.0,
             "confidence_df": pd.DataFrame(), "event_df": pd.DataFrame()
         }
 
@@ -3669,16 +3119,11 @@ def hag_ufc_accuracy_summary(df):
     if graded == 0:
         pick_acc = 0.0
         method_acc = 0.0
-        vegas_acc = 0.0
-        hag_edge = 0.0
         confidence_df = pd.DataFrame()
         event_df = pd.DataFrame()
     else:
         pick_acc = round((graded_df["Pick Result"].astype(str) == "WIN").mean() * 100, 1)
         method_acc = round((graded_df["Method Result"].astype(str) == "WIN").mean() * 100, 1)
-        vegas_graded = graded_df[graded_df.get("Vegas Result", pd.Series(dtype=str)).astype(str).isin(["WIN", "LOSS"])] if "Vegas Result" in graded_df.columns else pd.DataFrame()
-        vegas_acc = round((vegas_graded["Vegas Result"].astype(str) == "WIN").mean() * 100, 1) if not vegas_graded.empty else 0.0
-        hag_edge = round(pick_acc - vegas_acc, 1) if not vegas_graded.empty else 0.0
 
         confidence_df = (
             graded_df.groupby("Confidence", dropna=False)
@@ -3686,27 +3131,21 @@ def hag_ufc_accuracy_summary(df):
                 Fights=("Log ID", "count"),
                 Pick_Wins=("Pick Result", lambda s: int((s.astype(str) == "WIN").sum())),
                 Method_Wins=("Method Result", lambda s: int((s.astype(str) == "WIN").sum())),
-                Vegas_Wins=("Vegas Result", lambda s: int((s.astype(str) == "WIN").sum())) if "Vegas Result" in graded_df.columns else ("Pick Result", lambda s: 0),
             )
             .reset_index()
         )
         confidence_df["Pick Accuracy %"] = (confidence_df["Pick_Wins"] / confidence_df["Fights"] * 100).round(1)
         confidence_df["Method Accuracy %"] = (confidence_df["Method_Wins"] / confidence_df["Fights"] * 100).round(1)
-        confidence_df["Vegas Accuracy %"] = (confidence_df["Vegas_Wins"] / confidence_df["Fights"] * 100).round(1)
-        confidence_df["Hag vs Vegas %"] = (confidence_df["Pick Accuracy %"] - confidence_df["Vegas Accuracy %"]).round(1)
 
         event_df = (
             graded_df.groupby("Event", dropna=False)
             .agg(
                 Fights=("Log ID", "count"),
                 Pick_Wins=("Pick Result", lambda s: int((s.astype(str) == "WIN").sum())),
-                Vegas_Wins=("Vegas Result", lambda s: int((s.astype(str) == "WIN").sum())) if "Vegas Result" in graded_df.columns else ("Pick Result", lambda s: 0),
             )
             .reset_index()
         )
         event_df["Event Pick Accuracy %"] = (event_df["Pick_Wins"] / event_df["Fights"] * 100).round(1)
-        event_df["Event Vegas Accuracy %"] = (event_df["Vegas_Wins"] / event_df["Fights"] * 100).round(1)
-        event_df["Event Hag Edge %"] = (event_df["Event Pick Accuracy %"] - event_df["Event Vegas Accuracy %"]).round(1)
 
     return {
         "total": total,
@@ -3714,21 +3153,18 @@ def hag_ufc_accuracy_summary(df):
         "graded": graded,
         "pick_accuracy": pick_acc,
         "method_accuracy": method_acc,
-        "vegas_accuracy": vegas_acc,
-        "hag_edge": hag_edge,
         "confidence_df": confidence_df,
         "event_df": event_df,
     }
 
 def hag_render_ufc_prediction_log():
-    st.title("📒 UFC Prediction Log & Vegas Tracking")
-    st.caption("Track UFC model picks against market/ Vegas moneyline picks, grade fight results, and build an accuracy record like the MLB dashboard.")
-    st.info("Active build: UFC VEGAS BOARD v2.3 - full live odds fighter coverage")
+    st.title("📒 UFC Prediction Log & Grading")
+    st.caption("Track UFC model picks, grade fight results, and build an accuracy record like the MLB dashboard.")
 
     df = hag_ufc_read_log()
     summary = hag_ufc_accuracy_summary(df)
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         st.metric("Logged Fights", summary["total"])
     with c2:
@@ -3736,125 +3172,13 @@ def hag_render_ufc_prediction_log():
     with c3:
         st.metric("Graded", summary["graded"])
     with c4:
-        st.metric("Hag Labs Accuracy", f"{summary['pick_accuracy']}%")
+        st.metric("Pick Accuracy", f"{summary['pick_accuracy']}%")
     with c5:
-        st.metric("Vegas Accuracy", f"{summary['vegas_accuracy']}%")
-    with c6:
-        st.metric("Hag Labs Edge", f"{summary['hag_edge']:+.1f}%")
+        st.metric("Method Accuracy", f"{summary['method_accuracy']}%")
 
-    with st.expander("What changed in the UFC core model?", expanded=False):
-        st.markdown("""
-        **UFC is now handled differently from MLB.** Baseball gives us huge samples. MMA has tiny samples, style-specific matchups, and lots of volatility.
-
-        The updated UFC model now blends:
-        - **Overall fighter grade** from striking, grappling, wrestling, durability, cardio, power, speed, IQ, form, and schedule strength.
-        - **Style paths**: striking offense vs opponent striking defense, and grappling offense vs opponent grappling defense.
-        - **Context**: reach, recent form, strength of schedule, experience, and fight IQ.
-        - **Data-quality shrinkage**: manual/low-sample fighter profiles are pulled closer to 50/50 so the model does not get overconfident too early.
-        - **Vegas comparison**: moneyline odds are converted to no-vig implied probabilities, then compared to Hag Labs probabilities.
-        """)
-
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "Live Vegas Board",
-        "Log Predictions",
-        "Grade Results",
-        "Accuracy Dashboard",
-        "Event History"
-    ])
+    tab1, tab2, tab3, tab4 = st.tabs(["Log Predictions", "Grade Results", "Accuracy Dashboard", "Event History"])
 
     with tab1:
-        st.subheader("Live UFC Vegas Board")
-        st.caption("Loads MMA moneyline odds through The Odds API when available. Only fights with both fighters in the Hag Labs UFC database can receive a model projection.")
-
-        odds_df, odds_status = hag_ufc_fetch_live_odds()
-        if odds_status.get("ok"):
-            st.success(odds_status.get("message", "Loaded UFC odds."))
-        else:
-            st.warning(odds_status.get("message", "Live odds unavailable."))
-            if odds_status.get("raw"):
-                with st.expander("Odds API raw response"):
-                    st.code(odds_status.get("raw", ""))
-
-        if odds_df is not None and not odds_df.empty:
-            with st.expander("Raw Live Odds Feed", expanded=False):
-                st.dataframe(odds_df, use_container_width=True, hide_index=True)
-
-            missing = odds_df[odds_df["Known Fighters"] == False].copy() if "Known Fighters" in odds_df.columns else pd.DataFrame()
-            if not missing.empty:
-                st.info(f"{len(missing)} live odds fights have fighters not yet in the Hag Labs UFC database. Add them in the UFC Fighter Database when you want those fights modeled.")
-
-        board_df = hag_ufc_market_board_from_odds(odds_df)
-
-        # Fallback board for the next two known cards if the odds API is empty/unavailable.
-        if board_df.empty:
-            st.info("No complete live UFC odds board available right now. Showing the built-in next-card starter board without Vegas lines.")
-            fallback_rows = []
-            for event_name, card in UFC_UPCOMING_SAMPLE_CARDS.items():
-                for a, b in card.get("fights", []):
-                    result = hag_ufc_matchup_result(a, b)
-                    if not result:
-                        continue
-                    fallback_rows.append({
-                        "Date": card.get("date", ""),
-                        "Start Time": "",
-                        "Fight": f"{a} vs {b}",
-                        "Fighter A": a,
-                        "Fighter B": b,
-                        "A ML": "",
-                        "B ML": "",
-                        "Vegas A %": "",
-                        "Vegas B %": "",
-                        "A Win %": result["A Win %"],
-                        "B Win %": result["B Win %"],
-                        "Model Pick": result["Predicted Winner"],
-                        "Vegas Pick": "",
-                        "Model Edge %": "",
-                        "Confidence": result["Confidence"],
-                        "Top Method": hag_ufc_top_method_from_result(result),
-                        "Model Quality": result.get("Model Quality", ""),
-                        "Odds Source": "No Live Odds / Starter Board",
-                    })
-            board_df = pd.DataFrame(fallback_rows)
-
-        if board_df.empty:
-            st.warning("No UFC board could be created.")
-        else:
-            st.markdown("#### Hag Labs UFC Market Board")
-            st.dataframe(board_df, use_container_width=True, hide_index=True)
-
-            d1, d2, d3, d4 = st.columns(4)
-            with d1:
-                st.metric("Modeled Fights", len(board_df))
-            with d2:
-                official_count = int(board_df["Confidence"].astype(str).isin(["High", "Medium", "Low"]).sum()) if "Confidence" in board_df.columns else 0
-                st.metric("Official Picks", official_count)
-            with d3:
-                if "Model Edge %" in board_df.columns:
-                    numeric_edge = pd.to_numeric(board_df["Model Edge %"], errors="coerce")
-                    st.metric("Avg Model Edge", f"{numeric_edge.dropna().mean():+.1f}%" if numeric_edge.notna().any() else "N/A")
-                else:
-                    st.metric("Avg Model Edge", "N/A")
-            with d4:
-                high_count = int((board_df["Confidence"].astype(str) == "High").sum()) if "Confidence" in board_df.columns else 0
-                st.metric("High Confidence", high_count)
-
-            event_name_for_log = st.text_input("Event name for saved log rows", value="Live UFC Board", key="ufc_live_board_event_name")
-            if st.button("💾 Log This UFC Board", key="ufc_log_live_board"):
-                saved = 0
-                dupes = 0
-                errors = 0
-                for _, r in board_df.iterrows():
-                    pred = hag_ufc_market_row_to_prediction(r, event_name=event_name_for_log)
-                    status = hag_ufc_append_prediction(pred)
-                    if status == "SUCCESS":
-                        saved += 1
-                    elif status == "DUPLICATE":
-                        dupes += 1
-                    else:
-                        errors += 1
-                st.success(f"UFC board log complete. Saved: {saved}. Duplicates skipped: {dupes}. Errors: {errors}.")
-
-    with tab2:
         st.subheader("Log a UFC Prediction")
         names = sorted(UFC_FIGHTERS.keys())
         l1, l2, l3 = st.columns([1.2, 1.2, 1])
@@ -3867,29 +3191,15 @@ def hag_render_ufc_prediction_log():
 
         date_str = st.text_input("Fight date", value=get_local_date_str(), key="ufc_log_date")
 
-        o1, o2 = st.columns(2)
-        with o1:
-            a_ml_input = st.text_input("Fighter A moneyline optional", value="", key="ufc_manual_a_ml")
-        with o2:
-            b_ml_input = st.text_input("Fighter B moneyline optional", value="", key="ufc_manual_b_ml")
-
         if fighter_a == fighter_b:
             st.warning("Select two different fighters.")
         else:
             row = hag_ufc_prediction_row(fighter_a, fighter_b, event_name=event_name, date_str=date_str)
             if row:
-                result = hag_ufc_matchup_result(fighter_a, fighter_b)
-                if a_ml_input.strip() and b_ml_input.strip() and result:
-                    odds_payload = {"A ML": a_ml_input.strip(), "B ML": b_ml_input.strip(), "Odds Source": "Manual Vegas Odds"}
-                    enriched = hag_ufc_enrich_with_vegas(odds_payload, result)
-                    for col in ["A ML", "B ML", "Vegas A %", "Vegas B %", "Vegas Pick", "Model Edge %", "Odds Source", "Confidence"]:
-                        row[col] = enriched.get(col, row.get(col, ""))
-
                 preview = pd.DataFrame([row])
                 st.dataframe(preview[[
                     "Date", "Event", "Fighter A", "Fighter B", "A Win %", "B Win %",
-                    "A ML", "B ML", "Vegas A %", "Vegas B %", "Model Pick", "Vegas Pick",
-                    "Model Edge %", "Confidence", "Top Method", "Status"
+                    "Model Pick", "Confidence", "Top Method", "Status"
                 ]], use_container_width=True, hide_index=True)
 
                 if st.button("💾 Save Prediction to UFC Log", key="ufc_save_manual_prediction"):
@@ -3901,23 +3211,21 @@ def hag_render_ufc_prediction_log():
                     else:
                         st.error("Could not save prediction.")
 
-        st.markdown("#### Log Built-In Upcoming Cards")
-        st.caption("Quickly populate the log for the upcoming UFC card(s) currently stored in Hag Labs.")
-        card_choice = st.selectbox("Choose card", list(UFC_UPCOMING_SAMPLE_CARDS.keys()), key="ufc_builtin_card_choice")
-        if st.button("💾 Log Built-In UFC Card", key="ufc_log_sample_card"):
+        st.markdown("#### Log Sample Event Card")
+        st.caption("Uses the current starter card to quickly populate the log for testing.")
+        if st.button("💾 Log Sample UFC Event Card", key="ufc_log_sample_card"):
             saved = 0
             dupes = 0
-            card = UFC_UPCOMING_SAMPLE_CARDS.get(card_choice, {})
-            for a, b in card.get("fights", []):
-                row = hag_ufc_prediction_row(a, b, event_name=card_choice, date_str=card.get("date", date_str))
+            for a, b in UFC_SAMPLE_CARD:
+                row = hag_ufc_prediction_row(a, b, event_name="Sample UFC Card", date_str=date_str)
                 status = hag_ufc_append_prediction(row)
                 if status == "SUCCESS":
                     saved += 1
                 elif status == "DUPLICATE":
                     dupes += 1
-            st.success(f"Built-in card logged. Saved: {saved}. Duplicates skipped: {dupes}.")
+            st.success(f"Sample card logged. Saved: {saved}. Duplicates skipped: {dupes}.")
 
-    with tab3:
+    with tab2:
         st.subheader("Grade Pending UFC Fights")
         df = hag_ufc_read_log()
         pending_df = df[df["Status"].astype(str) == "PENDING"].copy() if not df.empty else pd.DataFrame()
@@ -3926,7 +3234,7 @@ def hag_render_ufc_prediction_log():
             st.info("No pending UFC fights to grade.")
         else:
             pending_df["Display"] = pending_df.apply(
-                lambda r: f"{r['Date']} | {r['Event']} | {r['Fighter A']} vs {r['Fighter B']} | Pick: {r['Model Pick']} | Vegas: {r.get('Vegas Pick', '')}",
+                lambda r: f"{r['Date']} | {r['Event']} | {r['Fighter A']} vs {r['Fighter B']} | Pick: {r['Model Pick']}",
                 axis=1
             )
             selected = st.selectbox("Select pending fight", pending_df["Display"].tolist(), key="ufc_grade_select")
@@ -3946,7 +3254,7 @@ def hag_render_ufc_prediction_log():
                 else:
                     st.error("Could not grade fight.")
 
-    with tab4:
+    with tab3:
         st.subheader("UFC Accuracy Dashboard")
         df = hag_ufc_read_log()
         summary = hag_ufc_accuracy_summary(df)
@@ -3958,13 +3266,13 @@ def hag_render_ufc_prediction_log():
             st.dataframe(summary["confidence_df"], use_container_width=True, hide_index=True)
 
             if not summary["confidence_df"].empty:
-                chart_df = summary["confidence_df"][["Confidence", "Pick Accuracy %", "Vegas Accuracy %"]].set_index("Confidence")
+                chart_df = summary["confidence_df"][["Confidence", "Pick Accuracy %"]].set_index("Confidence")
                 st.bar_chart(chart_df)
 
             st.markdown("#### Event-Level Accuracy")
             st.dataframe(summary["event_df"], use_container_width=True, hide_index=True)
 
-    with tab5:
+    with tab4:
         st.subheader("UFC Event History")
         df = hag_ufc_read_log()
 
