@@ -1,5 +1,5 @@
-# HAG LABS VERIFIED BUILD: NFL VEGAS BOARD v1.0 + UFC VEGAS BOARD v2.4.1
-# Active build: NFL VEGAS BOARD v1.0 - live odds board + prediction log + closing line tracker
+# HAG LABS VERIFIED BUILD: NFL VEGAS BOARD v1.0.1 + UFC VEGAS BOARD v2.4.1
+# Active build: NFL VEGAS BOARD v1.0.1 - API key fallback + offseason-safe live odds board
 import plotly.graph_objects as go
 import streamlit as st
 import pandas as pd
@@ -9675,7 +9675,7 @@ elif sport == "🏈 NFL Football":
     # ==========================================================
     # NFL VEGAS BOARD + PREDICTION LOGGING V1.0
     # ==========================================================
-    NFL_BUILD_LABEL = "NFL VEGAS BOARD v1.0 - live odds board + prediction log + closing line tracker"
+    NFL_BUILD_LABEL = "NFL VEGAS BOARD v1.0.1 - API key fallback + offseason-safe live odds board"
 
     NFL_TEAM_RATINGS = {
         "Arizona Cardinals": {"abbr": "ARI", "elo": 1480, "off": 47, "def": 45, "qb": 48, "form": 47},
@@ -9931,9 +9931,13 @@ elif sport == "🏈 NFL Football":
 
     @st.cache_data(ttl=CACHE_TTL_ODDS)
     def hag_nfl_fetch_live_odds_board():
-        api_key = os.environ.get("ODDS_API_KEY")
-        if not api_key:
-            return pd.DataFrame(), {"ok": False, "message": "ODDS_API_KEY is not set on this machine.", "raw": ""}
+        # Use the same Odds API setup style as MLB/UFC.
+        # Local installs can set ODDS_API_KEY, but the app also has a fallback so the board does not fail silently.
+        api_key = (
+            os.environ.get("ODDS_API_KEY")
+            or os.environ.get("THE_ODDS_API_KEY")
+            or "19d9ef9331ef61b3a2589d81ba676e11"
+        )
 
         url = (
             "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/"
