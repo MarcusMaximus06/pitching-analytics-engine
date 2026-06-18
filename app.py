@@ -1,4 +1,4 @@
-# HAG LABS VERIFIED BUILD: UFC VEGAS BOARD v2.2 - contains Live Vegas Board tab
+# HAG LABS VERIFIED BUILD: UFC VEGAS BOARD v2.3 - full live odds fighter coverage starter profiles
 import plotly.graph_objects as go
 import streamlit as st
 import pandas as pd
@@ -1584,6 +1584,62 @@ UFC_UPCOMING_FIGHTER_PROFILES = {
     "Michel Pereira": {"Division": "Middleweight", "Status": "Active", "Record": "32-14-0", "Age": 32, "Height": 73, "Reach": 73.0, "Stance": "Orthodox", "Style": "Explosive striker / athletic grappling", "Data Quality": "Manual upcoming-card starter profile", "Data Source": "Hag Labs manual profile", "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0, "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0, "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0, "Striking": 84, "Grappling": 78, "Wrestling": 74, "Submission": 75, "Durability": 82, "Cardio": 79, "Power": 85, "Speed": 86, "Fight IQ": 76, "Experience": 86, "KO %": 38, "Sub %": 31, "Decision %": 31, "Recent Form": 75, "Strength of Schedule": 82, "Notes": "Upcoming-card starter profile. Wildly athletic veteran with multiple paths but volatility."},
 }
 
+# ==========================================================
+# UFC LIVE ODDS COVERAGE EXPANSION - 2026-06-18
+# ==========================================================
+# These profiles cover the fighters that appeared in the live odds feed but were
+# not yet modeled by Hag Labs. They are intentionally low-confidence starter
+# profiles so the live board can model every listed fight, while still keeping
+# official confidence conservative until true UFCStats-style rows are added.
+def hag_seed_ufc_profile(division, style, striking=75, grappling=75, wrestling=75, submission=65,
+                         durability=75, cardio=75, power=75, speed=75, iq=75, experience=65,
+                         ko=35, sub=20, decision=45, form=75, sos=60,
+                         age=0, height=0, reach=0, stance="", record=""):
+    return {
+        "Division": division, "Status": "Active", "Record": record,
+        "Age": age, "Height": height, "Reach": reach, "Stance": stance,
+        "Style": style, "Data Quality": "Manual live-odds starter profile",
+        "Data Source": "Hag Labs manual seed from live odds coverage list",
+        "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0,
+        "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0,
+        "KD Avg": 0, "Control Score": 0, "UFC Stat Sample": 0,
+        "Striking": striking, "Grappling": grappling, "Wrestling": wrestling,
+        "Submission": submission, "Durability": durability, "Cardio": cardio,
+        "Power": power, "Speed": speed, "Fight IQ": iq, "Experience": experience,
+        "KO %": ko, "Sub %": sub, "Decision %": decision,
+        "Recent Form": form, "Strength of Schedule": sos,
+        "Notes": "Live-odds coverage seed profile. Replace with true UFCStats-style columns when available. Keep confidence conservative."
+    }
+
+UFC_UPCOMING_FIGHTER_PROFILES.update({
+    "Otari Tanzilovi": hag_seed_ufc_profile("Lightweight", "Prospect striker / mixed martial artist", 74, 70, 69, 62, 75, 76, 76, 77, 70, 54, 45, 10, 45, 72, 52),
+    "Shane Collins": hag_seed_ufc_profile("Lightweight", "Favorite profile / balanced finishing threat", 80, 74, 73, 68, 79, 80, 80, 79, 75, 60, 50, 20, 30, 82, 58),
+    "Leon Shahbazyan": hag_seed_ufc_profile("Welterweight", "Striking prospect / developing grappling", 72, 66, 65, 58, 72, 73, 77, 76, 68, 52, 55, 5, 40, 70, 48),
+    "Levan Chokheli": hag_seed_ufc_profile("Welterweight", "Power striker / favorite profile", 82, 72, 70, 62, 79, 78, 84, 78, 76, 65, 60, 10, 30, 84, 60),
+    "Karol Rosa": hag_seed_ufc_profile("Women Bantamweight", "Volume striking / veteran decision profile", 79, 74, 72, 62, 80, 83, 68, 76, 82, 82, 15, 5, 80, 76, 78),
+    "Luana Santos": hag_seed_ufc_profile("Women Bantamweight", "Judo / grappling pressure", 73, 80, 79, 72, 78, 80, 70, 75, 76, 66, 20, 30, 50, 78, 64),
+    "Gaston Bolanos": hag_seed_ufc_profile("Bantamweight", "Kickboxing / power striking", 78, 62, 60, 52, 72, 70, 82, 78, 68, 66, 75, 0, 25, 65, 62),
+    "Michael Aswell": hag_seed_ufc_profile("Bantamweight", "Favorite profile / well-rounded pressure", 82, 73, 72, 64, 80, 80, 82, 80, 75, 58, 55, 15, 30, 84, 56),
+    "Allan Nascimento": hag_seed_ufc_profile("Flyweight", "Submission grappler / veteran flyweight", 72, 86, 80, 88, 82, 84, 65, 76, 84, 82, 10, 55, 35, 78, 78),
+    "Mitch Raposo": hag_seed_ufc_profile("Flyweight", "Fast wrestling-boxing prospect", 74, 76, 77, 68, 76, 79, 72, 82, 72, 58, 30, 25, 45, 70, 55),
+    "Beatriz Mesquita": hag_seed_ufc_profile("Women Bantamweight", "Elite jiu-jitsu / submission grappling", 68, 91, 82, 96, 82, 82, 66, 75, 82, 62, 10, 75, 15, 88, 58),
+    "Melissa Mullins": hag_seed_ufc_profile("Women Bantamweight", "Developing striker-grappler", 66, 65, 64, 58, 70, 72, 68, 70, 65, 54, 30, 10, 60, 62, 48),
+    "Elisha Ellison": hag_seed_ufc_profile("Heavyweight", "Heavyweight underdog / developmental profile", 62, 60, 60, 50, 66, 60, 78, 62, 58, 46, 55, 5, 40, 58, 42),
+    "Gable Steveson": hag_seed_ufc_profile("Heavyweight", "Olympic wrestling / control-heavy prospect", 70, 84, 96, 65, 82, 82, 84, 78, 78, 52, 45, 10, 45, 90, 54),
+    "Cory Sandhagen": hag_seed_ufc_profile("Bantamweight", "Elite range striking / high-volume kickboxing", 90, 78, 76, 66, 84, 90, 78, 90, 91, 90, 35, 10, 55, 82, 92),
+    "Mario Bautista": hag_seed_ufc_profile("Bantamweight", "Pressure grappling / well-rounded bantamweight", 82, 82, 82, 76, 83, 86, 76, 84, 84, 82, 30, 25, 45, 84, 84),
+    "Benoit Saint-Denis": hag_seed_ufc_profile("Lightweight", "Aggressive southpaw grappling-pressure finisher", 84, 86, 84, 86, 82, 86, 86, 82, 83, 82, 35, 45, 20, 80, 88),
+    "Paddy Pimblett": hag_seed_ufc_profile("Lightweight", "Submission grappler / momentum fighter", 78, 84, 78, 88, 82, 84, 76, 78, 82, 82, 20, 55, 25, 84, 82),
+    "Brandon Royval": hag_seed_ufc_profile("Flyweight", "Chaotic submission-striking flyweight", 86, 86, 76, 90, 80, 88, 78, 88, 86, 90, 30, 45, 25, 82, 92),
+    "Lone'er Kavanagh": hag_seed_ufc_profile("Flyweight", "Explosive striking prospect", 84, 72, 70, 62, 78, 80, 84, 90, 76, 58, 55, 10, 35, 88, 58),
+    "Khalil Rountree": hag_seed_ufc_profile("Light Heavyweight", "Explosive Muay Thai / knockout power", 88, 66, 64, 55, 82, 78, 94, 80, 78, 86, 70, 0, 30, 76, 90),
+    "Magomed Ankalaev": hag_seed_ufc_profile("Light Heavyweight", "Elite kickboxing-wrestling / championship profile", 90, 86, 88, 70, 90, 88, 88, 84, 90, 92, 50, 0, 50, 88, 96),
+    "Gillian Robertson": hag_seed_ufc_profile("Women Strawweight", "Submission grappler / control specialist", 72, 86, 80, 90, 80, 84, 66, 76, 82, 84, 10, 60, 30, 78, 82),
+    "Mackenzie Dern": hag_seed_ufc_profile("Women Strawweight", "Elite jiu-jitsu / submission threat", 74, 90, 80, 96, 82, 82, 72, 76, 84, 88, 10, 65, 25, 82, 88),
+    "Ian Garry": hag_seed_ufc_profile("Welterweight", "Long-range technical striker / undefeated-style contender profile", 88, 76, 74, 66, 86, 86, 80, 86, 88, 84, 45, 5, 50, 84, 88),
+})
+
+
 def hag_apply_upcoming_ufc_profiles():
     for name, data in UFC_UPCOMING_FIGHTER_PROFILES.items():
         if name not in UFC_FIGHTERS:
@@ -1596,12 +1652,18 @@ def hag_apply_upcoming_ufc_profiles():
 hag_apply_upcoming_ufc_profiles()
 
 UFC_SAMPLE_CARD = [
-    ("Manel Kape", "Kyoji Horiguchi"),
-    ("Ion Cutelaba", "Navajo Stirling"),
-    ("Vinicius Oliveira", "Andre Fili"),
-    ("Hyder Amil", "Christian Rodriguez"),
-    ("Melsik Baghdasaryan", "Murtazali Magomedov"),
+    ("Otari Tanzilovi", "Shane Collins"),
+    ("Leon Shahbazyan", "Levan Chokheli"),
+    ("Karol Rosa", "Luana Santos"),
+    ("Gaston Bolanos", "Michael Aswell"),
+    ("Allan Nascimento", "Mitch Raposo"),
+    ("Beatriz Mesquita", "Melissa Mullins"),
     ("Andre Lima", "Kevin Borjas"),
+    ("Melsik Baghdasaryan", "Murtazali Magomedov"),
+    ("Christian Rodriguez", "Hyder Amil"),
+    ("Andre Fili", "Vinicius Oliveira"),
+    ("Ion Cutelaba", "Navajo Stirling"),
+    ("Kyoji Horiguchi", "Manel Kape"),
 ]
 
 UFC_UPCOMING_SAMPLE_CARDS = {
@@ -1614,6 +1676,19 @@ UFC_UPCOMING_SAMPLE_CARDS = {
         "fights": [
             ("Rafael Fiziev", "Manuel Torres"),
             ("Shara Magomedov", "Michel Pereira"),
+        ],
+    },
+    "UFC Live Odds Future Watchlist": {
+        "date": "2026-07-11",
+        "fights": [
+            ("Elisha Ellison", "Gable Steveson"),
+            ("Cory Sandhagen", "Mario Bautista"),
+            ("Benoit Saint-Denis", "Paddy Pimblett"),
+            ("Conor McGregor", "Max Holloway"),
+            ("Brandon Royval", "Lone'er Kavanagh"),
+            ("Khalil Rountree", "Magomed Ankalaev"),
+            ("Gillian Robertson", "Mackenzie Dern"),
+            ("Ian Garry", "Islam Makhachev"),
         ],
     },
 }
@@ -3648,7 +3723,7 @@ def hag_ufc_accuracy_summary(df):
 def hag_render_ufc_prediction_log():
     st.title("📒 UFC Prediction Log & Vegas Tracking")
     st.caption("Track UFC model picks against market/ Vegas moneyline picks, grade fight results, and build an accuracy record like the MLB dashboard.")
-    st.info("Active build: UFC VEGAS BOARD v2.1")
+    st.info("Active build: UFC VEGAS BOARD v2.3 - full live odds fighter coverage")
 
     df = hag_ufc_read_log()
     summary = hag_ufc_accuracy_summary(df)
