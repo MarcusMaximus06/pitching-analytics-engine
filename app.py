@@ -1,4 +1,5 @@
-# HAG LABS VERIFIED BUILD: UFC VEGAS BOARD v2.4 - closing line snapshot and official pick tracking
+# HAG LABS VERIFIED BUILD: NFL VEGAS BOARD v1.0 + UFC VEGAS BOARD v2.4.1
+# Active build: NFL VEGAS BOARD v1.0 - live odds board + prediction log + closing line tracker
 import plotly.graph_objects as go
 import streamlit as st
 import pandas as pd
@@ -8559,6 +8560,7 @@ elif sport == "🏈 NFL Football":
             default_slots=15,
             benchmark_default=2350
         )
+        st.stop()
 
     elif nfl_page == "🏆 NFL Fantasy Predictor":
 
@@ -9669,325 +9671,874 @@ elif sport == "🏈 NFL Football":
                 "*Fuses structural base Elo ratings with weighted Pass/Rush Expected Points Added (EPA) per play. Includes situational edges.*"
             )
     
-    def log_nfl_to_sheets(row_data):
+
+    # ==========================================================
+    # NFL VEGAS BOARD + PREDICTION LOGGING V1.0
+    # ==========================================================
+    NFL_BUILD_LABEL = "NFL VEGAS BOARD v1.0 - live odds board + prediction log + closing line tracker"
+
+    NFL_TEAM_RATINGS = {
+        "Arizona Cardinals": {"abbr": "ARI", "elo": 1480, "off": 47, "def": 45, "qb": 48, "form": 47},
+        "Atlanta Falcons": {"abbr": "ATL", "elo": 1495, "off": 49, "def": 47, "qb": 49, "form": 48},
+        "Baltimore Ravens": {"abbr": "BAL", "elo": 1655, "off": 64, "def": 60, "qb": 65, "form": 61},
+        "Buffalo Bills": {"abbr": "BUF", "elo": 1645, "off": 63, "def": 57, "qb": 66, "form": 60},
+        "Carolina Panthers": {"abbr": "CAR", "elo": 1395, "off": 41, "def": 42, "qb": 43, "form": 42},
+        "Chicago Bears": {"abbr": "CHI", "elo": 1505, "off": 50, "def": 48, "qb": 51, "form": 49},
+        "Cincinnati Bengals": {"abbr": "CIN", "elo": 1575, "off": 60, "def": 47, "qb": 64, "form": 54},
+        "Cleveland Browns": {"abbr": "CLE", "elo": 1495, "off": 43, "def": 59, "qb": 42, "form": 48},
+        "Dallas Cowboys": {"abbr": "DAL", "elo": 1585, "off": 58, "def": 55, "qb": 58, "form": 55},
+        "Denver Broncos": {"abbr": "DEN", "elo": 1540, "off": 51, "def": 56, "qb": 52, "form": 53},
+        "Detroit Lions": {"abbr": "DET", "elo": 1640, "off": 65, "def": 54, "qb": 60, "form": 61},
+        "Green Bay Packers": {"abbr": "GB", "elo": 1590, "off": 58, "def": 52, "qb": 58, "form": 56},
+        "Houston Texans": {"abbr": "HOU", "elo": 1580, "off": 57, "def": 52, "qb": 59, "form": 55},
+        "Indianapolis Colts": {"abbr": "IND", "elo": 1495, "off": 50, "def": 47, "qb": 49, "form": 49},
+        "Jacksonville Jaguars": {"abbr": "JAX", "elo": 1485, "off": 50, "def": 46, "qb": 51, "form": 48},
+        "Kansas City Chiefs": {"abbr": "KC", "elo": 1685, "off": 63, "def": 58, "qb": 70, "form": 63},
+        "Las Vegas Raiders": {"abbr": "LV", "elo": 1455, "off": 45, "def": 45, "qb": 44, "form": 45},
+        "Los Angeles Chargers": {"abbr": "LAC", "elo": 1585, "off": 56, "def": 55, "qb": 60, "form": 56},
+        "Los Angeles Rams": {"abbr": "LAR", "elo": 1570, "off": 57, "def": 50, "qb": 57, "form": 54},
+        "Miami Dolphins": {"abbr": "MIA", "elo": 1555, "off": 59, "def": 47, "qb": 57, "form": 53},
+        "Minnesota Vikings": {"abbr": "MIN", "elo": 1565, "off": 54, "def": 55, "qb": 53, "form": 55},
+        "New England Patriots": {"abbr": "NE", "elo": 1425, "off": 41, "def": 47, "qb": 43, "form": 43},
+        "New Orleans Saints": {"abbr": "NO", "elo": 1450, "off": 43, "def": 46, "qb": 43, "form": 44},
+        "New York Giants": {"abbr": "NYG", "elo": 1405, "off": 40, "def": 44, "qb": 40, "form": 41},
+        "New York Jets": {"abbr": "NYJ", "elo": 1455, "off": 42, "def": 55, "qb": 42, "form": 46},
+        "Philadelphia Eagles": {"abbr": "PHI", "elo": 1635, "off": 62, "def": 56, "qb": 61, "form": 60},
+        "Pittsburgh Steelers": {"abbr": "PIT", "elo": 1545, "off": 49, "def": 58, "qb": 48, "form": 53},
+        "San Francisco 49ers": {"abbr": "SF", "elo": 1625, "off": 62, "def": 57, "qb": 58, "form": 59},
+        "Seattle Seahawks": {"abbr": "SEA", "elo": 1530, "off": 52, "def": 50, "qb": 52, "form": 51},
+        "Tampa Bay Buccaneers": {"abbr": "TB", "elo": 1560, "off": 55, "def": 50, "qb": 55, "form": 53},
+        "Tennessee Titans": {"abbr": "TEN", "elo": 1415, "off": 40, "def": 43, "qb": 41, "form": 41},
+        "Washington Commanders": {"abbr": "WAS", "elo": 1600, "off": 60, "def": 49, "qb": 61, "form": 57},
+    }
+
+    NFL_LOG_COLUMNS = [
+        "Log ID", "Date", "Start Time", "Away Team", "Home Team",
+        "Away ML", "Home ML", "Vegas Away %", "Vegas Home %",
+        "Spread", "Total",
+        "Model Away %", "Model Home %", "Model Pick", "Vegas Pick",
+        "Model Edge %", "Confidence", "Official Pick",
+        "Status", "Odds Source", "Opening Snapshot Time",
+        "Closing Away ML", "Closing Home ML", "Closing Vegas Away %",
+        "Closing Vegas Home %", "Closing Vegas Pick", "Closing Model Edge %",
+        "Line Movement", "Market Move Note", "Closing Snapshot Time",
+        "Actual Winner", "Model Result", "Early Vegas Result", "Closing Vegas Result"
+    ]
+
+    def hag_nfl_now_label():
         try:
-            gc = get_google_client()
-            sh = gc.open("NFL Prediction Model")
+            return datetime.now().strftime("%Y-%m-%d %I:%M %p")
+        except Exception:
+            return ""
+
+    def hag_nfl_name_key(name):
+        return re.sub(r"[^a-z0-9]", "", str(name or "").lower())
+
+    def hag_nfl_pair_key(away, home, date_str=""):
+        return f"{str(date_str or '').strip()}|{hag_nfl_name_key(away)}|{hag_nfl_name_key(home)}"
+
+    def hag_nfl_log_id(date_str, away, home):
+        return hag_nfl_pair_key(away, home, date_str)
+
+    def hag_nfl_safe_float(value, default=None):
+        try:
+            if value in [None, "", "None", "nan"]:
+                return default
+            cleaned = str(value).replace("%", "").replace("+", "").strip()
+            return float(cleaned)
+        except Exception:
+            return default
+
+    def hag_nfl_american_to_implied(ml):
+        try:
+            ml = float(ml)
+        except Exception:
+            return None
+        if ml == 0:
+            return None
+        if ml < 0:
+            return abs(ml) / (abs(ml) + 100) * 100
+        return 100 / (ml + 100) * 100
+
+    def hag_nfl_no_vig_probs(a_ml, h_ml):
+        a = hag_nfl_american_to_implied(a_ml)
+        h = hag_nfl_american_to_implied(h_ml)
+        if a is None or h is None or (a + h) <= 0:
+            return None, None
+        total = a + h
+        return round((a / total) * 100, 1), round((h / total) * 100, 1)
+
+    def hag_nfl_format_percent(value):
+        try:
+            return f"{float(value):.1f}"
+        except Exception:
+            return ""
+
+    def hag_nfl_avg(values, default=""):
+        vals = []
+        for v in values or []:
             try:
-                worksheet = sh.worksheet("NFL Log")
-            except gspread.exceptions.WorksheetNotFound:
-                worksheet = sh.add_worksheet(title="NFL Log", rows="1000", cols="10")
-                
-            values = worksheet.get_all_values()
-            if not values or len(values) == 0:
-                worksheet.append_row(["Date", "Away Team", "Home Team", "Away Odds", "Home Odds", "Model Away %", "Model Home %", "Predicted Winner", "Result"])
-                values = [["Date", "Away Team", "Home Team"]]
-                
-            target_date = row_data[0]
-            target_away = row_data[1]
-            target_home = row_data[2]
-            
-            for row in values[1:]:
-                if len(row) >= 3 and row[0] == target_date and row[1] == target_away and row[2] == target_home:
-                    return "DUPLICATE"
-                    
-            worksheet.append_row(row_data)
-            return "SUCCESS"
-        except Exception as e:
-            return "ERROR"
+                vals.append(float(v))
+            except Exception:
+                continue
+        if not vals:
+            return default
+        avg = sum(vals) / len(vals)
+        if abs(avg - round(avg)) < 0.05:
+            return int(round(avg))
+        return round(avg, 1)
 
-    def get_nfl_log_stats():
-        try:
-            worksheet = get_google_worksheet("NFL Prediction Model", "NFL Log")
-            data = worksheet.get_all_values()
-            if len(data) <= 1: return 0, 0.0, 0.0
-            total_games, model_wins, vegas_wins = 0, 0, 0
-            for row in data[1:]:
-                if len(row) >= 9:
-                    result, model_pick = row[8].strip().upper(), row[7].strip()
-                    try: away_ml = int(row[3])
-                    except: away_ml = 0
-                    try: home_ml = int(row[4])
-                    except: home_ml = 0
-                    
-                    away_t, home_t = row[1], row[2]
-                    vegas_pick = away_t if away_ml < home_ml else home_t
-                    
-                    if result in ["WIN", "LOSS"]:
-                        total_games += 1
-                        if result == "WIN": model_wins += 1
-                        actual_winner = model_pick if result == "WIN" else (away_t if model_pick == home_t else home_t)
-                        if actual_winner == vegas_pick: vegas_wins += 1
-            
-            mod_acc = (model_wins / total_games * 100) if total_games > 0 else 0.0
-            veg_acc = (vegas_wins / total_games * 100) if total_games > 0 else 0.0
-            return total_games, mod_acc, veg_acc
-        except Exception: return 0, 0.0, 0.0
+    def hag_nfl_known_team(team_name):
+        if team_name in NFL_TEAM_RATINGS:
+            return team_name
+        key = hag_nfl_name_key(team_name)
+        for name in NFL_TEAM_RATINGS.keys():
+            if hag_nfl_name_key(name) == key:
+                return name
+        # Handle common Odds API/ESPN naming wrinkles.
+        aliases = {
+            "washingtonfootballteam": "Washington Commanders",
+            "la chargers": "Los Angeles Chargers",
+            "la rams": "Los Angeles Rams",
+            "arizona": "Arizona Cardinals",
+            "atlanta": "Atlanta Falcons",
+            "baltimore": "Baltimore Ravens",
+            "buffalo": "Buffalo Bills",
+            "carolina": "Carolina Panthers",
+            "chicago": "Chicago Bears",
+            "cincinnati": "Cincinnati Bengals",
+            "cleveland": "Cleveland Browns",
+            "dallas": "Dallas Cowboys",
+            "denver": "Denver Broncos",
+            "detroit": "Detroit Lions",
+            "greenbay": "Green Bay Packers",
+            "houston": "Houston Texans",
+            "indianapolis": "Indianapolis Colts",
+            "jacksonville": "Jacksonville Jaguars",
+            "kansas city": "Kansas City Chiefs",
+            "las vegas": "Las Vegas Raiders",
+            "miami": "Miami Dolphins",
+            "minnesota": "Minnesota Vikings",
+            "new england": "New England Patriots",
+            "new orleans": "New Orleans Saints",
+            "new york giants": "New York Giants",
+            "new york jets": "New York Jets",
+            "philadelphia": "Philadelphia Eagles",
+            "pittsburgh": "Pittsburgh Steelers",
+            "san francisco": "San Francisco 49ers",
+            "seattle": "Seattle Seahawks",
+            "tampa bay": "Tampa Bay Buccaneers",
+            "tennessee": "Tennessee Titans",
+            "washington": "Washington Commanders",
+        }
+        low = str(team_name or "").lower().strip()
+        if low in aliases:
+            return aliases[low]
+        for alias, true_name in aliases.items():
+            if alias in low:
+                return true_name
+        return team_name
 
-    def auto_grade_nfl_pending_bets():
+    def hag_nfl_model_quality(away_team, home_team):
+        known = int(away_team in NFL_TEAM_RATINGS) + int(home_team in NFL_TEAM_RATINGS)
+        if known == 2:
+            return 75
+        if known == 1:
+            return 50
+        return 35
+
+    def hag_nfl_predict_game(away_team, home_team):
+        away_team = hag_nfl_known_team(away_team)
+        home_team = hag_nfl_known_team(home_team)
+
+        away = NFL_TEAM_RATINGS.get(away_team, {"elo": 1500, "off": 50, "def": 50, "qb": 50, "form": 50, "abbr": "AWY"})
+        home = NFL_TEAM_RATINGS.get(home_team, {"elo": 1500, "off": 50, "def": 50, "qb": 50, "form": 50, "abbr": "HME"})
+
+        # Starter model: power rating + offense/defense interaction + QB/form + home-field advantage.
+        # This is intentionally conservative until we build a real NFL game history.
+        away_matchup = (
+            float(away.get("elo", 1500))
+            + (float(away.get("off", 50)) - float(home.get("def", 50))) * 3.0
+            + (float(away.get("qb", 50)) - 50) * 1.8
+            + (float(away.get("form", 50)) - 50) * 1.2
+        )
+        home_matchup = (
+            float(home.get("elo", 1500))
+            + 42
+            + (float(home.get("off", 50)) - float(away.get("def", 50))) * 3.0
+            + (float(home.get("qb", 50)) - 50) * 1.8
+            + (float(home.get("form", 50)) - 50) * 1.2
+        )
+
+        away_prob = 1 / (1 + 10 ** ((home_matchup - away_matchup) / 400))
+        home_prob = 1.0 - away_prob
+
+        return {
+            "away_team": away_team,
+            "home_team": home_team,
+            "away_abbr": away.get("abbr", "AWY"),
+            "home_abbr": home.get("abbr", "HME"),
+            "away_power": round(away_matchup, 1),
+            "home_power": round(home_matchup, 1),
+            "away_prob": round(away_prob * 100, 1),
+            "home_prob": round(home_prob * 100, 1),
+            "model_quality": hag_nfl_model_quality(away_team, home_team)
+        }
+
+    def hag_nfl_market_pick(away_ml, home_ml, away_team, home_team):
+        away_prob, home_prob = hag_nfl_no_vig_probs(away_ml, home_ml)
+        if away_prob is None or home_prob is None:
+            return "", "", ""
+        pick = away_team if away_prob >= home_prob else home_team
+        return pick, away_prob, home_prob
+
+    def hag_nfl_confidence(model_prob, vegas_prob, model_quality):
+        edge = abs(float(model_prob or 0) - float(vegas_prob or 0))
         try:
-            worksheet = get_google_worksheet("NFL Prediction Model", "NFL Log")
-            data = worksheet.get_all_values()
-            
-            pending_rows = [(i, row) for i, row in enumerate(data) if i > 0 and len(row) >= 9 and row[8] == "PENDING"]
-            if not pending_rows: return 0
-            
-            pending_dates = list(set([row[0] for i, row in pending_rows]))
-            score_dict = {}
-            
-            for d_str in pending_dates:
-                dt = datetime.strptime(d_str, "%Y-%m-%d")
-                espn_date = dt.strftime("%Y%m%d")
-                
-                url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates={espn_date}"
-                try:
-                    resp = requests.get(url, timeout=10).json()
-                    if 'events' in resp:
-                        for event in resp['events']:
-                            if event['status']['type']['state'] == 'post':
-                                comp = event['competitions'][0]
-                                team1 = comp['competitors'][0]
-                                team2 = comp['competitors'][1]
-                                
-                                t1_name = team1['team']['displayName']
-                                t2_name = team2['team']['displayName']
-                                
-                                t1_score = int(team1.get('score', 0))
-                                t2_score = int(team2.get('score', 0))
-                                
-                                winner = t1_name if t1_score > t2_score else t2_name
-                                score_dict[f"{d_str}_{t1_name}"] = winner
-                                score_dict[f"{d_str}_{t2_name}"] = winner
-                except Exception: continue
-                
-            updates = 0
-            for i, row in pending_rows:
-                d_str, away_t, model_pick = row[0], row[1], row[7]
-                match_key = next((k for k in score_dict.keys() if d_str in k and (away_t in k or k.split('_')[1] in away_t)), None)
-                
-                if match_key:
-                    actual_winner = score_dict[match_key]
-                    new_status = "WIN" if (model_pick in actual_winner or actual_winner in model_pick) else "LOSS"
-                    worksheet.update_cell(i + 1, 9, new_status)
-                    updates += 1
-            return updates
-        except Exception as e:
-            st.error(f"NFL Auto-Grader Error: {e}")
-            return -1
+            mq = float(model_quality or 0)
+        except Exception:
+            mq = 0
+        if edge >= 6.0 and mq >= 65:
+            return "High"
+        if edge >= 3.0 and mq >= 50:
+            return "Medium"
+        return "Tracking"
+
+    def hag_nfl_official_confidence(confidence):
+        return str(confidence or "").strip() in ["High", "Medium"]
+
+    def hag_nfl_line_move_note(model_pick, early_vegas_pick, closing_vegas_pick):
+        model_pick = str(model_pick or "")
+        early_vegas_pick = str(early_vegas_pick or "")
+        closing_vegas_pick = str(closing_vegas_pick or "")
+        if not closing_vegas_pick:
+            return ""
+        if early_vegas_pick != model_pick and closing_vegas_pick == model_pick:
+            return "Market moved toward Hag Labs"
+        if early_vegas_pick == model_pick and closing_vegas_pick != model_pick:
+            return "Market moved away from Hag Labs"
+        if closing_vegas_pick == model_pick:
+            return "Market stayed with Hag Labs"
+        return "Market stayed against Hag Labs"
+
+    def hag_nfl_datetime_from_api(commence_time):
+        try:
+            dt = pd.to_datetime(commence_time, utc=True)
+            et = dt.tz_convert("America/New_York")
+            return et.strftime("%Y-%m-%d"), et.strftime("%I:%M %p ET").lstrip("0")
+        except Exception:
+            return "", ""
 
     @st.cache_data(ttl=CACHE_TTL_ODDS)
-    def get_nfl_live_odds():
-        api_key = os.environ.get('ODDS_API_KEY')
-        if not api_key: return {}
-        url = f'https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/?apiKey={api_key}&regions=us&markets=h2h&oddsFormat=american&bookmakers=draftkings,fanduel'
-        try:
-            response = requests.get(url, timeout=15).json()
-            odds_dict = {}
-            for game in response:
-                if 'bookmakers' in game and len(game['bookmakers']) > 0:
-                    outcomes = game['bookmakers'][0]['markets'][0]['outcomes']
-                    away = game['away_team']
-                    home = game['home_team']
-                    away_ml = next((o['price'] for o in outcomes if o['name'] == away), 100)
-                    home_ml = next((o['price'] for o in outcomes if o['name'] == home), -110)
-                    odds_dict[f"{away} @ {home}"] = [away_ml, home_ml]
-            return odds_dict
-        except Exception: return {}
+    def hag_nfl_fetch_live_odds_board():
+        api_key = os.environ.get("ODDS_API_KEY")
+        if not api_key:
+            return pd.DataFrame(), {"ok": False, "message": "ODDS_API_KEY is not set on this machine.", "raw": ""}
 
-    @st.cache_data(ttl=CACHE_TTL_DAILY) 
-    def generate_baseline_power_matrix():
-        base_elo = {
-            'ARI': 1480, 'ATL': 1495, 'BAL': 1650, 'BUF': 1640, 'CAR': 1350, 'CHI': 1490, 'CIN': 1560, 'CLE': 1540,
-            'DAL': 1600, 'DEN': 1460, 'DET': 1620, 'GB':  1580, 'HOU': 1570, 'IND': 1510, 'JAX': 1500, 'KC':  1680,
-            'LV':  1470, 'LAC': 1520, 'LAR': 1550, 'MIA': 1590, 'MIN': 1510, 'NE':  1420, 'NO':  1500, 'NYG': 1430,
-            'NYJ': 1510, 'PHI': 1610, 'PIT': 1550, 'SF':  1660, 'SEA': 1520, 'TB':  1540, 'TEN': 1450, 'WAS': 1440
-        }
-        
-        power_matrix = {}
-        teams = nfl.import_team_desc()
-        
-        try:
-            now = datetime.now()
-            target_year = now.year if now.month >= 9 else now.year - 1
-            
-            cols_needed = ['posteam', 'defteam', 'epa', 'season_type', 'play_type']
-            pbp = nfl.import_pbp_data([target_year], columns=cols_needed)
-            
-            pbp_pass = pbp[(pbp['season_type'] == 'REG') & (pbp['play_type'] == 'pass')]
-            pbp_rush = pbp[(pbp['season_type'] == 'REG') & (pbp['play_type'] == 'run')]
-            
-            off_pass_epa = pbp_pass.groupby('posteam')['epa'].mean().to_dict()
-            def_pass_epa = pbp_pass.groupby('defteam')['epa'].mean().to_dict()
-            off_rush_epa = pbp_rush.groupby('posteam')['epa'].mean().to_dict()
-            def_rush_epa = pbp_rush.groupby('defteam')['epa'].mean().to_dict()
+        url = (
+            "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/"
+            f"?apiKey={api_key}&regions=us&markets=h2h,spreads,totals"
+            "&oddsFormat=american&bookmakers=draftkings,fanduel,betmgm,caesars,espnbet,betrivers"
+        )
 
-            for index, row in teams.iterrows():
-                abbr = row['team_abbr']
-                if abbr in base_elo:
-                    power_matrix[abbr] = {
-                        'Elo': base_elo[abbr],
-                        'Off_Pass_EPA': round(off_pass_epa.get(abbr, 0.0), 3),
-                        'Def_Pass_EPA': round(def_pass_epa.get(abbr, 0.0), 3),
-                        'Off_Rush_EPA': round(off_rush_epa.get(abbr, 0.0), 3),
-                        'Def_Rush_EPA': round(def_rush_epa.get(abbr, 0.0), 3),
-                        'Name': row['team_name']
-                    }
+        try:
+            response = requests.get(url, timeout=20)
+            if response.status_code != 200:
+                return pd.DataFrame(), {"ok": False, "message": f"The Odds API returned HTTP {response.status_code}.", "raw": response.text[:500]}
+            games = response.json()
         except Exception as e:
-            for index, row in teams.iterrows():
-                abbr = row['team_abbr']
-                if abbr in base_elo:
-                    power_matrix[abbr] = {
-                        'Elo': base_elo[abbr], 'Off_Pass_EPA': 0.0, 'Def_Pass_EPA': 0.0, 'Off_Rush_EPA': 0.0, 'Def_Rush_EPA': 0.0, 'Name': row['team_name']
-                    }
-                    
-        return power_matrix
+            return pd.DataFrame(), {"ok": False, "message": f"Could not load NFL odds: {e}", "raw": ""}
 
-    st.markdown("### 📊 Live Model Log & Automation")
-    tot_games, mod_acc, veg_acc = get_nfl_log_stats()
-    col1, col2, col3, col4 = st.columns([2, 2, 2, 3])
-    with col1: st.metric(label="Total Graded Games", value=tot_games)
-    with col2: st.metric(label="Model Accuracy", value=f"{mod_acc:.1f}%")
-    with col3: st.metric(label="Vegas Accuracy", value=f"{veg_acc:.1f}%")
-    with col4: 
-        st.write("")
-        if st.button("🔄 Auto-Grade Completed Games"):
-            with st.spinner("Pinging ESPN NFL Scoreboard..."):
-                updates = auto_grade_nfl_pending_bets()
-                if updates > 0: st.success(f"✅ Successfully graded {updates} games! Refresh.")
-                elif updates == 0: st.info("No games ready to be graded.")
-    st.markdown("---")
+        rows = []
+        for game in games:
+            away_raw = game.get("away_team", "")
+            home_raw = game.get("home_team", "")
+            away = hag_nfl_known_team(away_raw)
+            home = hag_nfl_known_team(home_raw)
+            date_str, start_time = hag_nfl_datetime_from_api(game.get("commence_time"))
 
-    power_matrix = generate_baseline_power_matrix()
-    full_team_names = [data['Name'] for abbr, data in power_matrix.items()]
-    name_to_abbr = {data['Name']: abbr for abbr, data in power_matrix.items()}
+            away_prices = []
+            home_prices = []
+            away_spreads = []
+            home_spreads = []
+            totals = []
 
-    with st.spinner('Syncing active Odds API lines...'):
-        live_odds = get_nfl_live_odds()
-        
-        st.subheader("⚡ Automated Weekly Slate Runner")
-        st.caption("Pulls every active NFL matchup currently on the board, simulates win probabilities using base engine calibrations, and logs actionable edges.")
-        
-        if st.button("▶ Auto-Run & Log Active NFL Slate"):
-            with st.spinner("Processing live odds against Split-EPA matrix..."):
-                slate_logs = []
-                new_logs_count = 0
-                date_str = get_local_date_str()
-                
-                for game_key, odds in live_odds.items():
-                    try:
-                        away_team_name, home_team_name = game_key.split(" @ ")
-                        a_ml, h_ml = odds
-                        
-                        if away_team_name in name_to_abbr and home_team_name in name_to_abbr:
-                            away_abbr = name_to_abbr[away_team_name]
-                            home_abbr = name_to_abbr[home_team_name]
-                            
-                            a_off_pass, a_def_pass = power_matrix[away_abbr]['Off_Pass_EPA'], power_matrix[away_abbr]['Def_Pass_EPA']
-                            a_off_rush, a_def_rush = power_matrix[away_abbr]['Off_Rush_EPA'], power_matrix[away_abbr]['Def_Rush_EPA']
-                            h_off_pass, h_def_pass = power_matrix[home_abbr]['Off_Pass_EPA'], power_matrix[home_abbr]['Def_Pass_EPA']
-                            h_off_rush, h_def_rush = power_matrix[home_abbr]['Off_Rush_EPA'], power_matrix[home_abbr]['Def_Rush_EPA']
+            for book in game.get("bookmakers", []) or []:
+                for market in book.get("markets", []) or []:
+                    key = market.get("key", "")
+                    outcomes = market.get("outcomes", []) or []
 
-                            away_pass_edge = a_off_pass - h_def_pass
-                            away_rush_edge = a_off_rush - h_def_rush
-                            home_pass_edge = h_off_pass - a_def_pass
-                            home_rush_edge = h_off_rush - a_def_rush
+                    if key == "h2h":
+                        for out in outcomes:
+                            name = hag_nfl_known_team(out.get("name", ""))
+                            if name == away:
+                                away_prices.append(out.get("price"))
+                            elif name == home:
+                                home_prices.append(out.get("price"))
 
-                            away_net_epa = (0.65 * away_pass_edge) + (0.35 * away_rush_edge)
-                            home_net_epa = (0.65 * home_pass_edge) + (0.35 * home_rush_edge)
-                            
-                            away_elo = power_matrix[away_abbr]['Elo']
-                            home_elo = power_matrix[home_abbr]['Elo']
-                            hfa = 45 
-                            
-                            adj_power_away = away_elo + (away_net_epa * 400)
-                            adj_power_home = home_elo + hfa + (home_net_epa * 400)
-                            
-                            prob_away = 1 / (1 + 10 ** ((adj_power_home - adj_power_away) / 400))
-                            prob_home = 1.0 - prob_away
-                            
-                            v_prob_a = calculate_implied_prob(a_ml)
-                            v_prob_h = calculate_implied_prob(h_ml)
-                            
-                            action_taken = "No Edge"
-                            if prob_away > v_prob_a + 0.03: action_taken = away_team_name
-                            if prob_home > v_prob_h + 0.03: action_taken = home_team_name
+                    elif key == "spreads":
+                        for out in outcomes:
+                            name = hag_nfl_known_team(out.get("name", ""))
+                            if name == away:
+                                away_spreads.append(out.get("point"))
+                            elif name == home:
+                                home_spreads.append(out.get("point"))
 
-                            confidence_tier = "Low"
+                    elif key == "totals":
+                        for out in outcomes:
+                            if str(out.get("name", "")).lower() == "over":
+                                totals.append(out.get("point"))
 
-                            if action_taken == away_t:
-                                confidence_tier = get_confidence_tier(model_away_prob, v_a_prob)
-                            
-                            elif action_taken == home_t:
-                                confidence_tier = get_confidence_tier(model_home_prob, v_h_prob)
-                        
-                            
-                            if action_taken != "No Edge":
-                                row_data = [date_str, away_team_name, home_team_name, a_ml, h_ml, f"{prob_away:.1%}", f"{prob_home:.1%}", action_taken, "PENDING"]
-                                log_status = log_nfl_to_sheets(row_data)
-                                if log_status in ["SUCCESS", "DUPLICATE"]:
-                                    slate_logs.append(row_data)
-                                    if log_status == "SUCCESS":
-                                        new_logs_count += 1
-                    except Exception as e:
+            if not away_prices or not home_prices:
+                continue
+
+            away_ml = hag_nfl_avg(away_prices)
+            home_ml = hag_nfl_avg(home_prices)
+            vegas_pick, vegas_away, vegas_home = hag_nfl_market_pick(away_ml, home_ml, away, home)
+            pred = hag_nfl_predict_game(away, home)
+
+            model_pick = away if pred["away_prob"] >= pred["home_prob"] else home
+            model_pick_prob = pred["away_prob"] if model_pick == away else pred["home_prob"]
+            vegas_pick_prob = vegas_away if model_pick == away else vegas_home
+            model_edge = round(float(model_pick_prob) - float(vegas_pick_prob), 1) if vegas_pick_prob not in [None, ""] else 0.0
+            confidence = hag_nfl_confidence(model_pick_prob, vegas_pick_prob or 0, pred["model_quality"])
+
+            rows.append({
+                "Date": date_str,
+                "Start Time": start_time,
+                "Away Team": away,
+                "Home Team": home,
+                "Away ML": str(away_ml),
+                "Home ML": str(home_ml),
+                "Vegas Away %": hag_nfl_format_percent(vegas_away),
+                "Vegas Home %": hag_nfl_format_percent(vegas_home),
+                "Spread": hag_nfl_avg(home_spreads, ""),
+                "Total": hag_nfl_avg(totals, ""),
+                "Model Away %": hag_nfl_format_percent(pred["away_prob"]),
+                "Model Home %": hag_nfl_format_percent(pred["home_prob"]),
+                "Model Pick": model_pick,
+                "Vegas Pick": vegas_pick,
+                "Model Edge %": f"{model_edge:+.1f}",
+                "Confidence": confidence,
+                "Official Pick": "TRUE" if hag_nfl_official_confidence(confidence) else "FALSE",
+                "Away Power": pred["away_power"],
+                "Home Power": pred["home_power"],
+                "Model Quality": pred["model_quality"],
+                "Odds Source": "The Odds API avg US books",
+                "Event ID": game.get("id", ""),
+            })
+
+        df = pd.DataFrame(rows)
+        if not df.empty:
+            df = df.sort_values(["Date", "Start Time", "Away Team"]).reset_index(drop=True)
+        return df, {"ok": True, "message": f"Loaded {len(df)} NFL moneyline games.", "raw": ""}
+
+    def hag_nfl_get_log_worksheet():
+        gc = get_google_client()
+        sh = gc.open("NFL Prediction Model")
+        try:
+            worksheet = sh.worksheet("NFL Log V2")
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = sh.add_worksheet(title="NFL Log V2", rows="3000", cols=str(len(NFL_LOG_COLUMNS) + 5))
+            worksheet.append_row(NFL_LOG_COLUMNS)
+
+        values = worksheet.get_all_values()
+        if not values:
+            worksheet.append_row(NFL_LOG_COLUMNS)
+        else:
+            header = values[0]
+            missing_cols = [c for c in NFL_LOG_COLUMNS if c not in header]
+            if missing_cols:
+                worksheet.resize(rows=max(len(values), 1), cols=len(header) + len(missing_cols))
+                worksheet.update("A1", [header + missing_cols])
+        return worksheet
+
+    def hag_nfl_read_log():
+        try:
+            worksheet = hag_nfl_get_log_worksheet()
+            values = worksheet.get_all_values()
+            if len(values) <= 1:
+                return pd.DataFrame(columns=NFL_LOG_COLUMNS)
+            header = values[0]
+            rows = values[1:]
+            df = pd.DataFrame(rows, columns=header[:len(rows[0])] if rows and len(header) > len(rows[0]) else header)
+            for col in NFL_LOG_COLUMNS:
+                if col not in df.columns:
+                    df[col] = ""
+            return df[NFL_LOG_COLUMNS]
+        except Exception:
+            return pd.DataFrame(columns=NFL_LOG_COLUMNS)
+
+    def hag_nfl_write_log_df(df):
+        worksheet = hag_nfl_get_log_worksheet()
+        out = df.copy()
+        for col in NFL_LOG_COLUMNS:
+            if col not in out.columns:
+                out[col] = ""
+        out = out[NFL_LOG_COLUMNS].fillna("").astype(str)
+        worksheet.clear()
+        worksheet.append_row(NFL_LOG_COLUMNS)
+        if not out.empty:
+            worksheet.append_rows(out.values.tolist(), value_input_option="USER_ENTERED")
+
+    def hag_nfl_log_board_to_sheet(board_df):
+        if board_df is None or board_df.empty:
+            return {"success": 0, "duplicate": 0, "error": 0, "message": "No NFL board rows to log."}
+
+        try:
+            df = hag_nfl_read_log()
+            existing_keys = set()
+            if not df.empty:
+                for _, r in df.iterrows():
+                    existing_keys.add(hag_nfl_log_id(r.get("Date", ""), r.get("Away Team", ""), r.get("Home Team", "")))
+
+            rows_to_add = []
+            duplicates = 0
+            now_label = hag_nfl_now_label()
+
+            for _, r in board_df.iterrows():
+                key = hag_nfl_log_id(r.get("Date", ""), r.get("Away Team", ""), r.get("Home Team", ""))
+                if key in existing_keys:
+                    duplicates += 1
+                    continue
+
+                rows_to_add.append({
+                    "Log ID": key,
+                    "Date": str(r.get("Date", "")),
+                    "Start Time": str(r.get("Start Time", "")),
+                    "Away Team": str(r.get("Away Team", "")),
+                    "Home Team": str(r.get("Home Team", "")),
+                    "Away ML": str(r.get("Away ML", "")),
+                    "Home ML": str(r.get("Home ML", "")),
+                    "Vegas Away %": str(r.get("Vegas Away %", "")),
+                    "Vegas Home %": str(r.get("Vegas Home %", "")),
+                    "Spread": str(r.get("Spread", "")),
+                    "Total": str(r.get("Total", "")),
+                    "Model Away %": str(r.get("Model Away %", "")),
+                    "Model Home %": str(r.get("Model Home %", "")),
+                    "Model Pick": str(r.get("Model Pick", "")),
+                    "Vegas Pick": str(r.get("Vegas Pick", "")),
+                    "Model Edge %": str(r.get("Model Edge %", "")),
+                    "Confidence": str(r.get("Confidence", "Tracking")),
+                    "Official Pick": str(r.get("Official Pick", "FALSE")),
+                    "Status": "PENDING",
+                    "Odds Source": str(r.get("Odds Source", "")),
+                    "Opening Snapshot Time": now_label,
+                    "Closing Away ML": "",
+                    "Closing Home ML": "",
+                    "Closing Vegas Away %": "",
+                    "Closing Vegas Home %": "",
+                    "Closing Vegas Pick": "",
+                    "Closing Model Edge %": "",
+                    "Line Movement": "",
+                    "Market Move Note": "",
+                    "Closing Snapshot Time": "",
+                    "Actual Winner": "",
+                    "Model Result": "",
+                    "Early Vegas Result": "",
+                    "Closing Vegas Result": "",
+                })
+                existing_keys.add(key)
+
+            if rows_to_add:
+                add_df = pd.DataFrame(rows_to_add)
+                df = pd.concat([df, add_df], ignore_index=True)
+                hag_nfl_write_log_df(df)
+
+            return {"success": len(rows_to_add), "duplicate": duplicates, "error": 0, "message": "NFL board logged."}
+        except Exception as e:
+            return {"success": 0, "duplicate": 0, "error": 1, "message": f"NFL log error: {e}"}
+
+    def hag_nfl_update_closing_lines_from_board(board_df):
+        if board_df is None or board_df.empty:
+            return {"updated": 0, "missing": 0, "skipped": 0, "message": "No live NFL board available."}
+
+        df = hag_nfl_read_log()
+        if df.empty:
+            return {"updated": 0, "missing": 0, "skipped": 0, "message": "No logged NFL games found."}
+
+        board_map = {}
+        for _, r in board_df.iterrows():
+            board_map[hag_nfl_log_id(r.get("Date", ""), r.get("Away Team", ""), r.get("Home Team", ""))] = r
+
+        updated = 0
+        missing = 0
+        skipped = 0
+        now_label = hag_nfl_now_label()
+
+        for idx, logged in df.iterrows():
+            if str(logged.get("Status", "")).upper() != "PENDING":
+                skipped += 1
+                continue
+
+            key = hag_nfl_log_id(logged.get("Date", ""), logged.get("Away Team", ""), logged.get("Home Team", ""))
+            match = board_map.get(key)
+
+            if match is None:
+                missing += 1
+                continue
+
+            closing_away_ml = str(match.get("Away ML", ""))
+            closing_home_ml = str(match.get("Home ML", ""))
+            c_pick, c_away_prob, c_home_prob = hag_nfl_market_pick(
+                closing_away_ml, closing_home_ml,
+                logged.get("Away Team", ""), logged.get("Home Team", "")
+            )
+
+            model_pick = str(logged.get("Model Pick", ""))
+            if model_pick == str(logged.get("Away Team", "")):
+                model_prob = hag_nfl_safe_float(logged.get("Model Away %", ""), 0)
+                closing_prob = c_away_prob
+            else:
+                model_prob = hag_nfl_safe_float(logged.get("Model Home %", ""), 0)
+                closing_prob = c_home_prob
+
+            c_edge = ""
+            if closing_prob is not None:
+                c_edge = f"{float(model_prob) - float(closing_prob):+.1f}"
+
+            early_edge = hag_nfl_safe_float(logged.get("Model Edge %", ""), None)
+            closing_edge = hag_nfl_safe_float(c_edge, None)
+            line_move = ""
+            if early_edge is not None and closing_edge is not None:
+                line_move = f"{closing_edge - early_edge:+.1f}"
+
+            df.at[idx, "Closing Away ML"] = closing_away_ml
+            df.at[idx, "Closing Home ML"] = closing_home_ml
+            df.at[idx, "Closing Vegas Away %"] = hag_nfl_format_percent(c_away_prob)
+            df.at[idx, "Closing Vegas Home %"] = hag_nfl_format_percent(c_home_prob)
+            df.at[idx, "Closing Vegas Pick"] = c_pick
+            df.at[idx, "Closing Model Edge %"] = c_edge
+            df.at[idx, "Line Movement"] = line_move
+            df.at[idx, "Market Move Note"] = hag_nfl_line_move_note(model_pick, logged.get("Vegas Pick", ""), c_pick)
+            df.at[idx, "Closing Snapshot Time"] = now_label
+            updated += 1
+
+        hag_nfl_write_log_df(df)
+        return {"updated": updated, "missing": missing, "skipped": skipped, "message": "Closing NFL lines updated."}
+
+    def hag_nfl_get_log_stats():
+        df = hag_nfl_read_log()
+        if df.empty:
+            return {
+                "logged": 0, "pending": 0, "graded": 0, "official_logged": 0,
+                "model_acc": 0.0, "vegas_acc": 0.0, "closing_vegas_acc": 0.0, "edge": 0.0,
+                "official_df": pd.DataFrame(), "graded_df": pd.DataFrame()
+            }
+
+        df["Status"] = df["Status"].astype(str).str.upper()
+        pending = int((df["Status"] == "PENDING").sum())
+        graded_df = df[df["Status"].isin(["WIN", "LOSS"])].copy()
+        official_df = df[df["Official Pick"].astype(str).str.upper().eq("TRUE")].copy()
+        official_graded = official_df[official_df["Status"].isin(["WIN", "LOSS"])].copy()
+
+        graded = len(official_graded)
+        if graded > 0:
+            model_wins = int((official_graded["Model Result"].astype(str).str.upper() == "WIN").sum())
+            vegas_wins = int((official_graded["Early Vegas Result"].astype(str).str.upper() == "WIN").sum())
+            closing_wins = int((official_graded["Closing Vegas Result"].astype(str).str.upper() == "WIN").sum())
+            model_acc = model_wins / graded * 100
+            vegas_acc = vegas_wins / graded * 100
+            closing_acc = closing_wins / graded * 100
+        else:
+            model_acc = vegas_acc = closing_acc = 0.0
+
+        return {
+            "logged": len(df),
+            "pending": pending,
+            "graded": graded,
+            "official_logged": len(official_df),
+            "model_acc": model_acc,
+            "vegas_acc": vegas_acc,
+            "closing_vegas_acc": closing_acc,
+            "edge": model_acc - vegas_acc,
+            "official_df": official_df,
+            "graded_df": graded_df
+        }
+
+    def hag_nfl_fetch_final_scores_for_dates(date_list):
+        score_map = {}
+        for d_str in sorted(set([str(d) for d in date_list if str(d).strip()])):
+            try:
+                dt = datetime.strptime(d_str, "%Y-%m-%d")
+                espn_date = dt.strftime("%Y%m%d")
+                url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates={espn_date}&limit=100"
+                resp = requests.get(url, timeout=15).json()
+                for event in resp.get("events", []) or []:
+                    status_state = event.get("status", {}).get("type", {}).get("state", "")
+                    completed = bool(event.get("status", {}).get("type", {}).get("completed", False))
+                    if status_state != "post" and not completed:
                         continue
-                        
-                if slate_logs:
-                    st.success(f"✅ Successfully processed {len(slate_logs)} actionable edges! ({new_logs_count} new entries logged to Sheets)")
-                    df_display = pd.DataFrame(slate_logs, columns=["Date", "Away Team", "Home Team", "Away ML", "Home ML", "Model Away %", "Model Home %", "Model Pick", "Confidence", "Status"])
-                    st.dataframe(df_display, use_container_width=True, hide_index=True)
+
+                    comp = (event.get("competitions", []) or [{}])[0]
+                    competitors = comp.get("competitors", []) or []
+                    if len(competitors) != 2:
+                        continue
+
+                    away_name = ""
+                    home_name = ""
+                    away_score = 0
+                    home_score = 0
+
+                    for c in competitors:
+                        display = c.get("team", {}).get("displayName", "")
+                        display = hag_nfl_known_team(display)
+                        score = int(c.get("score", 0) or 0)
+                        if c.get("homeAway") == "away":
+                            away_name = display
+                            away_score = score
+                        elif c.get("homeAway") == "home":
+                            home_name = display
+                            home_score = score
+
+                    if away_name and home_name:
+                        winner = away_name if away_score > home_score else home_name
+                        score_map[hag_nfl_log_id(d_str, away_name, home_name)] = winner
+            except Exception:
+                continue
+        return score_map
+
+    def hag_nfl_grade_pending_from_espn():
+        df = hag_nfl_read_log()
+        if df.empty:
+            return {"updated": 0, "message": "No NFL log rows found."}
+
+        pending = df[df["Status"].astype(str).str.upper().eq("PENDING")].copy()
+        if pending.empty:
+            return {"updated": 0, "message": "No pending NFL games to grade."}
+
+        score_map = hag_nfl_fetch_final_scores_for_dates(pending["Date"].tolist())
+        updated = 0
+
+        for idx, row in df.iterrows():
+            if str(row.get("Status", "")).upper() != "PENDING":
+                continue
+
+            key = hag_nfl_log_id(row.get("Date", ""), row.get("Away Team", ""), row.get("Home Team", ""))
+            actual = score_map.get(key)
+            if not actual:
+                continue
+
+            model_pick = str(row.get("Model Pick", ""))
+            early_vegas_pick = str(row.get("Vegas Pick", ""))
+            closing_pick = str(row.get("Closing Vegas Pick", "")) or early_vegas_pick
+
+            model_result = "WIN" if hag_nfl_name_key(model_pick) == hag_nfl_name_key(actual) else "LOSS"
+            early_vegas_result = "WIN" if hag_nfl_name_key(early_vegas_pick) == hag_nfl_name_key(actual) else "LOSS"
+            closing_vegas_result = "WIN" if hag_nfl_name_key(closing_pick) == hag_nfl_name_key(actual) else "LOSS"
+
+            df.at[idx, "Actual Winner"] = actual
+            df.at[idx, "Model Result"] = model_result
+            df.at[idx, "Early Vegas Result"] = early_vegas_result
+            df.at[idx, "Closing Vegas Result"] = closing_vegas_result
+            df.at[idx, "Status"] = model_result
+            updated += 1
+
+        if updated:
+            hag_nfl_write_log_df(df)
+        return {"updated": updated, "message": f"Graded {updated} NFL games."}
+
+    def hag_nfl_render_accuracy_dashboard():
+        stats = hag_nfl_get_log_stats()
+        st.subheader("📈 NFL Accuracy Dashboard")
+        st.caption("Official NFL accuracy uses High + Medium confidence picks only. Tracking rows are research-only.")
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.metric("Official Graded", stats["graded"])
+        with c2:
+            st.metric("Hag Labs Accuracy", f"{stats['model_acc']:.1f}%")
+        with c3:
+            st.metric("Early Vegas Accuracy", f"{stats['vegas_acc']:.1f}%")
+        with c4:
+            st.metric("Hag Labs Edge", f"{stats['edge']:+.1f}%")
+
+        c5, c6 = st.columns(2)
+        with c5:
+            st.metric("Closing Vegas Accuracy", f"{stats['closing_vegas_acc']:.1f}%")
+        with c6:
+            st.metric("Official Logged Picks", stats["official_logged"])
+
+        df = hag_nfl_read_log()
+        if not df.empty:
+            tier_rows = []
+            for tier, group in df[df["Status"].isin(["WIN", "LOSS"])].groupby("Confidence"):
+                total = len(group)
+                wins = int((group["Model Result"].astype(str).str.upper() == "WIN").sum())
+                tier_rows.append({
+                    "Confidence": tier,
+                    "Graded": total,
+                    "Model Wins": wins,
+                    "Accuracy": f"{(wins / total * 100 if total else 0):.1f}%"
+                })
+            if tier_rows:
+                st.markdown("#### Accuracy by Confidence Tier")
+                st.dataframe(pd.DataFrame(tier_rows), use_container_width=True, hide_index=True)
+
+            st.markdown("#### Recent NFL Log")
+            st.dataframe(df.tail(50), use_container_width=True, hide_index=True)
+
+    if nfl_page == "🏈 NFL Simulation Engine":
+        st.title("🏈 NFL Vegas Board & Prediction Engine")
+        st.caption("Track NFL model picks against early Vegas lines, closing Vegas lines, and final results.")
+
+        st.info(f"Active build: {NFL_BUILD_LABEL}")
+
+        stats = hag_nfl_get_log_stats()
+        m1, m2, m3, m4, m5 = st.columns(5)
+        with m1:
+            st.metric("Logged Games", stats["logged"])
+        with m2:
+            st.metric("Pending", stats["pending"])
+        with m3:
+            st.metric("Official Logged", stats["official_logged"])
+        with m4:
+            st.metric("Hag Labs Accuracy", f"{stats['model_acc']:.1f}%")
+        with m5:
+            st.metric("Vegas Accuracy", f"{stats['vegas_acc']:.1f}%")
+
+        with st.expander("What changed in NFL v1.0?"):
+            st.markdown("""
+            **NFL v1.0 adds the same tracking structure as MLB/UFC:**
+
+            - Live NFL Vegas board from The Odds API
+            - Conservative starter model using team power, offense, defense, QB, recent form, and home field
+            - Official vs Tracking confidence split
+            - Google Sheets NFL Log V2
+            - Closing line snapshot button
+            - ESPN auto-grading for completed games
+            - Accuracy dashboard against early Vegas and closing Vegas
+            """)
+
+        nfl_tabs = st.tabs([
+            "Live NFL Vegas Board",
+            "Log Predictions",
+            "Closing Line Tracker",
+            "Grade Results",
+            "Accuracy Dashboard",
+            "Manual Matchup Simulator"
+        ])
+
+        with nfl_tabs[0]:
+            st.subheader("Live NFL Vegas Board")
+            board_df, board_status = hag_nfl_fetch_live_odds_board()
+
+            if board_status.get("ok"):
+                st.success(board_status.get("message", "Loaded NFL odds."))
+            else:
+                st.warning(board_status.get("message", "Could not load NFL odds."))
+
+            if board_status.get("raw"):
+                with st.expander("Raw odds/API message"):
+                    st.code(board_status.get("raw", ""))
+
+            if board_df.empty:
+                st.info("No live NFL moneyline games are available right now. This is normal during parts of the offseason.")
+            else:
+                display_cols = [
+                    "Date", "Start Time", "Away Team", "Home Team",
+                    "Away ML", "Home ML", "Vegas Away %", "Vegas Home %",
+                    "Spread", "Total", "Model Away %", "Model Home %",
+                    "Model Pick", "Vegas Pick", "Model Edge %", "Confidence",
+                    "Official Pick", "Model Quality", "Odds Source"
+                ]
+                st.dataframe(board_df[[c for c in display_cols if c in board_df.columns]], use_container_width=True, hide_index=True)
+
+                b1, b2, b3, b4 = st.columns(4)
+                with b1:
+                    st.metric("Modeled Games", len(board_df))
+                with b2:
+                    st.metric("Official Picks", int((board_df["Official Pick"] == "TRUE").sum()))
+                with b3:
+                    st.metric("High Confidence", int((board_df["Confidence"] == "High").sum()))
+                with b4:
+                    avg_edge = pd.to_numeric(board_df["Model Edge %"].astype(str).str.replace("+", "", regex=False), errors="coerce").mean()
+                    st.metric("Avg Model Edge", f"{avg_edge:+.1f}%" if pd.notna(avg_edge) else "+0.0%")
+
+                st.markdown("#### Save current board")
+                if st.button("💾 Log This NFL Board", key="log_nfl_live_board_v1"):
+                    result = hag_nfl_log_board_to_sheet(board_df)
+                    if result.get("error"):
+                        st.error(result.get("message"))
+                    else:
+                        st.success(f"Logged {result['success']} new games. Skipped {result['duplicate']} duplicates.")
+
+                st.markdown("#### Closing-line snapshot")
+                st.caption("Use this near kickoff. It updates pending logged rows with the newest Vegas line while keeping the original early snapshot.")
+                if st.button("🔒 Update Closing NFL Lines for Pending Games", key="update_nfl_closing_lines_v1"):
+                    result = hag_nfl_update_closing_lines_from_board(board_df)
+                    st.success(f"Updated {result['updated']} games. Missing from live board: {result['missing']}. Skipped: {result['skipped']}.")
+
+        with nfl_tabs[1]:
+            st.subheader("NFL Prediction Log")
+            log_df = hag_nfl_read_log()
+            if log_df.empty:
+                st.info("No NFL predictions logged yet.")
+            else:
+                status_filter = st.multiselect(
+                    "Filter by status:",
+                    sorted(log_df["Status"].dropna().astype(str).unique().tolist()),
+                    default=sorted(log_df["Status"].dropna().astype(str).unique().tolist()),
+                    key="nfl_log_status_filter"
+                )
+                filtered = log_df[log_df["Status"].astype(str).isin(status_filter)] if status_filter else log_df
+                st.dataframe(filtered, use_container_width=True, hide_index=True)
+
+        with nfl_tabs[2]:
+            st.subheader("NFL Closing Line Tracker")
+            log_df = hag_nfl_read_log()
+            if log_df.empty:
+                st.info("No logged NFL games yet.")
+            else:
+                movement_cols = [
+                    "Date", "Start Time", "Away Team", "Home Team", "Model Pick",
+                    "Vegas Pick", "Closing Vegas Pick", "Model Edge %",
+                    "Closing Model Edge %", "Line Movement", "Market Move Note",
+                    "Opening Snapshot Time", "Closing Snapshot Time", "Status"
+                ]
+                movement_df = log_df[[c for c in movement_cols if c in log_df.columns]].copy()
+                st.dataframe(movement_df, use_container_width=True, hide_index=True)
+
+        with nfl_tabs[3]:
+            st.subheader("Grade NFL Results")
+            st.caption("Auto-grades pending NFL moneyline picks using ESPN final scores.")
+            if st.button("🔄 Auto-Grade Completed NFL Games", key="grade_nfl_pending_v1"):
+                with st.spinner("Checking ESPN NFL scoreboard..."):
+                    result = hag_nfl_grade_pending_from_espn()
+                if result.get("updated", 0) > 0:
+                    st.success(result.get("message"))
                 else:
-                    st.info("No actionable edges found on the active NFL slate.")
+                    st.info(result.get("message"))
 
-    st.markdown("---")
+            log_df = hag_nfl_read_log()
+            pending_df = log_df[log_df["Status"].astype(str).str.upper().eq("PENDING")] if not log_df.empty else pd.DataFrame()
+            st.metric("Pending NFL Games", len(pending_df))
+            if not pending_df.empty:
+                st.dataframe(pending_df, use_container_width=True, hide_index=True)
 
-    col1, col2 = st.columns([1, 1.2])
-    with col1:
-        st.subheader("Matchup Override & Situational Matrix")
-        away_team_name = st.selectbox("Away Team:", sorted(full_team_names), index=3)
-        home_team_name = st.selectbox("Home Team:", sorted(full_team_names), index=15)
-        
-        away_abbr = name_to_abbr[away_team_name]
-        home_abbr = name_to_abbr[home_team_name]
-        
-        st.markdown("---")
-        st.write("### ⚙️ Engine Calibration")
-        away_elo = st.slider(f"{away_abbr} Base Elo:", 1200, 1800, power_matrix[away_abbr]['Elo'], step=5)
-        home_elo = st.slider(f"{home_abbr} Base Elo:", 1200, 1800, power_matrix[home_abbr]['Elo'], step=5)
-        hfa = st.number_input("Home Field Advantage (Elo Points):", value=45, step=5)
+        with nfl_tabs[4]:
+            hag_nfl_render_accuracy_dashboard()
 
-    with col2:
-        st.subheader("Simulated Prediction Outputs")
-        
-        a_off_pass, a_def_pass = power_matrix[away_abbr]['Off_Pass_EPA'], power_matrix[away_abbr]['Def_Pass_EPA']
-        a_off_rush, a_def_rush = power_matrix[away_abbr]['Off_Rush_EPA'], power_matrix[away_abbr]['Def_Rush_EPA']
-        h_off_pass, h_def_pass = power_matrix[home_abbr]['Off_Pass_EPA'], power_matrix[home_abbr]['Def_Pass_EPA']
-        h_off_rush, h_def_rush = power_matrix[home_abbr]['Off_Rush_EPA'], power_matrix[home_abbr]['Def_Rush_EPA']
+        with nfl_tabs[5]:
+            st.subheader("Manual Matchup Simulator")
+            team_names = sorted(NFL_TEAM_RATINGS.keys())
+            c1, c2 = st.columns(2)
+            with c1:
+                away_team = st.selectbox("Away Team", team_names, index=team_names.index("Kansas City Chiefs") if "Kansas City Chiefs" in team_names else 0)
+            with c2:
+                home_team = st.selectbox("Home Team", team_names, index=team_names.index("Philadelphia Eagles") if "Philadelphia Eagles" in team_names else 1)
 
-        away_pass_edge = a_off_pass - h_def_pass
-        away_rush_edge = a_off_rush - h_def_rush
-        home_pass_edge = h_off_pass - a_def_pass
-        home_rush_edge = h_off_rush - a_def_rush
+            pred = hag_nfl_predict_game(away_team, home_team)
+            r1, r2, r3 = st.columns(3)
+            with r1:
+                st.metric(f"{pred['away_abbr']} Win %", f"{pred['away_prob']:.1f}%")
+            with r2:
+                st.metric(f"{pred['home_abbr']} Win %", f"{pred['home_prob']:.1f}%")
+            with r3:
+                st.metric("Model Quality", pred["model_quality"])
 
-        away_net_epa = (0.65 * away_pass_edge) + (0.35 * away_rush_edge)
-        home_net_epa = (0.65 * home_pass_edge) + (0.35 * home_rush_edge)
-        
-        adj_power_away = away_elo + (away_net_epa * 400)
-        adj_power_home = home_elo + hfa + (home_net_epa * 400)
-        
-        prob_away = 1 / (1 + 10 ** ((adj_power_home - adj_power_away) / 400))
-        prob_home = 1.0 - prob_away
-        
-        st.write(f"Engine Calibration: {away_abbr} (Adj Power: **{adj_power_away:.1f}**) vs {home_abbr} (Adj Power: **{adj_power_home:.1f}**)")
-        st.write("")
-        
-        res_c1, res_c2 = st.columns(2)
-        with res_c1:
-            st.metric(f"{away_abbr} Win Probability:", f"{prob_away:.1%}")
-        with res_c2:
-            st.metric(f"{home_abbr} Win Probability:", f"{prob_home:.1%}")
-            
-        predicted_winner = away_team_name if prob_away > prob_home else home_team_name
-        st.info(f"🏆 Predicted Winner: **{predicted_winner}**")
+            st.caption(f"Adjusted power: {away_team} {pred['away_power']} vs {home_team} {pred['home_power']}")
+            st.info(f"Predicted winner: **{away_team if pred['away_prob'] >= pred['home_prob'] else home_team}**")
 
 # ==========================================================
 # SPORT BRANCH 4: NCAA FOOTBALL (DYNAMIC CFBD API)
