@@ -1751,6 +1751,266 @@ def hag_mlb_v2_recommendation_notes(v2_df):
 
 
 
+# ==========================================================
+# MLB OFFICIAL PICK V2.1 / CONSERVATIVE GUARDRAIL ENGINE
+# ==========================================================
+def hag_mlb_v21_guardrail_row(row):
+    """
+    Conservative V2.1 test logic.
+    Goal: reduce over-correction from V2.
+    - Never auto-flips High Confidence.
+    - Protects Legacy Row history from automatic flipping.
+    - Applies guardrails mainly to Low Confidence and very specific Medium spots.
+    """
+    model_pick = str(row.get("Model Pick", "") or "")
+    vegas_pick = str(row.get("Vegas Pick", "") or "")
+    actual = str(row.get("Actual Winner", "") or "")
+
+    confidence = hag_mlb_normalize_confidence(row.get("Confidence", ""))
+    agreement = str(row.get("Agreement Type", "") or "Unknown")
+    edge_bucket = str(row.get("Model Edge Bucket", "") or "Unknown")
+    favorite_status = str(row.get("Favorite Status", "") or "Unknown")
+    prob_bucket = str(row.get("Model Prob Bucket", "") or "Unknown")
+    hybrid_50 = hag_mlb_blend_pick(row, hag_weight=0.50)
+
+    v21_pick = model_pick
+    source = "Hag Labs"
+    status = "OFFICIAL"
+    v21_confidence = confidence if confidence in ["High", "Medium", "Low"] else "Tracking"
+    reason = "Default conservative rule: keep raw Hag Labs pick."
+
+    # Missing Vegas side: keep raw model.
+    if not vegas_pick or vegas_pick.lower() in ["nan", "none", "n/a"]:
+        v21_pick = model_pick
+        source = "Hag Labs"
+        status = "OFFICIAL" if confidence in ["High", "Medium", "Low"] else "TRACKING"
+        v21_confidence = confidence if confidence in ["High", "Medium", "Low"] else "Tracking"
+        reason = "No usable Vegas pick found; keep raw model."
+
+    # Legacy rows are protected because old format/data can distort guardrail testing.
+    elif agreement == "Legacy Row":
+        v21_pick = model_pick
+        source = "Legacy Protected Hag"
+        status = "OFFICIAL"
+        v21_confidence = confidence if confidence in ["High", "Medium", "Low"] else "Tracking"
+        reason = "Legacy row protected from automatic V2.1 flipping."
+
+    # No reason to flip consensus.
+    elif vegas_pick == model_pick:
+        v21_pick = model_pick
+        source = "Consensus"
+        status = "OFFICIAL"
+        v21_confidence = "High" if confidence == "High" else "Medium"
+        reason = "Hag Labs and Vegas agree."
+
+    # High Confidence got hurt by V2, so never auto-flip it in V2.1.
+    elif confidence == "High":
+        v21_pick = model_pick
+        source = "High Confidence Protected Hag"
+        status = "OFFICIAL"
+        v21_confidence = "High"
+        reason = "High Confidence raw Hag picks are protected in V2.1."
+
+    # Low Confidence: use Vegas when Hag and Vegas disagree.
+    elif confidence == "Low":
+        v21_pick = vegas_pick
+        source = "Low Confidence Vegas Guardrail"
+        status = "OFFICIAL"
+        v21_confidence = "Guardrail"
+        reason = "Low Confidence disagreement uses Vegas guardrail."
+
+    # Medium: flip only in the most obvious weak profile.
+    elif confidence == "Medium":
+        if favorite_status == "Favorite":
+            v21_pick = model_pick
+            source = "Medium Favorite Protected Hag"
+            status = "OFFICIAL"
+            v21_confidence = "Medium"
+            reason = "Medium Confidence favorite protected."
+        elif edge_bucket == "6-10%":
+            v21_pick = model_pick
+            source = "Medium 6-10 Edge Protected Hag"
+            status = "OFFICIAL"
+            v21_confidence = "Medium"
+            reason = "Medium Confidence with 6-10% edge is a protected strong pocket."
+        elif "Strong Model Disagreement" in agreement and favorite_status == "Underdog":
+            v21_pick = vegas_pick
+            source = "Medium Underdog Vegas Guardrail"
+            status = "OFFICIAL"
+            v21_confidence = "Guardrail"
+            reason = "Medium underdog + strong model disagreement gets Vegas guardrail."
+        elif prob_bucket in ["57.5-60%", "60-65%"] and hybrid_50 and hybrid_50 != model_pick and favorite_status == "Underdog":
+            v21_pick = vegas_pick
+            source = "Medium Calibration Guardrail"
+            status = "OFFICIAL"
+            v21_confidence = "Guardrail"
+            reason = f"Medium underdog in calibration-watch bucket {prob_bucket}; 50/50 hybrid disagrees."
+        else:
+            v21_pick = model_pick
+            source = "Medium Protected Hag"
+            status = "OFFICIAL"
+            v21_confidence = "Medium"
+            reason = "Medium Confidence kept unless a strict V2.1 guardrail triggers."
+
+    else:
+        v21_pick = model_pick
+        source = "Hag Labs"
+        status = "OFFICIAL" if confidence in ["High", "Medium", "Low"] else "TRACKING"
+        v21_confidence = confidence if confidence in ["High", "Medium", "Low"] else "Tracking"
+        reason = "No V2.1 guardrail triggered."
+
+    v21_correct = np.nan
+    if status == "OFFICIAL" and v21_pick and actual:
+        v21_correct = 1 if v21_pick == actual else 0
+
+    return pd.Series({
+        "V21 Pick": v21_pick,
+        "V21 Source": source,
+        "V21 Status": status,
+        "V21 Confidence": v21_confidence,
+        "V21 Reason": reason,
+        "V21 Correct": v21_correct,
+        "V21 Flipped From Hag": 1 if v21_pick and model_pick and v21_pick != model_pick else 0,
+        "V21 Used Vegas": 1 if v21_pick and vegas_pick and v21_pick == vegas_pick and vegas_pick != model_pick else 0,
+    })
+
+
+def hag_mlb_apply_v21_guardrails(df):
+    if df is None or df.empty:
+        return pd.DataFrame()
+    out = df.copy()
+    v21 = out.apply(hag_mlb_v21_guardrail_row, axis=1)
+    out = pd.concat([out, v21], axis=1)
+
+    out["V21 Correct"] = pd.to_numeric(out["V21 Correct"], errors="coerce")
+    out["V21 Beat Hag"] = ((out["V21 Correct"] == 1) & (out["Model Correct"] == 0)).astype(int)
+    out["Hag Beat V21"] = ((out["V21 Correct"] == 0) & (out["Model Correct"] == 1)).astype(int)
+    out["V21 Beat Vegas"] = ((out["V21 Correct"] == 1) & (out["Vegas Correct"] == 0)).astype(int)
+    out["Vegas Beat V21"] = ((out["V21 Correct"] == 0) & (out["Vegas Correct"] == 1)).astype(int)
+    return out
+
+
+def hag_mlb_v21_summary_df(df):
+    if df is None or df.empty or "V21 Correct" not in df.columns:
+        return pd.DataFrame()
+
+    total_raw = len(df)
+    hag_wins = int(pd.to_numeric(df["Model Correct"], errors="coerce").fillna(0).sum())
+    vegas_wins = int(pd.to_numeric(df["Vegas Correct"], errors="coerce").fillna(0).sum())
+
+    rows = []
+    official = df[df["V21 Status"].astype(str) == "OFFICIAL"].copy()
+    if not official.empty:
+        total = len(official)
+        v21_wins = int(pd.to_numeric(official["V21 Correct"], errors="coerce").fillna(0).sum())
+        rows.append({
+            "Pick Set": "Official Pick V2.1 Conservative",
+            "Games": total,
+            "Coverage %": round(total / max(total_raw, 1) * 100, 1),
+            "Record": f"{v21_wins}-{total - v21_wins}",
+            "Accuracy %": round(v21_wins / max(total, 1) * 100, 1),
+            "Gain vs Raw Hag": round((v21_wins - hag_wins) / max(total_raw, 1) * 100, 1),
+            "Gain vs Vegas": round((v21_wins - vegas_wins) / max(total_raw, 1) * 100, 1),
+        })
+
+    rows.append({
+        "Pick Set": "Raw Hag Labs",
+        "Games": total_raw,
+        "Coverage %": 100.0,
+        "Record": f"{hag_wins}-{total_raw - hag_wins}",
+        "Accuracy %": round(hag_wins / max(total_raw, 1) * 100, 1),
+        "Gain vs Raw Hag": 0.0,
+        "Gain vs Vegas": round((hag_wins - vegas_wins) / max(total_raw, 1) * 100, 1),
+    })
+
+    rows.append({
+        "Pick Set": "Vegas",
+        "Games": total_raw,
+        "Coverage %": 100.0,
+        "Record": f"{vegas_wins}-{total_raw - vegas_wins}",
+        "Accuracy %": round(vegas_wins / max(total_raw, 1) * 100, 1),
+        "Gain vs Raw Hag": round((vegas_wins - hag_wins) / max(total_raw, 1) * 100, 1),
+        "Gain vs Vegas": 0.0,
+    })
+
+    return pd.DataFrame(rows)
+
+
+def hag_mlb_v21_group_df(df, category):
+    if df is None or df.empty or category not in df.columns:
+        return pd.DataFrame()
+
+    official = df[df["V21 Status"].astype(str) == "OFFICIAL"].copy()
+    if official.empty:
+        return pd.DataFrame()
+
+    rows = []
+    for value, g in official.groupby(category, dropna=False):
+        total = len(g)
+        if total == 0:
+            continue
+        v21_wins = int(pd.to_numeric(g["V21 Correct"], errors="coerce").fillna(0).sum())
+        hag_wins = int(pd.to_numeric(g["Model Correct"], errors="coerce").fillna(0).sum())
+        vegas_wins = int(pd.to_numeric(g["Vegas Correct"], errors="coerce").fillna(0).sum())
+        rows.append({
+            "Category": category,
+            "Bucket": str(value),
+            "Games": total,
+            "V2.1": f"{v21_wins}-{total - v21_wins}",
+            "V2.1 Acc %": round(v21_wins / total * 100, 1),
+            "Raw Hag": f"{hag_wins}-{total - hag_wins}",
+            "Raw Hag Acc %": round(hag_wins / total * 100, 1),
+            "Vegas": f"{vegas_wins}-{total - vegas_wins}",
+            "Vegas Acc %": round(vegas_wins / total * 100, 1),
+            "V2.1 Edge vs Hag %": round((v21_wins - hag_wins) / total * 100, 1),
+            "V2.1 Edge vs Vegas %": round((v21_wins - vegas_wins) / total * 100, 1),
+        })
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    return out.sort_values(["V2.1 Edge vs Hag %", "Games"], ascending=[False, False]).reset_index(drop=True)
+
+
+def hag_mlb_v21_recommendation_notes(v21_df):
+    if v21_df is None or v21_df.empty:
+        return ["No V2.1 rows available yet."]
+
+    official = v21_df[v21_df["V21 Status"].astype(str) == "OFFICIAL"].copy()
+    if official.empty:
+        return ["V2.1 produced no official rows."]
+
+    total = len(v21_df)
+    official_total = len(official)
+    v21_wins = int(pd.to_numeric(official["V21 Correct"], errors="coerce").fillna(0).sum())
+    hag_wins = int(pd.to_numeric(v21_df["Model Correct"], errors="coerce").fillna(0).sum())
+    vegas_wins = int(pd.to_numeric(v21_df["Vegas Correct"], errors="coerce").fillna(0).sum())
+
+    v21_acc = v21_wins / max(official_total, 1) * 100
+    hag_acc = hag_wins / max(total, 1) * 100
+    vegas_acc = vegas_wins / max(total, 1) * 100
+    flips = int(pd.to_numeric(v21_df["V21 Flipped From Hag"], errors="coerce").fillna(0).sum())
+    used_vegas = int(pd.to_numeric(v21_df["V21 Used Vegas"], errors="coerce").fillna(0).sum())
+
+    notes = [
+        f"V2.1 official coverage: {official_total}/{total} games ({official_total / max(total, 1) * 100:.1f}%).",
+        f"V2.1 official accuracy: {v21_acc:.1f}% versus raw Hag {hag_acc:.1f}% and Vegas {vegas_acc:.1f}%.",
+        f"V2.1 flipped {flips} raw Hag picks; {used_vegas} became Vegas guardrail picks.",
+    ]
+
+    if flips > 0:
+        notes.append("V2.1 is intentionally more conservative than V2. The goal is fewer flips with better quality control.")
+    if v21_acc > max(hag_acc, vegas_acc):
+        notes.append("V2.1 is beating both raw Hag and Vegas in this backtest. This is the better candidate for daily-board testing.")
+    elif v21_acc > hag_acc:
+        notes.append("V2.1 improves raw Hag but does not clearly beat Vegas. Track it before making it official.")
+    else:
+        notes.append("V2.1 does not improve raw Hag yet. Keep it audit-only and refine the rules.")
+
+    return notes
+
+
+
 def hag_mlb_recommendations(df, group_df, calibration_df, hybrid_df):
     notes = []
 
@@ -1801,7 +2061,7 @@ def hag_mlb_recommendations(df, group_df, calibration_df, hybrid_df):
 
 def hag_render_mlb_model_audit_center():
     st.title("🧪 MLB Model Audit Center")
-    st.caption("Find where Hag Labs is still beating Vegas, where Vegas is catching up, and whether a conservative V2 guardrail adjustment would have helped.")
+    st.caption("Find where Hag Labs is still beating Vegas, where Vegas is catching up, and whether V2/V2.1 guardrails would have helped.")
 
     df, error = hag_mlb_load_model_audit_df()
     if error:
@@ -1818,6 +2078,7 @@ def hag_render_mlb_model_audit_center():
         return
 
     v2_working = hag_mlb_apply_v2_guardrails(working)
+    v21_working = hag_mlb_apply_v21_guardrails(working)
 
     c1, c2, c3, c4 = st.columns(4)
     total = len(working)
@@ -1852,7 +2113,8 @@ def hag_render_mlb_model_audit_center():
         "Bucket Audit",
         "Calibration",
         "Hybrid Backtest",
-        "Official Pick V2",
+        "V2 Aggressive",
+        "V2.1 Conservative",
         "Trend",
         "Recommendations",
         "Raw Audit Rows"
@@ -1897,8 +2159,8 @@ def hag_render_mlb_model_audit_center():
             st.bar_chart(hybrid_df.set_index("Blend")[["Accuracy %"]])
 
     with tabs[3]:
-        st.subheader("Official Pick V2 / Guardrail Engine")
-        st.caption("This is test-only. It keeps the raw Hag Labs model intact, then applies guardrails based on the audit buckets where Vegas has been catching up.")
+        st.subheader("Official Pick V2 / Aggressive Guardrail Engine")
+        st.caption("This is the aggressive test layer. It improved the backtest slightly, but flipped many raw Hag picks.")
 
         v2_summary = hag_mlb_v2_summary_df(v2_working)
         if v2_summary.empty:
@@ -1921,15 +2183,6 @@ def hag_render_mlb_model_audit_center():
                     st.metric("V2 Flips", int(v2_working["V2 Flipped From Hag"].sum()))
                 with m4:
                     st.metric("Vegas Guardrails", int(v2_working["V2 Used Vegas"].sum()))
-
-        st.markdown("#### V2 rules used")
-        st.markdown("""
-        - Keep Hag when Hag and Vegas agree.
-        - Protect Hag favorite picks.
-        - Protect the Medium Confidence / 6-10% edge pocket.
-        - Flip or guardrail Low Confidence, Strong Model Disagreement, 10-15% edge, and most Hag underdog picks.
-        - Use the 50/50 Hag/Vegas hybrid as a caution flag when it flips away from raw Hag.
-        """)
 
         st.markdown("#### V2 performance by source")
         source_df = hag_mlb_v2_group_df(v2_working, "V2 Source")
@@ -1963,6 +2216,83 @@ def hag_render_mlb_model_audit_center():
             st.markdown(f"- {note}")
 
     with tabs[4]:
+        st.subheader("Official Pick V2.1 / Conservative Guardrail Engine")
+        st.caption("This is the safer comparison layer. It protects High Confidence and Legacy Row picks, then applies smaller guardrails mainly to Low and specific Medium spots.")
+
+        v21_summary = hag_mlb_v21_summary_df(v21_working)
+        v2_summary = hag_mlb_v2_summary_df(v2_working)
+
+        comparison_rows = []
+        if not v2_summary.empty:
+            comparison_rows.append(v2_summary.iloc[0].to_dict())
+        if not v21_summary.empty:
+            comparison_rows.append(v21_summary.iloc[0].to_dict())
+        if not v21_summary.empty and len(v21_summary) >= 3:
+            comparison_rows.extend([v21_summary.iloc[1].to_dict(), v21_summary.iloc[2].to_dict()])
+
+        comparison_df = pd.DataFrame(comparison_rows).drop_duplicates(subset=["Pick Set"], keep="first") if comparison_rows else pd.DataFrame()
+        if comparison_df.empty:
+            st.info("No V2.1 summary available.")
+        else:
+            st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+
+        official_v21 = v21_working[v21_working["V21 Status"].astype(str) == "OFFICIAL"].copy()
+        if not official_v21.empty:
+            v21_total = len(official_v21)
+            v21_wins = int(pd.to_numeric(official_v21["V21 Correct"], errors="coerce").fillna(0).sum())
+            v21_acc = v21_wins / max(v21_total, 1) * 100
+
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.metric("V2.1 Official Games", v21_total)
+            with m2:
+                st.metric("V2.1 Accuracy", f"{v21_acc:.1f}%", f"{v21_wins}-{v21_total - v21_wins}")
+            with m3:
+                st.metric("V2.1 Flips", int(v21_working["V21 Flipped From Hag"].sum()))
+            with m4:
+                st.metric("V2.1 Vegas Guardrails", int(v21_working["V21 Used Vegas"].sum()))
+
+        st.markdown("#### V2.1 rules used")
+        st.markdown("""
+        - Keep all High Confidence raw Hag picks.
+        - Protect Legacy Row games from automatic flipping.
+        - Flip Low Confidence disagreements to Vegas.
+        - For Medium: keep Hag if favorite or 6-10% edge.
+        - For Medium: flip only if underdog + strong model disagreement, or underdog + calibration-watch bucket + 50/50 hybrid disagreement.
+        """)
+
+        st.markdown("#### V2.1 performance by source")
+        source_df = hag_mlb_v21_group_df(v21_working, "V21 Source")
+        if source_df.empty:
+            st.info("No V2.1 source breakdown available.")
+        else:
+            st.dataframe(source_df, use_container_width=True, hide_index=True)
+
+        st.markdown("#### V2.1 performance by original confidence")
+        conf_df = hag_mlb_v21_group_df(v21_working, "Confidence")
+        if conf_df.empty:
+            st.info("No V2.1 confidence breakdown available.")
+        else:
+            st.dataframe(conf_df, use_container_width=True, hide_index=True)
+
+        st.markdown("#### Games V2.1 changed")
+        changed = v21_working[v21_working["V21 Flipped From Hag"] == 1].copy()
+        change_cols = [
+            "Date", "Away Team", "Home Team", "Model Pick", "Vegas Pick", "V21 Pick",
+            "Actual Winner", "Model Correct", "Vegas Correct", "V21 Correct",
+            "Confidence", "Agreement Type", "Model Edge Bucket", "Favorite Status",
+            "V21 Source", "V21 Confidence", "V21 Reason"
+        ]
+        existing_change_cols = [c for c in change_cols if c in changed.columns]
+        if changed.empty:
+            st.success("V2.1 did not flip any raw Hag picks in this filtered sample.")
+        else:
+            st.dataframe(changed[existing_change_cols], use_container_width=True, hide_index=True)
+
+        for note in hag_mlb_v21_recommendation_notes(v21_working):
+            st.markdown(f"- {note}")
+
+    with tabs[5]:
         st.subheader("Recent Trend")
         trend_df = hag_mlb_trend_df(working)
         if trend_df.empty:
@@ -1970,35 +2300,45 @@ def hag_render_mlb_model_audit_center():
         else:
             st.dataframe(trend_df, use_container_width=True, hide_index=True)
 
-    with tabs[5]:
+    with tabs[6]:
         st.subheader("Recommended next move")
         combined_group = pd.concat(group_frames, ignore_index=True) if group_frames else pd.DataFrame()
         notes = hag_mlb_recommendations(working, combined_group, calibration_df, hybrid_df)
         for note in notes:
             st.markdown(f"- {note}")
 
-        st.markdown("### V2 guardrail recommendation")
+        st.markdown("### V2 aggressive recommendation")
         for note in hag_mlb_v2_recommendation_notes(v2_working):
             st.markdown(f"- {note}")
 
-    with tabs[6]:
+        st.markdown("### V2.1 conservative recommendation")
+        for note in hag_mlb_v21_recommendation_notes(v21_working):
+            st.markdown(f"- {note}")
+
+    with tabs[7]:
         st.subheader("Raw Audit Rows")
+        combined = v2_working.copy()
+        v21_cols = [c for c in v21_working.columns if c.startswith("V21")]
+        for c in v21_cols:
+            combined[c] = v21_working[c]
+
         show_cols = [
-            "Date", "Away Team", "Home Team", "Model Pick", "Vegas Pick", "V2 Pick", "Actual Winner",
-            "Model Correct", "Vegas Correct", "V2 Correct", "Confidence", "Agreement Type",
+            "Date", "Away Team", "Home Team", "Model Pick", "Vegas Pick", "V2 Pick", "V21 Pick", "Actual Winner",
+            "Model Correct", "Vegas Correct", "V2 Correct", "V21 Correct", "Confidence", "Agreement Type",
             "Model Edge %", "Model Pick Prob", "Vegas Pick Prob",
             "Model Side", "Favorite Status", "Model ML Bucket",
-            "V2 Source", "V2 Confidence", "V2 Reason"
+            "V2 Source", "V2 Confidence", "V2 Reason",
+            "V21 Source", "V21 Confidence", "V21 Reason"
         ]
-        existing_cols = [c for c in show_cols if c in v2_working.columns]
-        st.dataframe(v2_working[existing_cols], use_container_width=True, hide_index=True)
+        existing_cols = [c for c in show_cols if c in combined.columns]
+        st.dataframe(combined[existing_cols], use_container_width=True, hide_index=True)
 
         st.download_button(
-            "⬇ Export MLB Audit + V2 CSV",
-            data=v2_working.to_csv(index=False).encode("utf-8"),
-            file_name="mlb_model_audit_with_v2.csv",
+            "⬇ Export MLB Audit + V2 + V2.1 CSV",
+            data=combined.to_csv(index=False).encode("utf-8"),
+            file_name="mlb_model_audit_with_v2_v21.csv",
             mime="text/csv",
-            key="mlb_model_audit_v2_export"
+            key="mlb_model_audit_v2_v21_export"
         )
 
 
