@@ -1136,6 +1136,520 @@ def hag_render_mlb_automation_status_panel():
 
 
 
+# ==========================================================
+# MLB MODEL AUDIT CENTER HELPERS
+# ==========================================================
+def hag_mlb_pct_to_float(value):
+    try:
+        s = str(value).replace("%", "").replace("+", "").strip()
+        if s == "" or s.lower() in ["nan", "none", "n/a"]:
+            return np.nan
+        return float(s) / 100.0
+    except Exception:
+        return np.nan
+
+
+def hag_mlb_num(value):
+    try:
+        s = str(value).replace("%", "").replace("+", "").replace(",", "").strip()
+        if s == "" or s.lower() in ["nan", "none", "n/a"]:
+            return np.nan
+        return float(s)
+    except Exception:
+        return np.nan
+
+
+def hag_mlb_normalize_confidence(value):
+    raw = str(value or "Unknown").strip()
+    lower = raw.lower()
+    if "high" in lower:
+        return "High"
+    if "medium" in lower:
+        return "Medium"
+    if "low" in lower:
+        return "Low"
+    if "tracking" in lower:
+        return "Tracking"
+    return "Unknown"
+
+
+def hag_mlb_model_prob_bucket(prob):
+    try:
+        p = float(prob)
+    except Exception:
+        return "Unknown"
+    if p < 0.50:
+        return "<50%"
+    if p < 0.525:
+        return "50-52.5%"
+    if p < 0.55:
+        return "52.5-55%"
+    if p < 0.575:
+        return "55-57.5%"
+    if p < 0.60:
+        return "57.5-60%"
+    if p < 0.65:
+        return "60-65%"
+    return "65%+"
+
+
+def hag_mlb_edge_bucket(edge_pct):
+    try:
+        e = abs(float(edge_pct))
+    except Exception:
+        return "Unknown"
+    if e < 3:
+        return "0-3%"
+    if e < 6:
+        return "3-6%"
+    if e < 10:
+        return "6-10%"
+    if e < 15:
+        return "10-15%"
+    return "15%+"
+
+
+def hag_mlb_ml_bucket(ml):
+    try:
+        m = int(float(ml))
+    except Exception:
+        return "Unknown"
+    if m <= -200:
+        return "Heavy Favorite <= -200"
+    if m <= -150:
+        return "Favorite -200 to -150"
+    if m < 0:
+        return "Small Favorite -149 to -101"
+    if m <= 125:
+        return "Small Underdog +100 to +125"
+    if m <= 175:
+        return "Underdog +126 to +175"
+    return "Long Underdog +176+"
+
+
+def hag_mlb_load_model_audit_df():
+    try:
+        worksheet = get_google_worksheet("MLB Daily Prediction Model", "MLB Log V2")
+        data = worksheet.get_all_values()
+    except Exception as e:
+        return pd.DataFrame(), f"Could not load MLB Log V2: {e}"
+
+    if not data or len(data) <= 1:
+        return pd.DataFrame(), "MLB Log V2 has no data rows yet."
+
+    rows = []
+    for raw in data[1:]:
+        parsed = hag_parse_mlb_log_row(raw)
+        if not parsed:
+            continue
+
+        padded = list(raw) + [""] * max(0, len(PROBABILITY_BOARD_COLUMNS) - len(raw))
+        row = dict(zip(PROBABILITY_BOARD_COLUMNS, padded[:len(PROBABILITY_BOARD_COLUMNS)]))
+
+        status = parsed.get("status", "").upper()
+        if status not in ["WIN", "LOSS"]:
+            continue
+
+        away_team = parsed.get("away_team", row.get("Away Team", ""))
+        home_team = parsed.get("home_team", row.get("Home Team", ""))
+        model_pick = parsed.get("model_pick", row.get("Model Pick", ""))
+        vegas_pick = parsed.get("vegas_pick", row.get("Vegas Pick", ""))
+        actual_winner = hag_mlb_actual_winner_from_status(parsed)
+
+        model_away = hag_mlb_pct_to_float(row.get("Model Away %", ""))
+        model_home = hag_mlb_pct_to_float(row.get("Model Home %", ""))
+        vegas_away = hag_mlb_pct_to_float(row.get("Vegas Away %", ""))
+        vegas_home = hag_mlb_pct_to_float(row.get("Vegas Home %", ""))
+
+        away_ml = row.get("Away ML", parsed.get("away_ml", ""))
+        home_ml = row.get("Home ML", parsed.get("home_ml", ""))
+
+        model_pick_prob = np.nan
+        vegas_pick_prob = np.nan
+        model_pick_ml = np.nan
+        if model_pick == away_team:
+            model_pick_prob = model_away
+            vegas_pick_prob = vegas_away
+            model_pick_ml = hag_mlb_num(away_ml)
+            model_side = "Away"
+        elif model_pick == home_team:
+            model_pick_prob = model_home
+            vegas_pick_prob = vegas_home
+            model_pick_ml = hag_mlb_num(home_ml)
+            model_side = "Home"
+        else:
+            model_side = "Unknown"
+
+        vegas_pick_ml = np.nan
+        if vegas_pick == away_team:
+            vegas_pick_ml = hag_mlb_num(away_ml)
+        elif vegas_pick == home_team:
+            vegas_pick_ml = hag_mlb_num(home_ml)
+
+        model_edge_pct = hag_mlb_num(row.get("Model Edge %", ""))
+
+        # Rebuild edge from probability columns if the logged edge is missing.
+        if pd.isna(model_edge_pct) and not pd.isna(model_pick_prob) and not pd.isna(vegas_pick_prob):
+            model_edge_pct = (float(model_pick_prob) - float(vegas_pick_prob)) * 100
+
+        model_correct = 1 if status == "WIN" else 0
+        vegas_correct = 1 if vegas_pick and actual_winner and vegas_pick == actual_winner else 0
+
+        if not pd.isna(model_pick_ml):
+            fav_status = "Favorite" if model_pick_ml < 0 else "Underdog"
+        else:
+            fav_status = "Unknown"
+
+        rows.append({
+            "Date": row.get("Date", parsed.get("date", "")),
+            "Away Team": away_team,
+            "Home Team": home_team,
+            "Away ML": away_ml,
+            "Home ML": home_ml,
+            "Model Away %": model_away,
+            "Model Home %": model_home,
+            "Vegas Away %": vegas_away,
+            "Vegas Home %": vegas_home,
+            "Model Pick": model_pick,
+            "Vegas Pick": vegas_pick,
+            "Actual Winner": actual_winner,
+            "Model Correct": model_correct,
+            "Vegas Correct": vegas_correct,
+            "Model Beat Vegas": 1 if model_correct == 1 and vegas_correct == 0 else 0,
+            "Vegas Beat Model": 1 if model_correct == 0 and vegas_correct == 1 else 0,
+            "Both Correct": 1 if model_correct == 1 and vegas_correct == 1 else 0,
+            "Both Wrong": 1 if model_correct == 0 and vegas_correct == 0 else 0,
+            "Confidence": hag_mlb_normalize_confidence(parsed.get("confidence", row.get("Confidence", ""))),
+            "Agreement Type": parsed.get("agreement", row.get("Agreement Type", "Unknown")) or "Unknown",
+            "Model Edge %": model_edge_pct,
+            "Model Edge Bucket": hag_mlb_edge_bucket(model_edge_pct),
+            "Model Pick Prob": model_pick_prob,
+            "Model Prob Bucket": hag_mlb_model_prob_bucket(model_pick_prob),
+            "Vegas Pick Prob": vegas_pick_prob,
+            "Model Side": model_side,
+            "Favorite Status": fav_status,
+            "Model ML Bucket": hag_mlb_ml_bucket(model_pick_ml),
+            "Vegas ML Bucket": hag_mlb_ml_bucket(vegas_pick_ml),
+            "Official": hag_mlb_normalize_confidence(parsed.get("confidence", row.get("Confidence", ""))) in ["High", "Medium", "Low"],
+        })
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df, "No graded MLB rows were available for audit."
+
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.sort_values("Date", ascending=True).reset_index(drop=True)
+    return df, ""
+
+
+def hag_mlb_group_audit(df, category):
+    if df is None or df.empty or category not in df.columns:
+        return pd.DataFrame()
+
+    rows = []
+    for value, g in df.groupby(category, dropna=False):
+        total = len(g)
+        if total == 0:
+            continue
+        model_wins = int(g["Model Correct"].sum())
+        vegas_wins = int(g["Vegas Correct"].sum())
+        rows.append({
+            "Category": category,
+            "Bucket": str(value),
+            "Games": total,
+            "Hag Labs": f"{model_wins}-{total - model_wins}",
+            "Hag Labs Acc %": round(model_wins / total * 100, 1),
+            "Vegas": f"{vegas_wins}-{total - vegas_wins}",
+            "Vegas Acc %": round(vegas_wins / total * 100, 1),
+            "Hag Edge %": round((model_wins - vegas_wins) / total * 100, 1),
+            "Model Beat Vegas": int(g["Model Beat Vegas"].sum()),
+            "Vegas Beat Model": int(g["Vegas Beat Model"].sum()),
+        })
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    return out.sort_values(["Hag Edge %", "Games"], ascending=[False, False]).reset_index(drop=True)
+
+
+def hag_mlb_calibration_df(df):
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    working = df.dropna(subset=["Model Pick Prob"]).copy()
+    if working.empty:
+        return pd.DataFrame()
+
+    rows = []
+    for bucket, g in working.groupby("Model Prob Bucket", dropna=False):
+        total = len(g)
+        if total == 0:
+            continue
+        predicted = float(g["Model Pick Prob"].mean()) * 100
+        actual = float(g["Model Correct"].mean()) * 100
+        vegas = float(g["Vegas Correct"].mean()) * 100
+        rows.append({
+            "Model Probability Bucket": bucket,
+            "Games": total,
+            "Avg Model Pick %": round(predicted, 1),
+            "Actual Win %": round(actual, 1),
+            "Vegas Win %": round(vegas, 1),
+            "Calibration Gap": round(actual - predicted, 1),
+            "Hag vs Vegas": round(actual - vegas, 1),
+        })
+
+    order = ["<50%", "50-52.5%", "52.5-55%", "55-57.5%", "57.5-60%", "60-65%", "65%+", "Unknown"]
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    out["_order"] = out["Model Probability Bucket"].apply(lambda x: order.index(x) if x in order else 999)
+    return out.sort_values("_order").drop(columns=["_order"]).reset_index(drop=True)
+
+
+def hag_mlb_hybrid_backtest_df(df):
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    working = df.dropna(subset=["Model Away %", "Model Home %", "Vegas Away %", "Vegas Home %"]).copy()
+    if working.empty:
+        return pd.DataFrame()
+
+    rows = []
+    weights = [1.00, 0.90, 0.80, 0.70, 0.60, 0.50]
+    for w in weights:
+        picks = []
+        for _, r in working.iterrows():
+            blend_away = (float(r["Model Away %"]) * w) + (float(r["Vegas Away %"]) * (1 - w))
+            blend_home = (float(r["Model Home %"]) * w) + (float(r["Vegas Home %"]) * (1 - w))
+            pick = r["Away Team"] if blend_away >= blend_home else r["Home Team"]
+            picks.append(pick)
+
+        temp = working.copy()
+        temp["Hybrid Pick"] = picks
+        correct = (temp["Hybrid Pick"] == temp["Actual Winner"]).astype(int)
+        wins = int(correct.sum())
+        total = len(temp)
+        rows.append({
+            "Blend": f"{int(w * 100)}% Hag / {int((1 - w) * 100)}% Vegas",
+            "Hag Weight": w,
+            "Games": total,
+            "Record": f"{wins}-{total - wins}",
+            "Accuracy %": round(wins / total * 100, 1),
+            "Gain vs Current Hag": round((wins - int(working["Model Correct"].sum())) / total * 100, 1),
+            "Gain vs Vegas": round((wins - int(working["Vegas Correct"].sum())) / total * 100, 1),
+        })
+
+    return pd.DataFrame(rows).sort_values("Accuracy %", ascending=False).reset_index(drop=True)
+
+
+def hag_mlb_trend_df(df, window=50):
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    working = df.sort_values("Date").copy()
+    if working.empty:
+        return pd.DataFrame()
+
+    rows = []
+    for n in [25, 50, 100, len(working)]:
+        if n <= 0:
+            continue
+        g = working.tail(min(n, len(working)))
+        total = len(g)
+        if total == 0:
+            continue
+        model_wins = int(g["Model Correct"].sum())
+        vegas_wins = int(g["Vegas Correct"].sum())
+        rows.append({
+            "Sample": f"Last {min(n, len(working))}" if n != len(working) else "Full Sample",
+            "Games": total,
+            "Hag Labs": f"{model_wins}-{total - model_wins}",
+            "Hag Labs Acc %": round(model_wins / total * 100, 1),
+            "Vegas": f"{vegas_wins}-{total - vegas_wins}",
+            "Vegas Acc %": round(vegas_wins / total * 100, 1),
+            "Hag Edge %": round((model_wins - vegas_wins) / total * 100, 1),
+        })
+    return pd.DataFrame(rows)
+
+
+def hag_mlb_recommendations(df, group_df, calibration_df, hybrid_df):
+    notes = []
+
+    if df is None or df.empty:
+        return ["No audit recommendations yet because no graded rows were loaded."]
+
+    official = df[df["Official"]].copy()
+    base = official if not official.empty else df
+
+    hag_acc = base["Model Correct"].mean() * 100
+    vegas_acc = base["Vegas Correct"].mean() * 100
+    edge = hag_acc - vegas_acc
+
+    if edge > 2:
+        notes.append(f"Do not overhaul the model yet. Hag Labs is still meaningfully ahead of Vegas in this filtered sample ({edge:+.1f}%).")
+    elif edge >= 0:
+        notes.append(f"Do not make a blind model change. Hag Labs is ahead, but barely ({edge:+.1f}%), so tune only the weak buckets.")
+    else:
+        notes.append(f"Hag Labs is behind Vegas in this filtered sample ({edge:+.1f}%). A conservative Vegas-blend test should be reviewed before changing the core model.")
+
+    if group_df is not None and not group_df.empty:
+        weak = group_df[(group_df["Games"] >= 10)].sort_values("Hag Edge %", ascending=True).head(1)
+        strong = group_df[(group_df["Games"] >= 10)].sort_values("Hag Edge %", ascending=False).head(1)
+        if not weak.empty:
+            wr = weak.iloc[0]
+            notes.append(f"Weakest bucket with 10+ games: {wr['Category']} = {wr['Bucket']} ({wr['Hag Edge %']:+.1f}% vs Vegas). Start tuning there.")
+        if not strong.empty:
+            sr = strong.iloc[0]
+            notes.append(f"Strongest bucket with 10+ games: {sr['Category']} = {sr['Bucket']} ({sr['Hag Edge %']:+.1f}% vs Vegas). Protect this bucket from over-correction.")
+
+    if calibration_df is not None and not calibration_df.empty:
+        bad_cal = calibration_df[calibration_df["Games"] >= 10].copy()
+        if not bad_cal.empty:
+            bad_cal["Abs Gap"] = bad_cal["Calibration Gap"].abs()
+            worst = bad_cal.sort_values("Abs Gap", ascending=False).iloc[0]
+            notes.append(f"Calibration watch: {worst['Model Probability Bucket']} has a {worst['Calibration Gap']:+.1f}% gap between expected and actual wins.")
+
+    if hybrid_df is not None and not hybrid_df.empty:
+        best = hybrid_df.iloc[0]
+        if best["Gain vs Current Hag"] > 0:
+            notes.append(f"Best backtested blend is {best['Blend']} at {best['Accuracy %']:.1f}%, which beat the current Hag pick set by {best['Gain vs Current Hag']:+.1f}%. Consider a test-only hybrid column before changing official picks.")
+        else:
+            notes.append("Hybrid blending did not beat the current Hag pick set in this sample. Keep the core model intact for now.")
+
+    notes.append("Recommended next change after this audit: add a test-only 'Hag Adjusted Pick' column and track it separately for 1-2 weeks before replacing official picks.")
+    return notes
+
+
+def hag_render_mlb_model_audit_center():
+    st.title("🧪 MLB Model Audit Center")
+    st.caption("Find where Hag Labs is still beating Vegas, where Vegas is catching up, and whether a conservative hybrid adjustment would have helped.")
+
+    df, error = hag_mlb_load_model_audit_df()
+    if error:
+        st.warning(error)
+    if df is None or df.empty:
+        st.info("No graded MLB audit rows are available yet.")
+        return
+
+    official_only = st.toggle("Official rows only (High / Medium / Low)", value=True, key="mlb_audit_official_only")
+    working = df[df["Official"]].copy() if official_only else df.copy()
+
+    if working.empty:
+        st.warning("No rows match the selected filter.")
+        return
+
+    c1, c2, c3, c4 = st.columns(4)
+    total = len(working)
+    hag_wins = int(working["Model Correct"].sum())
+    vegas_wins = int(working["Vegas Correct"].sum())
+    hag_acc = hag_wins / total * 100 if total else 0
+    vegas_acc = vegas_wins / total * 100 if total else 0
+
+    with c1:
+        st.metric("Audited Games", total)
+    with c2:
+        st.metric("Hag Labs", f"{hag_acc:.1f}%", f"{hag_wins}-{total - hag_wins}")
+    with c3:
+        st.metric("Vegas", f"{vegas_acc:.1f}%", f"{vegas_wins}-{total - vegas_wins}")
+    with c4:
+        st.metric("Hag Edge", f"{hag_acc - vegas_acc:+.1f}%")
+
+    category_options = [
+        "Confidence", "Agreement Type", "Model Edge Bucket", "Model Prob Bucket",
+        "Model Side", "Favorite Status", "Model ML Bucket"
+    ]
+
+    default_categories = ["Confidence", "Agreement Type", "Model Edge Bucket", "Favorite Status"]
+    selected_categories = st.multiselect(
+        "Audit breakdowns:",
+        category_options,
+        default=default_categories,
+        key="mlb_audit_categories"
+    )
+
+    tabs = st.tabs([
+        "Bucket Audit",
+        "Calibration",
+        "Hybrid Backtest",
+        "Trend",
+        "Recommendations",
+        "Raw Audit Rows"
+    ])
+
+    group_frames = []
+    with tabs[0]:
+        st.subheader("Where the edge is coming from")
+        st.caption("Positive Hag Edge means Hag Labs beat Vegas in that bucket. Negative means Vegas beat Hag Labs.")
+
+        if not selected_categories:
+            st.info("Select at least one audit breakdown.")
+        else:
+            for cat in selected_categories:
+                st.markdown(f"#### {cat}")
+                gdf = hag_mlb_group_audit(working, cat)
+                if gdf.empty:
+                    st.info(f"No data available for {cat}.")
+                else:
+                    group_frames.append(gdf)
+                    st.dataframe(gdf, use_container_width=True, hide_index=True)
+
+    calibration_df = hag_mlb_calibration_df(working)
+    with tabs[1]:
+        st.subheader("Model Calibration")
+        st.caption("This checks whether the model's stated probabilities are matching actual win rate.")
+        if calibration_df.empty:
+            st.info("Not enough probability data for calibration.")
+        else:
+            st.dataframe(calibration_df, use_container_width=True, hide_index=True)
+            chart = calibration_df.set_index("Model Probability Bucket")[["Avg Model Pick %", "Actual Win %", "Vegas Win %"]]
+            st.line_chart(chart)
+
+    hybrid_df = hag_mlb_hybrid_backtest_df(working)
+    with tabs[2]:
+        st.subheader("Hag/Vegas Hybrid Backtest")
+        st.caption("This does not change official picks. It tests whether blending model probabilities with Vegas probabilities would have improved past results.")
+        if hybrid_df.empty:
+            st.info("Not enough data for hybrid testing.")
+        else:
+            st.dataframe(hybrid_df, use_container_width=True, hide_index=True)
+            st.bar_chart(hybrid_df.set_index("Blend")[["Accuracy %"]])
+
+    with tabs[3]:
+        st.subheader("Recent Trend")
+        trend_df = hag_mlb_trend_df(working)
+        if trend_df.empty:
+            st.info("No trend data available.")
+        else:
+            st.dataframe(trend_df, use_container_width=True, hide_index=True)
+
+    with tabs[4]:
+        st.subheader("Recommended next move")
+        combined_group = pd.concat(group_frames, ignore_index=True) if group_frames else pd.DataFrame()
+        notes = hag_mlb_recommendations(working, combined_group, calibration_df, hybrid_df)
+        for note in notes:
+            st.markdown(f"- {note}")
+
+    with tabs[5]:
+        st.subheader("Raw Audit Rows")
+        show_cols = [
+            "Date", "Away Team", "Home Team", "Model Pick", "Vegas Pick", "Actual Winner",
+            "Model Correct", "Vegas Correct", "Confidence", "Agreement Type",
+            "Model Edge %", "Model Pick Prob", "Vegas Pick Prob",
+            "Model Side", "Favorite Status", "Model ML Bucket"
+        ]
+        existing_cols = [c for c in show_cols if c in working.columns]
+        st.dataframe(working[existing_cols], use_container_width=True, hide_index=True)
+
+        st.download_button(
+            "⬇ Export MLB Audit CSV",
+            data=working.to_csv(index=False).encode("utf-8"),
+            file_name="mlb_model_audit.csv",
+            mime="text/csv",
+            key="mlb_model_audit_export"
+        )
+
+
+
 
 # ==========================================================
 # FANTASY SEASON SIMULATOR HELPERS
@@ -4326,6 +4840,7 @@ if sport == "⚾ MLB Baseball":
     "Select Engine:",
     [
         "🎲 Monte Carlo Simulation Engine",
+        "🧪 MLB Model Audit Center",
         "🔎 MLB Player Lab",
         "🏆 Fantasy Sports Predictor"
     ]
@@ -5593,6 +6108,9 @@ if sport == "⚾ MLB Baseball":
 
             else:
                 st.error("Engine failure connecting to MLB Stats API.")
+
+    elif page == "🧪 MLB Model Audit Center":
+        hag_render_mlb_model_audit_center()
 
     elif page == "🔎 MLB Player Lab":
         st.title("🔎 MLB Player Lab")
