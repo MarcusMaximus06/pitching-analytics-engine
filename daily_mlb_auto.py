@@ -214,6 +214,15 @@ def get_or_create_shadow_worksheet():
     values = ws.get_all_values()
     if not values:
         ws.append_row(V21_SHADOW_COLUMNS)
+    else:
+        has_header = (
+            len(values[0]) >= 3
+            and str(values[0][0]).strip() == "Date"
+            and str(values[0][1]).strip() == "Away Team"
+            and str(values[0][2]).strip() == "Home Team"
+        )
+        if not has_header:
+            ws.insert_row(V21_SHADOW_COLUMNS, 1)
 
     return ws
 
