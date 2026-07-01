@@ -215,6 +215,18 @@ PROBABILITY_BOARD_COLUMNS = [
     "Agreement Type", "Model Edge %", "Confidence", "Status", "Odds Source"
 ]
 
+
+V21_SHADOW_WORKSHEET_NAME = "MLB Log V2.1 Shadow"
+
+V21_SHADOW_COLUMNS = [
+    "Date", "Away Team", "Home Team", "Away ML", "Home ML",
+    "Model Away %", "Model Home %", "Vegas Away %",
+    "Vegas Home %", "Raw Hag Pick", "Vegas Pick", "V2.1 Pick",
+    "V2.1 Source", "V2.1 Reason", "V2.1 Confidence",
+    "Model Edge %", "Agreement Type", "Favorite Status",
+    "Model Prob Bucket", "Actual Winner", "Status", "Odds Source"
+]
+
 MLB_LOG_STATUSES = {"PENDING", "WIN", "LOSS"}
 
 def hag_parse_mlb_log_row(row):
@@ -1088,6 +1100,201 @@ def hag_mlb_automation_status():
         }
 
 
+def hag_mlb_v21_shadow_status():
+    try:
+        worksheet = get_google_worksheet("MLB Daily Prediction Model", V21_SHADOW_WORKSHEET_NAME)
+        data = worksheet.get_all_values()
+
+        if len(data) <= 1:
+            return {
+                "available": True,
+                "total_rows": 0,
+                "today_logged": 0,
+                "pending": 0,
+                "graded": 0,
+                "v21_wins": 0,
+                "v21_losses": 0,
+                "raw_wins": 0,
+                "raw_losses": 0,
+                "vegas_wins": 0,
+                "vegas_losses": 0,
+                "tracking_wins": 0,
+                "tracking_losses": 0,
+                "source_summary": pd.DataFrame(),
+                "recent_rows": pd.DataFrame(),
+                "latest_status": "V2.1 shadow sheet exists but has no rows yet.",
+            }
+
+        rows = data[1:]
+        today = get_local_date_str()
+
+        total_rows = len(rows)
+        today_logged = 0
+        pending = 0
+        graded = 0
+        v21_wins = v21_losses = 0
+        raw_wins = raw_losses = 0
+        vegas_wins = vegas_losses = 0
+        tracking_wins = tracking_losses = 0
+        source_counts = {}
+
+        for row in rows:
+            padded = list(row) + [""] * 25
+
+            row_date = str(padded[0]).strip()
+            raw_pick = str(padded[9]).strip()
+            vegas_pick = str(padded[10]).strip()
+            v21_pick = str(padded[11]).strip()
+            v21_source = str(padded[12]).strip() or "Unknown"
+            v21_confidence = str(padded[14]).strip() or "Unknown"
+            actual_winner = str(padded[19]).strip()
+            status = str(padded[20]).strip().upper()
+
+            if row_date == today:
+                today_logged += 1
+
+            source_counts[v21_source] = source_counts.get(v21_source, 0) + 1
+
+            if status == "PENDING":
+                pending += 1
+                continue
+
+            if status not in ["WIN", "LOSS"]:
+                continue
+
+            graded += 1
+
+            if status == "WIN":
+                v21_wins += 1
+            else:
+                v21_losses += 1
+
+            if v21_confidence == "Tracking":
+                if status == "WIN":
+                    tracking_wins += 1
+                else:
+                    tracking_losses += 1
+
+            if actual_winner:
+                if raw_pick:
+                    if raw_pick == actual_winner:
+                        raw_wins += 1
+                    else:
+                        raw_losses += 1
+                if vegas_pick:
+                    if vegas_pick == actual_winner:
+                        vegas_wins += 1
+                    else:
+                        vegas_losses += 1
+
+        source_summary = pd.DataFrame(
+            [{"V2.1 Source": k, "Rows": v} for k, v in source_counts.items()]
+        ).sort_values("Rows", ascending=False) if source_counts else pd.DataFrame()
+
+        recent_clean = []
+        for row in rows[-20:]:
+            padded = list(row) + [""] * max(0, len(V21_SHADOW_COLUMNS) - len(row))
+            recent_clean.append(padded[:len(V21_SHADOW_COLUMNS)])
+
+        recent_rows = pd.DataFrame(recent_clean, columns=V21_SHADOW_COLUMNS)
+
+        latest_status = "V2.1 shadow logging ready"
+        if today_logged > 0:
+            latest_status = f"{today_logged} V2.1 shadow rows logged today"
+        elif pending > 0:
+            latest_status = f"{pending} V2.1 shadow games waiting to grade"
+
+        return {
+            "available": True,
+            "total_rows": total_rows,
+            "today_logged": today_logged,
+            "pending": pending,
+            "graded": graded,
+            "v21_wins": v21_wins,
+            "v21_losses": v21_losses,
+            "raw_wins": raw_wins,
+            "raw_losses": raw_losses,
+            "vegas_wins": vegas_wins,
+            "vegas_losses": vegas_losses,
+            "tracking_wins": tracking_wins,
+            "tracking_losses": tracking_losses,
+            "source_summary": source_summary,
+            "recent_rows": recent_rows,
+            "latest_status": latest_status,
+        }
+
+    except Exception as e:
+        return {
+            "available": False,
+            "total_rows": 0,
+            "today_logged": 0,
+            "pending": 0,
+            "graded": 0,
+            "v21_wins": 0,
+            "v21_losses": 0,
+            "raw_wins": 0,
+            "raw_losses": 0,
+            "vegas_wins": 0,
+            "vegas_losses": 0,
+            "tracking_wins": 0,
+            "tracking_losses": 0,
+            "source_summary": pd.DataFrame(),
+            "recent_rows": pd.DataFrame(),
+            "latest_status": f"V2.1 shadow status unavailable: {e}",
+        }
+
+
+def hag_render_mlb_v21_shadow_panel():
+    shadow = hag_mlb_v21_shadow_status()
+
+    st.markdown("#### V2.1 Shadow Model Record")
+    st.caption("Separate live tracking sheet. This does not replace the official Raw Hag Labs record.")
+
+    if not shadow["available"]:
+        st.info(shadow["latest_status"])
+        return
+
+    graded = int(shadow["graded"])
+    v21_wins = int(shadow["v21_wins"])
+    v21_losses = int(shadow["v21_losses"])
+    raw_wins = int(shadow["raw_wins"])
+    raw_losses = int(shadow["raw_losses"])
+    vegas_wins = int(shadow["vegas_wins"])
+    vegas_losses = int(shadow["vegas_losses"])
+
+    v21_acc = (v21_wins / graded * 100) if graded > 0 else 0
+    raw_total = raw_wins + raw_losses
+    raw_acc = (raw_wins / raw_total * 100) if raw_total > 0 else 0
+    vegas_total = vegas_wins + vegas_losses
+    vegas_acc = (vegas_wins / vegas_total * 100) if vegas_total > 0 else 0
+
+    s1, s2, s3, s4 = st.columns(4)
+    with s1:
+        st.metric("V2.1 Shadow Graded", graded)
+        st.caption(f"Pending: {shadow['pending']} | Logged today: {shadow['today_logged']}")
+    with s2:
+        st.metric("V2.1 Shadow Accuracy", f"{v21_acc:.1f}%")
+        st.caption(f"Record: {v21_wins}-{v21_losses}")
+    with s3:
+        st.metric("Raw Hag on Shadow Rows", f"{raw_acc:.1f}%")
+        st.caption(f"Record: {raw_wins}-{raw_losses}")
+    with s4:
+        st.metric("Vegas on Shadow Rows", f"{vegas_acc:.1f}%")
+        st.caption(f"Record: {vegas_wins}-{vegas_losses}")
+
+    st.info(shadow["latest_status"])
+
+    with st.expander("V2.1 Shadow details"):
+        if not shadow["source_summary"].empty:
+            st.markdown("##### V2.1 Source Summary")
+            st.dataframe(shadow["source_summary"], use_container_width=True, hide_index=True)
+
+        if not shadow["recent_rows"].empty:
+            st.markdown("##### Recent V2.1 Shadow Rows")
+            st.dataframe(shadow["recent_rows"], use_container_width=True, hide_index=True)
+
+
+
 def hag_render_mlb_automation_status_panel():
     status = hag_mlb_automation_status()
 
@@ -1123,7 +1330,7 @@ def hag_render_mlb_automation_status_panel():
         Start in: C:\\HagLabs\\pitching-analytics-engine
         ```
 
-        The script grades completed pending games first, then logs today's full MLB probability board.
+        The script grades completed pending games first, grades the V2.1 shadow sheet, then logs today's full MLB probability board and V2.1 shadow board.
         """)
 
     if not status["agreement_summary"].empty:
