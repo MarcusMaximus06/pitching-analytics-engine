@@ -1105,7 +1105,15 @@ def hag_mlb_v21_shadow_status():
         worksheet = get_google_worksheet("MLB Daily Prediction Model", V21_SHADOW_WORKSHEET_NAME)
         data = worksheet.get_all_values()
 
-        if len(data) <= 1:
+        has_header = (
+            len(data) > 0
+            and len(data[0]) >= 3
+            and str(data[0][0]).strip() == "Date"
+            and str(data[0][1]).strip() == "Away Team"
+            and str(data[0][2]).strip() == "Home Team"
+        )
+
+        if len(data) == 0 or (has_header and len(data) <= 1):
             return {
                 "available": True,
                 "total_rows": 0,
@@ -1125,7 +1133,7 @@ def hag_mlb_v21_shadow_status():
                 "latest_status": "V2.1 shadow sheet exists but has no rows yet.",
             }
 
-        rows = data[1:]
+        rows = data[1:] if has_header else data
         today = get_local_date_str()
 
         total_rows = len(rows)
@@ -6459,6 +6467,8 @@ if sport == "⚾ MLB Baseball":
             with r4:
                 st.metric("Tracking Research Accuracy", f"{tracking_acc:.1f}%")
                 st.caption(f"Tracking record: {tracking_wins}-{tracking_losses}")
+
+            hag_render_mlb_v21_shadow_panel()
 
             st.markdown("#### Accuracy by Confidence Tier")
 
