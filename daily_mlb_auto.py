@@ -657,6 +657,52 @@ def simulate_game(away_t, home_t, away_sp, home_sp, team_stats, pitcher_stats):
     return float(a_wins / DEFAULT_SIMULATION_SIZE), float(h_wins / DEFAULT_SIMULATION_SIZE)
 
 
+# ==========================================================
+# GOOGLE SHEETS LOW-QUOTA BATCH WRITE HELPERS
+# ==========================================================
+def first_empty_row_number(values: List[List[Any]], has_header: bool = True) -> int:
+    """
+    Returns the next row number after the last row that has any non-empty cell.
+    This is safer than append_rows when a sheet has lots of pre-created blank rows.
+    """
+    last_non_empty_index = 0
+    for idx, row in enumerate(values, start=1):
+        if any(str(cell).strip() for cell in row):
+            last_non_empty_index = idx
+
+    if has_header and last_non_empty_index < 1:
+        return 2
+
+    return last_non_empty_index + 1
+
+
+def batch_write_rows_to_sheet(ws, rows: List[List[Any]], existing_values: List[List[Any]], has_header: bool = True):
+    """
+    Writes rows directly into the next visible empty range instead of using append_rows.
+    This avoids rows being silently placed far below the visible area in Google Sheets.
+    """
+    if not rows:
+        return
+
+    start_row = first_empty_row_number(existing_values, has_header=has_header)
+    end_row = start_row + len(rows) - 1
+
+    max_cols = max(len(r) for r in rows)
+    end_col_letter = chr(ord("A") + max_cols - 1) if max_cols <= 26 else "Z"
+
+    # Make sure the sheet has enough rows.
+    try:
+        current_rows = getattr(ws, "row_count", 1000) or 1000
+        if end_row > current_rows:
+            ws.add_rows(end_row - current_rows + 25)
+    except Exception:
+        pass
+
+    range_name = f"A{start_row}:{end_col_letter}{end_row}"
+    ws.update(range_name, rows, value_input_option="USER_ENTERED")
+
+
+
 def log_today_board(date_str: str | None = None):
     """
     Logs today's board with ONE read from each Google Sheet tab instead of
@@ -766,19 +812,29 @@ def log_today_board(date_str: str | None = None):
             errors += 1
             traceback.print_exc()
 
-    # Batch append rows. This is much lighter than append_row per game.
+    # Batch write rows directly to the next visible empty row.
+    # This avoids Google Sheets append behavior placing rows far below the visible area.
     if official_rows_to_append:
         try:
-            official_ws.append_rows(official_rows_to_append, value_input_option="USER_ENTERED")
+            batch_write_rows_to_sheet(
+                official_ws,
+                official_rows_to_append,
+                official_values,
+                has_header=True
+            )
         except Exception:
-            # Roll back counters if append failed.
             errors += len(official_rows_to_append)
             logged -= len(official_rows_to_append)
             traceback.print_exc()
 
     if shadow_rows_to_append and shadow_ws is not None:
         try:
-            shadow_ws.append_rows(shadow_rows_to_append, value_input_option="USER_ENTERED")
+            batch_write_rows_to_sheet(
+                shadow_ws,
+                shadow_rows_to_append,
+                shadow_values,
+                has_header=True
+            )
         except Exception:
             shadow_errors += len(shadow_rows_to_append)
             shadow_logged -= len(shadow_rows_to_append)
