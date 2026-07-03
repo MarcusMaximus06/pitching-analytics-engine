@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import traceback
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
@@ -657,6 +658,10 @@ def simulate_game(away_t, home_t, away_sp, home_sp, team_stats, pitcher_stats):
 
 
 def log_today_board(date_str: str | None = None):
+    """
+    Logs today's board with ONE read from each Google Sheet tab instead of
+    reading the whole sheet once per game. This avoids Google Sheets 429 quota errors.
+    """
     date_str = date_str or get_local_date_str()
     team_stats, pitcher_stats = fetch_mlb_team_and_pitcher_data()
     schedule_games = fetch_today_schedule(date_str)
@@ -664,6 +669,59 @@ def log_today_board(date_str: str | None = None):
 
     processed = logged = duplicates = errors = 0
     shadow_logged = shadow_duplicates = shadow_errors = 0
+
+    # Get worksheets and existing keys once.
+    official_ws = None
+    shadow_ws = None
+    official_existing_keys = set()
+    shadow_existing_keys = set()
+
+    try:
+        official_ws = get_or_create_log_worksheet()
+        official_values = official_ws.get_all_values()
+        official_rows = official_values[1:] if official_values else []
+        for r in official_rows:
+            if len(r) >= 3:
+                official_existing_keys.add((str(r[0]).strip(), str(r[1]).strip(), str(r[2]).strip()))
+    except Exception:
+        errors += len(schedule_games)
+        traceback.print_exc()
+        return {
+            "date": date_str,
+            "scheduled_games": len(schedule_games),
+            "odds_games": len(live_odds),
+            "odds_debug": odds_debug,
+            "processed": 0,
+            "logged": 0,
+            "duplicates": 0,
+            "errors": errors,
+            "shadow_logged": 0,
+            "shadow_duplicates": 0,
+            "shadow_errors": len(schedule_games),
+        }
+
+    try:
+        shadow_ws = get_or_create_shadow_worksheet()
+        shadow_values = shadow_ws.get_all_values()
+        has_shadow_header = (
+            len(shadow_values) > 0
+            and len(shadow_values[0]) >= 3
+            and str(shadow_values[0][0]).strip() == "Date"
+            and str(shadow_values[0][1]).strip() == "Away Team"
+            and str(shadow_values[0][2]).strip() == "Home Team"
+        )
+        shadow_rows = shadow_values[1:] if has_shadow_header else shadow_values
+        for r in shadow_rows:
+            if len(r) >= 3:
+                shadow_existing_keys.add((str(r[0]).strip(), str(r[1]).strip(), str(r[2]).strip()))
+    except Exception:
+        # Do not kill the official log if shadow setup has an issue.
+        shadow_ws = None
+        shadow_errors += len(schedule_games)
+        traceback.print_exc()
+
+    official_rows_to_append = []
+    shadow_rows_to_append = []
 
     for game in schedule_games:
         try:
@@ -677,27 +735,53 @@ def log_today_board(date_str: str | None = None):
             model_away_prob, model_home_prob = simulate_game(away_t, home_t, away_sp, home_sp, team_stats, pitcher_stats)
             row = probability_row(date_str, away_t, home_t, odds[0], odds[1], model_away_prob, model_home_prob)
 
-            status = log_row(row)
             processed += 1
+            key = (str(row[0]).strip(), str(row[1]).strip(), str(row[2]).strip())
 
-            if status == "SUCCESS":
-                logged += 1
-            elif status == "DUPLICATE":
+            if key in official_existing_keys:
                 duplicates += 1
+            else:
+                official_rows_to_append.append(row)
+                official_existing_keys.add(key)
+                logged += 1
 
             try:
                 shadow_row = build_v21_shadow_row(row)
-                shadow_status = log_shadow_row(shadow_row)
-                if shadow_status == "SUCCESS":
-                    shadow_logged += 1
-                elif shadow_status == "DUPLICATE":
+                shadow_key = (str(shadow_row[0]).strip(), str(shadow_row[1]).strip(), str(shadow_row[2]).strip())
+
+                if shadow_key in shadow_existing_keys:
                     shadow_duplicates += 1
+                else:
+                    if shadow_ws is not None:
+                        shadow_rows_to_append.append(shadow_row)
+                        shadow_existing_keys.add(shadow_key)
+                        shadow_logged += 1
+                    else:
+                        shadow_errors += 1
             except Exception:
                 shadow_errors += 1
                 traceback.print_exc()
 
         except Exception:
             errors += 1
+            traceback.print_exc()
+
+    # Batch append rows. This is much lighter than append_row per game.
+    if official_rows_to_append:
+        try:
+            official_ws.append_rows(official_rows_to_append, value_input_option="USER_ENTERED")
+        except Exception:
+            # Roll back counters if append failed.
+            errors += len(official_rows_to_append)
+            logged -= len(official_rows_to_append)
+            traceback.print_exc()
+
+    if shadow_rows_to_append and shadow_ws is not None:
+        try:
+            shadow_ws.append_rows(shadow_rows_to_append, value_input_option="USER_ENTERED")
+        except Exception:
+            shadow_errors += len(shadow_rows_to_append)
+            shadow_logged -= len(shadow_rows_to_append)
             traceback.print_exc()
 
     return {
