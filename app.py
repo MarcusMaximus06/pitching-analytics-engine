@@ -2,6 +2,7 @@
 # Active build: NFL VEGAS BOARD v1.0.1 - API key fallback + offseason-safe live odds board
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -41,7 +42,7 @@ def get_runtime_secret(*names):
             return value
         try:
             value = str(st.secrets.get(name, "")).strip()
-        except (AttributeError, KeyError, RuntimeError, TypeError):
+        except (AttributeError, KeyError, RuntimeError, StreamlitSecretNotFoundError, TypeError):
             value = ""
         if value:
             return value

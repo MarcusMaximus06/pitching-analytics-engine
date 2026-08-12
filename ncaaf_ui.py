@@ -13,6 +13,7 @@ import gspread
 import pandas as pd
 import requests
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
 from google_sheets import get_google_client
 from ncaaf_model import (
@@ -75,7 +76,7 @@ def _configured_secret(*names: str) -> str:
             return value
         try:
             value = str(st.secrets.get(name, "")).strip()
-        except (AttributeError, KeyError, RuntimeError, TypeError):
+        except (AttributeError, KeyError, RuntimeError, StreamlitSecretNotFoundError, TypeError):
             value = ""
         if value:
             return value
