@@ -4579,9 +4579,9 @@ if sport == "🏠 Home":
     - ⚾ MLB Baseball: betting model, player lab, fantasy projections
     - 🏈 NFL Football: simulation engine and fantasy projections in progress
     - 🥊 UFC Combat Sports: Fighter Lab, Fight Predictor, Fighter Comparison, Event Center, and Historical Simulator
+    - 🎓 NCAA Football: validated winner forecasts, sportsbook consensus, and matchup analysis
 
     #### Coming Soon
-    - 🎓 NCAA Football
     - 🥎 NCAA Softball
     """)
 
