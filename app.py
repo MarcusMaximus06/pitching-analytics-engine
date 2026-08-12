@@ -28,6 +28,7 @@ from config import APP_TITLE, APP_PAGE_TITLE, CACHE_TTL_SHORT, CACHE_TTL_ODDS, C
 from constants import MLB_PARK_FACTORS
 from mlb_recent_form import calculate_recent_form_adjustment, fetch_recent_mlb_team_form
 from mlb_pitcher_form import blend_pitcher_form, fetch_pitcher_recent_era
+from nfl_fantasy_ui import render_nfl_draft_lab
 from pybaseball import statcast_pitcher, statcast_batter
 
 TEAM_LOGOS = {
@@ -9971,6 +9972,7 @@ elif sport == "🏈 NFL Football":
         "Select NFL Engine:",
         [
             "🏈 NFL Simulation Engine",
+            "🧠 NFL Draft Intelligence Lab",
             "🧪 NFL Fantasy Season Simulator",
             "🏆 NFL Fantasy Predictor"
         ]
@@ -9978,7 +9980,11 @@ elif sport == "🏈 NFL Football":
 
     st.sidebar.markdown("---")
 
-    if nfl_page == "🧪 NFL Fantasy Season Simulator":
+    if nfl_page == "🧠 NFL Draft Intelligence Lab":
+        render_nfl_draft_lab()
+        st.stop()
+
+    elif nfl_page == "🧪 NFL Fantasy Season Simulator":
         st.title("🧪 NFL Fantasy Season Simulator")
         with st.spinner("Building NFL fantasy projection pool from Sleeper..."):
             nfl_pool_df = hag_fetch_nfl_fantasy_pool()

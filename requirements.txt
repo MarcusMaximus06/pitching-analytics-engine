@@ -5,6 +5,6 @@ requests
 gspread
 curl-cffi
 plotly
-cfbd
+cfbd==5.24.0
 nfl_data_py
 pybaseball

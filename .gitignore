@@ -1,0 +1,7 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.agents/
+haglabs_data/
+google_credentials.json
