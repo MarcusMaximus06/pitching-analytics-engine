@@ -29,7 +29,23 @@ from constants import MLB_PARK_FACTORS
 from mlb_recent_form import calculate_recent_form_adjustment, fetch_recent_mlb_team_form
 from mlb_pitcher_form import blend_pitcher_form, fetch_pitcher_recent_era
 from nfl_fantasy_ui import render_nfl_draft_lab
+from ncaaf_ui import render_ncaaf_winner_lab
 from pybaseball import statcast_pitcher, statcast_batter
+
+
+def get_runtime_secret(*names):
+    """Resolve deployment secrets without embedding credentials in source."""
+    for name in names:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+        try:
+            value = str(st.secrets.get(name, "")).strip()
+        except (AttributeError, KeyError, RuntimeError, TypeError):
+            value = ""
+        if value:
+            return value
+    return ""
 
 TEAM_LOGOS = {
     "Arizona Diamondbacks": "https://www.mlbstatic.com/team-logos/109.svg",
@@ -4819,7 +4835,9 @@ def hag_ufc_find_known_fighter(name, min_score=0.82):
 
 @st.cache_data(ttl=CACHE_TTL_ODDS)
 def hag_ufc_fetch_live_odds():
-    api_key = os.environ.get("ODDS_API_KEY") or "19d9ef9331ef61b3a2589d81ba676e11"
+    api_key = get_runtime_secret("ODDS_API_KEY", "THE_ODDS_API_KEY")
+    if not api_key:
+        return pd.DataFrame(), {"ok": False, "message": "ODDS_API_KEY is not configured.", "raw": ""}
     url = (
         "https://api.the-odds-api.com/v4/sports/mma_mixed_martial_arts/odds/"
         f"?apiKey={api_key}&regions=us&markets=h2h&oddsFormat=american&bookmakers=draftkings,fanduel,betmgm,caesars,espnbet"
@@ -5760,7 +5778,9 @@ if sport == "⚾ MLB Baseball":
 
     @st.cache_data(ttl=CACHE_TTL_ODDS)
     def get_live_odds():
-        api_key = os.environ.get("ODDS_API_KEY") or "19d9ef9331ef61b3a2589d81ba676e11"
+        api_key = get_runtime_secret("ODDS_API_KEY", "THE_ODDS_API_KEY")
+        if not api_key:
+            return {}, {"status": "MISSING_KEY", "message": "ODDS_API_KEY is not configured.", "url": "", "raw": ""}
 
         url = (
             "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/"
@@ -11365,13 +11385,10 @@ elif sport == "🏈 NFL Football":
 
     @st.cache_data(ttl=CACHE_TTL_ODDS)
     def hag_nfl_fetch_live_odds_board():
-        # Use the same Odds API setup style as MLB/UFC.
-        # Local installs can set ODDS_API_KEY, but the app also has a fallback so the board does not fail silently.
-        api_key = (
-            os.environ.get("ODDS_API_KEY")
-            or os.environ.get("THE_ODDS_API_KEY")
-            or "19d9ef9331ef61b3a2589d81ba676e11"
-        )
+        # Use the same deployment-secret setup as MLB/UFC.
+        api_key = get_runtime_secret("ODDS_API_KEY", "THE_ODDS_API_KEY")
+        if not api_key:
+            return pd.DataFrame(), {"ok": False, "message": "ODDS_API_KEY is not configured.", "raw": ""}
 
         url = (
             "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/"
@@ -11982,6 +11999,8 @@ elif sport == "🏈 NFL Football":
 # SPORT BRANCH 4: NCAA FOOTBALL (DYNAMIC CFBD API)
 # ==========================================================
 elif sport == "🎓 NCAA Football":
+    render_ncaaf_winner_lab()
+    st.stop()
     st.title("🎓 NCAA Football Composite Power Simulation")
     st.markdown("### 📊 Advanced CFBD Power Rating Engine")
     st.caption("*Leverages the CollegeFootballData API to sync real-time Elo ratings and maps them into our 100-point structural Composite Power Rating (CPR) scale.*")

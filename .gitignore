@@ -5,3 +5,8 @@ __pycache__/
 .agents/
 haglabs_data/
 google_credentials.json
+data/ncaaf/raw/
+data/ncaaf/public/
+data/ncaaf/*.parquet
+data/ncaaf/backtest.json
+data/ncaaf/build_summary.json
