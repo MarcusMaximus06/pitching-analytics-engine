@@ -9990,7 +9990,7 @@ if sport == "🥎 NCAA Softball":
 # SPORT BRANCH 3: NFL FOOTBALL
 # ==========================================================
 elif sport == "🏈 NFL Football":
-    nfl_page = st.sidebar.radio(
+    nfl_page = st.sidebar.selectbox(
         "Select NFL Engine:",
         [
             "🏈 NFL Simulation Engine",
@@ -11945,22 +11945,6 @@ elif sport == "🏈 NFL Football":
                     key="nfl_record_forecast_team",
                 )
                 team_weekly = weekly_df[weekly_df["Team"] == selected_team].copy()
-                chart = go.Figure()
-                chart.add_trace(go.Scatter(
-                    x=team_weekly["Week"], y=team_weekly["Expected Wins"],
-                    mode="lines+markers", name="Expected Wins",
-                ))
-                chart.add_trace(go.Scatter(
-                    x=team_weekly["Week"], y=team_weekly["Expected Losses"],
-                    mode="lines+markers", name="Expected Losses",
-                ))
-                chart.update_layout(
-                    title=f"{selected_team}: projected record after each week",
-                    xaxis_title="Week", yaxis_title="Cumulative games", height=390,
-                    xaxis=dict(dtick=1), legend=dict(orientation="h"),
-                )
-                st.plotly_chart(chart, use_container_width=True)
-
                 team_weekly["Projected Record"] = team_weekly.apply(
                     lambda row: f"{row['Expected Wins']:.1f}-{row['Expected Losses']:.1f}", axis=1
                 )
