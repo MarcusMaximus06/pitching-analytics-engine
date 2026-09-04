@@ -1,6 +1,7 @@
 streamlit
 pandas
 numpy
+scipy==1.18.0
 requests
 gspread
 curl-cffi

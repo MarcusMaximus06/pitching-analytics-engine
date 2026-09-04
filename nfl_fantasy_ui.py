@@ -164,10 +164,9 @@ def _render_live_draft_room(
             placeholder="Type a player name",
         )
     with entry_b:
-        picked_for = st.radio(
+        picked_for = st.selectbox(
             "Drafted by",
             ["Other team", "My team"],
-            horizontal=True,
             key=f"drafted_owner_{profile_key}",
         )
     with entry_c:

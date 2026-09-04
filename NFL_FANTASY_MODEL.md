@@ -63,6 +63,19 @@ The measured advantage is useful but modest. Do not describe the model as the mo
 - Rookie forecasts still rely heavily on draft capital and position baselines; college production and declare-age calibration remain the largest model gap.
 - Team defense is not yet projected. Kicker field-goal distance scoring is supported where nflverse exposes exact made-distance totals.
 
+## In-season command center
+
+The post-draft layer uses the same validated player model and adds league context without substituting ESPN or Sleeper projections for HagLabs estimates.
+
+- Sleeper public league sync reads the current roster template, ownership, saved starters, league week, and draft state without a login.
+- Lineups use an exact assignment optimizer across all starter and flex slots. Users can choose floor, balanced, or upside posture; inactive roster statuses remain penalized.
+- Start/sit output compares the optimized lineup with Sleeper's saved starters and identifies the players to start and bench.
+- Waiver output excludes rostered Sleeper players, identifies a realistic same-position drop candidate, and ranks weekly gain, rest-of-season gain, upside, confidence, and risk.
+- League power rankings compare optimized starters and limited usable bench depth. They are roster-strength estimates, not promised standings.
+- Private ESPN leagues use a manual roster paste because the league endpoint returns 401. HagLabs does not request or retain ESPN login cookies.
+
+Current start/sit values are rest-of-season weekly baselines, not opponent-specific guarantees. Late injury, inactive, weather, and depth-chart news must still be checked before kickoff. The next accuracy milestone is a separately backtested weekly matchup adjustment; it should not be added until it beats the baseline out of sample.
+
 ## Efficient Codex task prompt
 
 Use this compact format for future NFL fantasy work:
@@ -81,9 +94,9 @@ Codex should inspect `nfl_fantasy_model.py`, `nfl_fantasy_ui.py`, and the focuse
 ## Verification
 
 ```powershell
-rtk pytest tests\test_nfl_fantasy_model.py -q
-rtk ruff check nfl_fantasy_model.py nfl_fantasy_ui.py nfl_draft_assistant.py nfl_league_profiles.py tests\test_nfl_fantasy_model.py
-.\.venv\Scripts\python.exe -m py_compile app.py nfl_fantasy_model.py nfl_fantasy_ui.py nfl_draft_assistant.py nfl_league_profiles.py
+rtk test .\.venv\Scripts\python.exe -m pytest -q tests\test_nfl_fantasy_model.py tests\test_nfl_inseason.py
+.\.venv\Scripts\ruff.exe check nfl_fantasy_model.py nfl_fantasy_ui.py nfl_inseason.py nfl_inseason_ui.py nfl_draft_assistant.py nfl_league_profiles.py tests\test_nfl_fantasy_model.py tests\test_nfl_inseason.py
+.\.venv\Scripts\python.exe -m py_compile app.py nfl_fantasy_model.py nfl_fantasy_ui.py nfl_inseason.py nfl_inseason_ui.py nfl_draft_assistant.py nfl_league_profiles.py
 ```
 
 Fantasy projections are estimates. Injuries, roster moves, coaching decisions, and depth-chart changes can invalidate assumptions quickly.

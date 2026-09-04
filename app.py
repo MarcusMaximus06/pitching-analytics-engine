@@ -30,6 +30,7 @@ from constants import MLB_PARK_FACTORS
 from mlb_recent_form import calculate_recent_form_adjustment, fetch_recent_mlb_team_form
 from mlb_pitcher_form import blend_pitcher_form, fetch_pitcher_recent_era
 from nfl_fantasy_ui import render_nfl_draft_lab
+from nfl_inseason_ui import render_nfl_inseason_command_center
 from nfl_season_model import current_nfl_season, fetch_espn_nfl_schedule, simulate_season_records
 from ncaaf_ui import render_ncaaf_winner_lab
 from pybaseball import statcast_pitcher, statcast_batter
@@ -9994,6 +9995,7 @@ elif sport == "🏈 NFL Football":
         "Select NFL Engine:",
         [
             "🏈 NFL Simulation Engine",
+            "🧭 NFL Fantasy Command Center",
             "🧠 NFL Draft Intelligence Lab",
             "🧪 NFL Fantasy Season Simulator",
             "🏆 NFL Fantasy Predictor"
@@ -10002,7 +10004,11 @@ elif sport == "🏈 NFL Football":
 
     st.sidebar.markdown("---")
 
-    if nfl_page == "🧠 NFL Draft Intelligence Lab":
+    if nfl_page == "🧭 NFL Fantasy Command Center":
+        render_nfl_inseason_command_center()
+        st.stop()
+
+    elif nfl_page == "🧠 NFL Draft Intelligence Lab":
         render_nfl_draft_lab()
         st.stop()
 
