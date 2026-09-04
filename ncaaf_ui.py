@@ -540,7 +540,7 @@ def render_ncaaf_winner_lab() -> None:
             display = _display_frame(predictions)
             st.dataframe(
                 display,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "HagLabs Win %": st.column_config.ProgressColumn(format="percent", min_value=0.5, max_value=1.0),
@@ -614,7 +614,7 @@ def render_ncaaf_winner_lab() -> None:
                 if metrics:
                     comparison.append({"Benchmark": name.title(), **metrics})
             if comparison:
-                st.dataframe(pd.DataFrame(comparison), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(comparison), width="stretch", hide_index=True)
         st.caption(
             "The validation gate requires at least 500 rolling-origin games and lower log loss and Brier score than the Elo baseline. "
             "Every active game is logged; headline accuracy never excludes no-edge games."
