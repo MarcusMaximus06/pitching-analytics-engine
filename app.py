@@ -30,6 +30,7 @@ from constants import MLB_PARK_FACTORS
 from mlb_recent_form import calculate_recent_form_adjustment, fetch_recent_mlb_team_form
 from mlb_pitcher_form import blend_pitcher_form, fetch_pitcher_recent_era
 from nfl_fantasy_ui import render_nfl_draft_lab
+from nfl_season_model import current_nfl_season, fetch_espn_nfl_schedule, simulate_season_records
 from ncaaf_ui import render_ncaaf_winner_lab
 from pybaseball import statcast_pitcher, statcast_batter
 
@@ -11130,7 +11131,7 @@ elif sport == "🏈 NFL Football":
     # ==========================================================
     # NFL VEGAS BOARD + PREDICTION LOGGING V1.0
     # ==========================================================
-    NFL_BUILD_LABEL = "NFL VEGAS BOARD v1.0.1 - API key fallback + offseason-safe live odds board"
+    NFL_BUILD_LABEL = "NFL SEASON FORECAST v1.1.0 - weekly records + calibrated decision window"
 
     NFL_TEAM_RATINGS = {
         "Arizona Cardinals": {"abbr": "ARI", "elo": 1480, "off": 47, "def": 45, "qb": 48, "form": 47},
@@ -11354,13 +11355,13 @@ elif sport == "🏈 NFL Football":
         except Exception:
             mq = 0
         if edge >= 6.0 and mq >= 65:
-            return "High"
-        if edge >= 3.0 and mq >= 50:
-            return "Medium"
+            return "Research"
         return "Tracking"
 
     def hag_nfl_official_confidence(confidence):
-        return str(confidence or "").strip() in ["High", "Medium"]
+        # The current static starter ratings have not passed a walk-forward NFL
+        # game backtest. Do not publish their disagreement with Vegas as a bet.
+        return False
 
     def hag_nfl_line_move_note(model_pick, early_vegas_pick, closing_vegas_pick):
         model_pick = str(model_pick or "")
@@ -11385,7 +11386,7 @@ elif sport == "🏈 NFL Football":
             return "", ""
 
     @st.cache_data(ttl=CACHE_TTL_ODDS)
-    def hag_nfl_fetch_live_odds_board():
+    def hag_nfl_fetch_live_odds_board_v11():
         # Use the same deployment-secret setup as MLB/UFC.
         api_key = get_runtime_secret("ODDS_API_KEY", "THE_ODDS_API_KEY")
         if not api_key:
@@ -11488,6 +11489,10 @@ elif sport == "🏈 NFL Football":
         if not df.empty:
             df = df.sort_values(["Date", "Start Time", "Away Team"]).reset_index(drop=True)
         return df, {"ok": True, "message": f"Loaded {len(df)} NFL moneyline games.", "raw": ""}
+
+    @st.cache_data(ttl=900, show_spinner=False)
+    def hag_nfl_fetch_season_schedule(season):
+        return fetch_espn_nfl_schedule(int(season))
 
     def hag_nfl_get_log_worksheet():
         gc = get_google_client()
@@ -11835,8 +11840,8 @@ elif sport == "🏈 NFL Football":
             st.dataframe(df.tail(50), use_container_width=True, hide_index=True)
 
     if nfl_page == "🏈 NFL Simulation Engine":
-        st.title("🏈 NFL Vegas Board & Prediction Engine")
-        st.caption("Track NFL model picks against early Vegas lines, closing Vegas lines, and final results.")
+        st.title("🏈 NFL Season Intelligence Lab")
+        st.caption("Forecast every team's record week by week, then track near-term game predictions against Vegas.")
 
         st.info(f"Active build: {NFL_BUILD_LABEL}")
 
@@ -11853,20 +11858,22 @@ elif sport == "🏈 NFL Football":
         with m5:
             st.metric("Vegas Accuracy", f"{stats['vegas_acc']:.1f}%")
 
-        with st.expander("What changed in NFL v1.0?"):
+        with st.expander("What changed in NFL v1.1?"):
             st.markdown("""
-            **NFL v1.0 adds the same tracking structure as MLB/UFC:**
+            **NFL v1.1 adds a continuously updating season outlook:**
 
-            - Live NFL Vegas board from The Odds API
-            - Conservative starter model using team power, offense, defense, QB, recent form, and home field
-            - Official vs Tracking confidence split
-            - Google Sheets NFL Log V2
-            - Closing line snapshot button
-            - ESPN auto-grading for completed games
-            - Accuracy dashboard against early Vegas and closing Vegas
+            - Full 18-week ESPN schedule with completed results locked automatically
+            - Updated Elo strength after every final score
+            - 20,000 remaining-season simulations with current and projected records
+            - Team-by-team expected record after every week
+            - No-vig market context blended into future games when available
+            - Live betting board limited to the near-term decision window
+            - Static starter-model edges remain research-only until validated out of sample
             """)
 
+        board_df, board_status = hag_nfl_fetch_live_odds_board_v11()
         nfl_tabs = st.tabs([
+            "Season Record Forecast",
             "Live NFL Vegas Board",
             "Log Predictions",
             "Closing Line Tracker",
@@ -11876,8 +11883,130 @@ elif sport == "🏈 NFL Football":
         ])
 
         with nfl_tabs[0]:
+            season = current_nfl_season()
+            st.subheader(f"{season} NFL Season Record Forecast")
+            st.caption(
+                "Completed results are fixed. Every remaining game is simulated from result-updated team strength "
+                "and no-vig sportsbook consensus when available. The forecast refreshes automatically as games finish."
+            )
+            try:
+                season_schedule = hag_nfl_fetch_season_schedule(season)
+                forecast_df, weekly_df, season_games_df = simulate_season_records(
+                    season_schedule,
+                    NFL_TEAM_RATINGS,
+                    board_df,
+                    simulations=20_000,
+                )
+            except Exception as exc:
+                season_schedule = forecast_df = weekly_df = season_games_df = pd.DataFrame()
+                st.error(f"Could not build the {season} season forecast: {exc}")
+
+            if not forecast_df.empty:
+                completed_games = int(season_games_df["completed"].astype(bool).sum())
+                remaining_games = season_games_df[~season_games_df["completed"].astype(bool)]
+                market_games = int(remaining_games["market_home_probability"].notna().sum())
+                completed_weeks = season_games_df.loc[season_games_df["completed"].astype(bool), "week"]
+                last_completed_week = int(completed_weeks.max()) if not completed_weeks.empty else 0
+
+                f1, f2, f3, f4 = st.columns(4)
+                with f1:
+                    st.metric("Season", season)
+                with f2:
+                    st.metric("Completed Games", completed_games)
+                with f3:
+                    st.metric("Latest Completed Week", last_completed_week)
+                with f4:
+                    st.metric("Future Games With Market", market_games)
+
+                standings = forecast_df.copy()
+                standings["Projected Record"] = standings.apply(
+                    lambda row: f"{row['Projected Wins']:.1f}-{row['Projected Losses']:.1f}", axis=1
+                )
+                standings["Playoff Probability"] = standings["Playoff Probability"].map(lambda value: f"{value:.1%}")
+                standings["Projected Wins"] = standings["Projected Wins"].round(2)
+                standings["Projected Losses"] = standings["Projected Losses"].round(2)
+                st.dataframe(
+                    standings[[
+                        "Team", "Current Record", "Projected Record", "Projected Wins",
+                        "Median Wins", "80% Win Range", "Playoff Probability", "Updated Elo",
+                    ]],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                st.caption(
+                    "Playoff probability is an approximate top-seven conference finish; official NFL tiebreakers "
+                    "and division-winner seeding are not yet modeled. Record ranges are simulation percentiles."
+                )
+
+                selected_team = st.selectbox(
+                    "Team week-by-week outlook",
+                    sorted(forecast_df["Team"].tolist()),
+                    index=sorted(forecast_df["Team"].tolist()).index("Kansas City Chiefs"),
+                    key="nfl_record_forecast_team",
+                )
+                team_weekly = weekly_df[weekly_df["Team"] == selected_team].copy()
+                chart = go.Figure()
+                chart.add_trace(go.Scatter(
+                    x=team_weekly["Week"], y=team_weekly["Expected Wins"],
+                    mode="lines+markers", name="Expected Wins",
+                ))
+                chart.add_trace(go.Scatter(
+                    x=team_weekly["Week"], y=team_weekly["Expected Losses"],
+                    mode="lines+markers", name="Expected Losses",
+                ))
+                chart.update_layout(
+                    title=f"{selected_team}: projected record after each week",
+                    xaxis_title="Week", yaxis_title="Cumulative games", height=390,
+                    xaxis=dict(dtick=1), legend=dict(orientation="h"),
+                )
+                st.plotly_chart(chart, use_container_width=True)
+
+                team_weekly["Projected Record"] = team_weekly.apply(
+                    lambda row: f"{row['Expected Wins']:.1f}-{row['Expected Losses']:.1f}", axis=1
+                )
+                st.dataframe(
+                    team_weekly[["Week", "Projected Record", "Expected Wins", "Expected Losses"]].round(2),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+                team_games = season_games_df[
+                    (season_games_df["home_team"] == selected_team)
+                    | (season_games_df["away_team"] == selected_team)
+                ].copy()
+                team_games["Opponent"] = team_games.apply(
+                    lambda row: row["away_team"] if row["home_team"] == selected_team else row["home_team"], axis=1
+                )
+                team_games["Site"] = team_games["home_team"].map(
+                    lambda value: "Home" if value == selected_team else "Away"
+                )
+                team_games["Team Win Probability"] = team_games.apply(
+                    lambda row: row["home_win_probability"]
+                    if row["home_team"] == selected_team
+                    else 1.0 - row["home_win_probability"],
+                    axis=1,
+                ).map(lambda value: f"{value:.1%}")
+                team_games["Status"] = team_games.apply(
+                    lambda row: (
+                        f"Final {int(row['away_score'])}-{int(row['home_score'])}"
+                        if row["completed"] else "Projected"
+                    ),
+                    axis=1,
+                )
+                st.markdown("#### Game-by-game outlook")
+                st.dataframe(
+                    team_games[[
+                        "week", "start_date", "Opponent", "Site", "Team Win Probability",
+                        "probability_source", "Status",
+                    ]].rename(columns={
+                        "week": "Week", "start_date": "Start", "probability_source": "Source",
+                    }),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        with nfl_tabs[1]:
             st.subheader("Live NFL Vegas Board")
-            board_df, board_status = hag_nfl_fetch_live_odds_board()
 
             if board_status.get("ok"):
                 st.success(board_status.get("message", "Loaded NFL odds."))
@@ -11891,6 +12020,17 @@ elif sport == "🏈 NFL Football":
             if board_df.empty:
                 st.info("No live NFL moneyline games are available right now. This is normal during parts of the offseason.")
             else:
+                today_et = pd.Timestamp.now(tz="America/New_York").normalize().tz_localize(None)
+                board_dates = pd.to_datetime(board_df["Date"], errors="coerce")
+                decision_board = board_df[
+                    board_dates.between(today_et - pd.Timedelta(days=1), today_et + pd.Timedelta(days=10))
+                ].copy()
+                if decision_board.empty:
+                    decision_board = board_df.head(16).copy()
+                st.warning(
+                    "The static game model has not completed a walk-forward NFL validation. All model edges are "
+                    "research signals, not official picks. The table is limited to the next 10 days."
+                )
                 display_cols = [
                     "Date", "Start Time", "Away Team", "Home Team",
                     "Away ML", "Home ML", "Vegas Away %", "Vegas Home %",
@@ -11898,22 +12038,22 @@ elif sport == "🏈 NFL Football":
                     "Model Pick", "Vegas Pick", "Model Edge %", "Confidence",
                     "Official Pick", "Model Quality", "Odds Source"
                 ]
-                st.dataframe(board_df[[c for c in display_cols if c in board_df.columns]], use_container_width=True, hide_index=True)
+                st.dataframe(decision_board[[c for c in display_cols if c in decision_board.columns]], use_container_width=True, hide_index=True)
 
                 b1, b2, b3, b4 = st.columns(4)
                 with b1:
-                    st.metric("Modeled Games", len(board_df))
+                    st.metric("Decision Window Games", len(decision_board))
                 with b2:
-                    st.metric("Official Picks", int((board_df["Official Pick"] == "TRUE").sum()))
+                    st.metric("Official Picks", int((decision_board["Official Pick"] == "TRUE").sum()))
                 with b3:
-                    st.metric("High Confidence", int((board_df["Confidence"] == "High").sum()))
+                    st.metric("Research Signals", int((decision_board["Confidence"] == "Research").sum()))
                 with b4:
-                    avg_edge = pd.to_numeric(board_df["Model Edge %"].astype(str).str.replace("+", "", regex=False), errors="coerce").mean()
-                    st.metric("Avg Model Edge", f"{avg_edge:+.1f}%" if pd.notna(avg_edge) else "+0.0%")
+                    avg_edge = pd.to_numeric(decision_board["Model Edge %"].astype(str).str.replace("+", "", regex=False), errors="coerce").mean()
+                    st.metric("Avg Model Disagreement", f"{avg_edge:+.1f}%" if pd.notna(avg_edge) else "+0.0%")
 
                 st.markdown("#### Save current board")
                 if st.button("💾 Log This NFL Board", key="log_nfl_live_board_v1"):
-                    result = hag_nfl_log_board_to_sheet(board_df)
+                    result = hag_nfl_log_board_to_sheet(decision_board)
                     if result.get("error"):
                         st.error(result.get("message"))
                     else:
@@ -11922,10 +12062,10 @@ elif sport == "🏈 NFL Football":
                 st.markdown("#### Closing-line snapshot")
                 st.caption("Use this near kickoff. It updates pending logged rows with the newest Vegas line while keeping the original early snapshot.")
                 if st.button("🔒 Update Closing NFL Lines for Pending Games", key="update_nfl_closing_lines_v1"):
-                    result = hag_nfl_update_closing_lines_from_board(board_df)
+                    result = hag_nfl_update_closing_lines_from_board(decision_board)
                     st.success(f"Updated {result['updated']} games. Missing from live board: {result['missing']}. Skipped: {result['skipped']}.")
 
-        with nfl_tabs[1]:
+        with nfl_tabs[2]:
             st.subheader("NFL Prediction Log")
             log_df = hag_nfl_read_log()
             if log_df.empty:
@@ -11940,7 +12080,7 @@ elif sport == "🏈 NFL Football":
                 filtered = log_df[log_df["Status"].astype(str).isin(status_filter)] if status_filter else log_df
                 st.dataframe(filtered, use_container_width=True, hide_index=True)
 
-        with nfl_tabs[2]:
+        with nfl_tabs[3]:
             st.subheader("NFL Closing Line Tracker")
             log_df = hag_nfl_read_log()
             if log_df.empty:
@@ -11955,7 +12095,7 @@ elif sport == "🏈 NFL Football":
                 movement_df = log_df[[c for c in movement_cols if c in log_df.columns]].copy()
                 st.dataframe(movement_df, use_container_width=True, hide_index=True)
 
-        with nfl_tabs[3]:
+        with nfl_tabs[4]:
             st.subheader("Grade NFL Results")
             st.caption("Auto-grades pending NFL moneyline picks using ESPN final scores.")
             if st.button("🔄 Auto-Grade Completed NFL Games", key="grade_nfl_pending_v1"):
@@ -11972,10 +12112,10 @@ elif sport == "🏈 NFL Football":
             if not pending_df.empty:
                 st.dataframe(pending_df, use_container_width=True, hide_index=True)
 
-        with nfl_tabs[4]:
+        with nfl_tabs[5]:
             hag_nfl_render_accuracy_dashboard()
 
-        with nfl_tabs[5]:
+        with nfl_tabs[6]:
             st.subheader("Manual Matchup Simulator")
             team_names = sorted(NFL_TEAM_RATINGS.keys())
             c1, c2 = st.columns(2)
