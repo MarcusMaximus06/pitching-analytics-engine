@@ -1,6 +1,6 @@
 {
-  "calibration_intercept": 0.011629085061324526,
-  "calibration_slope": 1.0148652946538737,
+  "calibration_intercept": 0.038119925348209245,
+  "calibration_slope": 0.93745769217762,
   "coefficients": [
     0.9662852492096559,
     0.3075902714786449,
@@ -343,14 +343,14 @@
         "log_loss": 0.5171713189701452
       }
     },
-    "data_generated_at": "2026-08-12T19:41:27.713659+00:00",
+    "data_generated_at": "2026-09-04T21:12:23.466795+00:00",
     "data_limitations": "Roster, coach, venue, and weather coefficients require the CFBD enrichment build.",
     "data_source": "SportsDataverse ESPN college-football releases",
     "feature_store": "data\\ncaaf\\features.parquet",
     "market_validated": false,
     "market_weight": 0.9,
     "mode": "trained",
-    "model_version": "ncaaf-winner-v1.0.0",
+    "model_version": "ncaaf-winner-v1.1.0",
     "public_bootstrap": true,
     "team_state_season": 2026,
     "team_states": {
@@ -4047,7 +4047,7 @@
         "win_ema": 0.3983019697333096
       }
     },
-    "trained_at": "2026-08-12T19:41:27.535378+00:00",
+    "trained_at": "2026-09-04T21:12:23.265264+00:00",
     "training_games": 10471,
     "training_seasons": [
       2014,

@@ -18,8 +18,10 @@ from ncaaf_model import (
     find_matching_schedule_game,
     market_consensus,
     paired_market_deltas,
+    parse_espn_scoreboards,
     prediction_record,
     probability_metrics,
+    update_states_with_current_games,
     walk_forward_backtest,
 )
 
@@ -173,6 +175,59 @@ def test_bootstrap_predictions_never_claim_actionable_edge():
     assert record["model_edge"] > 0.03
     assert record["actionable_edge"] is False
     assert record["model_mode"] == "bootstrap"
+    assert record["predicted_winner"] == "Home"
+    assert record["market_aware_predicted_winner"] == "Away"
+    assert record["decision_source"] == "independent HagLabs model"
+
+    model.metadata["market_validated"] = True
+    validated_record = prediction_record(
+        game,
+        features,
+        model,
+        {"home_probability": 0.40, "home_odds": 150, "away_odds": -170, "book_count": 4},
+    )
+    assert validated_record["predicted_winner"] == "Away"
+    assert validated_record["decision_source"] == "validated market ensemble"
+
+
+def test_public_scoreboard_results_update_preseason_states_once():
+    payload = {
+        "events": [
+            {
+                "id": "401000001",
+                "season": {"year": 2026, "type": 2},
+                "week": {"number": 1},
+                "date": "2026-08-29T16:00:00Z",
+                "status": {"type": {"state": "post", "completed": True}},
+                "competitions": [
+                    {
+                        "neutralSite": False,
+                        "competitors": [
+                            {
+                                "homeAway": "home",
+                                "score": "35",
+                                "team": {"location": "Home"},
+                            },
+                            {
+                                "homeAway": "away",
+                                "score": "17",
+                                "team": {"location": "Away"},
+                            },
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    games = parse_espn_scoreboards([payload, payload], 2026)
+    states, summary = update_states_with_current_games(
+        {"Home": TeamState(), "Away": TeamState()}, games
+    )
+    assert len(games) == 1
+    assert summary["completed_games_applied"] == 1
+    assert summary["latest_week"] == 1
+    assert states["Home"].rating > states["Away"].rating
+    assert states["Home"].games == 1
 
 
 def test_schedule_matching_uses_canonical_names():

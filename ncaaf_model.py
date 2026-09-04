@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-MODEL_VERSION = "ncaaf-winner-v1.0.0"
+MODEL_VERSION = "ncaaf-winner-v1.1.0"
 
 FEATURE_NAMES = (
     "elo_diff_100",
@@ -249,6 +249,97 @@ def parse_datetime(value: Any) -> datetime | None:
         return None
 
 
+def parse_espn_scoreboards(
+    payloads: Sequence[Mapping[str, Any]],
+    season: int,
+) -> list[dict[str, Any]]:
+    """Normalize current ESPN scoreboard payloads into stable game records."""
+    events: dict[str, Mapping[str, Any]] = {}
+    for payload in payloads:
+        for raw_event in payload.get("events") or []:
+            event = as_mapping(raw_event)
+            event_season = as_mapping(event.get("season"))
+            if safe_int(event_season.get("year")) != int(season):
+                continue
+            event_id = str(event.get("id") or "")
+            if event_id:
+                events[event_id] = event
+
+    games: list[dict[str, Any]] = []
+    for event_id, event in events.items():
+        competition = as_mapping((event.get("competitions") or [{}])[0])
+        competitors = [as_mapping(item) for item in competition.get("competitors") or []]
+        sides = {str(item.get("homeAway") or ""): item for item in competitors}
+        home_item = sides.get("home", {})
+        away_item = sides.get("away", {})
+        home_team_data = as_mapping(home_item.get("team"))
+        away_team_data = as_mapping(away_item.get("team"))
+        home_team = str(home_team_data.get("location") or home_team_data.get("displayName") or "")
+        away_team = str(away_team_data.get("location") or away_team_data.get("displayName") or "")
+        if not home_team or not away_team:
+            continue
+        status = as_mapping(as_mapping(event.get("status")).get("type"))
+        completed = bool(status.get("completed")) or str(status.get("state")) == "post"
+        games.append(
+            {
+                "id": safe_int(event_id),
+                "game_id": safe_int(event_id),
+                "season": int(season),
+                "week": safe_int(as_mapping(event.get("week")).get("number")),
+                "start_date": str(event.get("date") or ""),
+                "away_team": away_team,
+                "home_team": home_team,
+                "neutral_site": bool(competition.get("neutralSite")),
+                "away_points": safe_float(away_item.get("score"), float("nan")) if completed else None,
+                "home_points": safe_float(home_item.get("score"), float("nan")) if completed else None,
+                "completed": completed,
+            }
+        )
+    return sorted(games, key=_game_sort_key)
+
+
+def fetch_espn_current_season_games(
+    season: int,
+    session: Any = requests,
+) -> list[dict[str, Any]]:
+    """Fetch completed/current FBS weeks from ESPN without a credential."""
+    url = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard"
+    common = {
+        "dates": str(season),
+        "seasontype": 2,
+        "groups": 80,
+        "limit": 100,
+    }
+
+    def get_payload(**extra: Any) -> dict[str, Any]:
+        response = session.get(
+            url,
+            params={**common, **extra},
+            timeout=30,
+        )
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"ESPN college-football scoreboard returned HTTP {response.status_code}"
+            )
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise TypeError("ESPN college-football scoreboard returned an unexpected payload")
+        return payload
+
+    current = get_payload()
+    current_week = max(
+        (
+            safe_int(as_mapping(event).get("week", {}).get("number"))
+            for event in current.get("events") or []
+        ),
+        default=0,
+    )
+    payloads = [current]
+    for week in range(1, current_week + 1):
+        payloads.append(get_payload(week=week))
+    return parse_espn_scoreboards(payloads, season)
+
+
 def haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     radius = 3958.7613
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -467,6 +558,42 @@ def build_current_states(
             {home: havoc_index.get((game_id, home), {}), away: havoc_index.get((game_id, away), {})},
         )
     return states
+
+
+def update_states_with_current_games(
+    states: Mapping[str, TeamState],
+    games: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, TeamState], dict[str, Any]]:
+    """Apply current-season final scores to a copied preseason state snapshot."""
+    updated = {
+        team: TeamState(**asdict(state))
+        for team, state in states.items()
+    }
+    applied = 0
+    latest_week = 0
+    latest_start = ""
+    updated_teams: set[str] = set()
+    for raw_game in sorted((as_mapping(item) for item in games), key=_game_sort_key):
+        if not _game_is_complete(raw_game):
+            continue
+        home_display = str(raw_game.get("home_team") or raw_game.get("homeTeam") or "")
+        away_display = str(raw_game.get("away_team") or raw_game.get("awayTeam") or "")
+        home = match_team_name(home_display, updated) or home_display
+        away = match_team_name(away_display, updated) or away_display
+        if not home or not away:
+            continue
+        game = {**raw_game, "home_team": home, "away_team": away}
+        update_states_after_game(game, updated)
+        applied += 1
+        latest_week = max(latest_week, safe_int(game.get("week")))
+        latest_start = max(latest_start, str(game.get("start_date") or ""))
+        updated_teams.update((home, away))
+    return updated, {
+        "completed_games_applied": applied,
+        "latest_week": latest_week,
+        "latest_start": latest_start,
+        "teams_updated": len(updated_teams),
+    }
 
 
 def build_season_context(
@@ -802,6 +929,7 @@ def walk_forward_backtest(frame: pd.DataFrame, min_train_seasons: int = 3) -> di
                 if loss < best_loss:
                     best_loss = loss
                     market_weight = float(candidate)
+        raw_model_logits = model.raw_logit(test)
         model_probabilities = model.predict_home_probability(test)
         elo_probabilities = elo_baseline_probability(test)
         for position, (_, row) in enumerate(test.iterrows()):
@@ -817,6 +945,7 @@ def walk_forward_backtest(frame: pd.DataFrame, min_train_seasons: int = 3) -> di
                     "season": test_season,
                     "game_id": row.get("game_id"),
                     "home_win": int(row["home_win"]),
+                    "raw_model_logit": float(raw_model_logits[position]),
                     "model_probability": float(model_probabilities[position]),
                     "elo_probability": float(elo_probabilities[position]),
                     "market_probability": market_probability,
@@ -870,12 +999,16 @@ def fit_final_model(frame: pd.DataFrame, backtest: Mapping[str, Any] | None = No
     if len(oof) >= 100:
         logits = []
         labels = []
-        # Convert held-out probabilities back to logits; these remain genuinely out of sample.
+        # Calibrate the final coefficient fit from genuinely out-of-sample raw logits.
+        # Reversing already calibrated probabilities would fit a second calibration
+        # layer and then apply it to an incompatible final-model logit scale.
         for row in oof:
-            probability = clamp(safe_float(row.get("model_probability"), 0.5), 1e-5, 1 - 1e-5)
-            logits.append(math.log(probability / (1 - probability)))
-            labels.append(safe_float(row.get("home_win")))
-        model.fit_calibration(logits, labels)
+            raw_logit = safe_float(row.get("raw_model_logit"), float("nan"))
+            if math.isfinite(raw_logit):
+                logits.append(raw_logit)
+                labels.append(safe_float(row.get("home_win")))
+        if len(logits) >= 100:
+            model.fit_calibration(logits, labels)
     model_metrics = (backtest or {}).get("model") or {}
     elo_metrics = (backtest or {}).get("elo") or {}
     model_validated = (
@@ -934,19 +1067,36 @@ def prediction_record(
     independent_home = float(model.predict_home_probability(feature_row)[0])
     market_home = safe_float((market or {}).get("home_probability"), float("nan"))
     market_value = market_home if math.isfinite(market_home) else None
-    final_home = blend_with_market(
+    market_aware_home = blend_with_market(
         independent_home,
         market_value,
         safe_float(model.metadata.get("market_weight"), 0.75),
     )
     home_edge = independent_home - market_value if market_value is not None else None
-    winner = home if final_home >= 0.5 else away
-    winner_probability = final_home if winner == home else 1.0 - final_home
+    independent_winner = home if independent_home >= 0.5 else away
+    independent_winner_probability = max(independent_home, 1.0 - independent_home)
+    market_winner = (
+        (home if market_value >= 0.5 else away) if market_value is not None else None
+    )
+    market_winner_probability = (
+        max(market_value, 1.0 - market_value) if market_value is not None else None
+    )
+    market_aware_winner = (
+        (home if market_aware_home >= 0.5 else away) if market_value is not None else None
+    )
+    market_aware_winner_probability = (
+        max(market_aware_home, 1.0 - market_aware_home)
+        if market_value is not None
+        else None
+    )
     completeness_fields = ("talent_diff_100", "returning_diff", "offense_ppa_diff", "havoc_adv")
     completeness = sum(abs(safe_float(feature_row.get(name))) > 1e-9 for name in completeness_fields) / len(completeness_fields)
     uncertainty = 0.12 - 0.04 * completeness
     validated = bool(model.metadata.get("validated"))
     market_validated = bool(model.metadata.get("market_validated"))
+    final_home = market_aware_home if market_validated else independent_home
+    winner = home if final_home >= 0.5 else away
+    winner_probability = final_home if winner == home else 1.0 - final_home
     actionable = validated and market_validated and home_edge is not None and abs(home_edge) >= 0.035
     return {
         "prediction_id": f"{game.get('id') or game.get('game_id') or ''}:{prediction_time.isoformat()}",
@@ -962,7 +1112,15 @@ def prediction_record(
         "neutral_site": bool(game.get("neutral_site") or game.get("neutralSite")),
         "predicted_winner": winner,
         "winner_probability": winner_probability,
+        "decision_source": "validated market ensemble" if market_validated else "independent HagLabs model",
+        "independent_predicted_winner": independent_winner,
+        "independent_winner_probability": independent_winner_probability,
         "independent_home_probability": independent_home,
+        "market_predicted_winner": market_winner,
+        "market_winner_probability": market_winner_probability,
+        "market_aware_predicted_winner": market_aware_winner,
+        "market_aware_winner_probability": market_aware_winner_probability,
+        "market_aware_home_probability": market_aware_home,
         "final_home_probability": final_home,
         "market_home_probability": market_value,
         "model_edge": home_edge,

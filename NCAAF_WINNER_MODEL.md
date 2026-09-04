@@ -32,6 +32,26 @@ calibration. A market-aware probability is displayed separately, using a
 validation-selected blend anchored primarily to the consensus market. Market
 odds are never used to define the independent model's confidence.
 
+Version 1.1 corrects final-model calibration by learning the mapping from raw
+rolling-origin logits rather than applying a second calibration to probabilities
+that were already calibrated. It also keeps the independent **HagLabs Pick** as
+the official prediction while the market ensemble remains unvalidated. The
+market-aware lean is displayed as a diagnostic comparison, not disguised as the
+proprietary forecast.
+
+## Current-season state bridge
+
+When `CFBD_API_KEY` is unavailable, the live engine no longer remains frozen at
+the shipped preseason state. It reads completed games from ESPN's public FBS
+scoreboard, de-duplicates stable game IDs, aligns team aliases, and applies each
+result chronologically to a fresh copy of the preseason ratings. This updates
+Elo, scoring margin, offense, defense, recent results, and rest before producing
+the current slate.
+
+The credential-free bridge does not invent unavailable inputs. Roster talent,
+returning production, coaching, venue, weather, and advanced play efficiency
+still require CFBD and are explicitly reported as missing on the live page.
+
 The artifact receives a football `validated` flag only when at least 500
 rolling-origin predictions beat the chronological Elo baseline on both Brier
 score and log loss. A separate `market_validated` flag requires at least 1,000

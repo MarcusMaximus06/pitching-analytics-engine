@@ -26,11 +26,13 @@ from ncaaf_model import (
     build_current_states,
     build_season_context,
     create_feature_snapshot,
+    fetch_espn_current_season_games,
     market_consensus,
     match_team_name,
     prediction_record,
     safe_float,
     safe_int,
+    update_states_with_current_games,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -112,6 +114,11 @@ def _fetch_odds(api_key: str) -> list[dict[str, Any]]:
         raise RuntimeError(f"Odds service returned HTTP {response.status_code}")
     payload = response.json()
     return [as_mapping(item) for item in payload] if isinstance(payload, list) else []
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _fetch_public_current_results(season: int) -> list[dict[str, Any]]:
+    return fetch_espn_current_season_games(season)
 
 
 @st.cache_data(ttl=43200, show_spinner=False)
@@ -346,8 +353,16 @@ def _history_metrics() -> dict[str, Any]:
 def _display_frame(records: list[dict[str, Any]]) -> pd.DataFrame:
     rows = []
     for record in records:
-        market_home = record.get("market_home_probability")
-        edge = record.get("model_edge")
+        independent_winner = record.get("independent_predicted_winner") or record.get("predicted_winner")
+        independent_probability = record.get("independent_winner_probability") or record.get("winner_probability")
+        market_winner = record.get("market_predicted_winner")
+        market_probability = record.get("market_winner_probability")
+        market_aware_winner = record.get("market_aware_predicted_winner")
+        market_aware_probability = record.get("market_aware_winner_probability")
+        home_edge = record.get("model_edge")
+        winner_edge = None
+        if home_edge is not None:
+            winner_edge = home_edge if independent_winner == record.get("home_team") else -home_edge
         explanation = ", ".join(
             f"{item['label']} → {item['direction']}" for item in record.get("explanations") or []
         )
@@ -355,14 +370,30 @@ def _display_frame(records: list[dict[str, Any]]) -> pd.DataFrame:
             {
                 "Kickoff": record.get("start_date"),
                 "Matchup": f"{record.get('away_team')} @ {record.get('home_team')}",
-                "Winner": record.get("predicted_winner"),
-                "Win %": record.get("winner_probability"),
+                "HagLabs Pick": independent_winner,
+                "HagLabs Win %": independent_probability,
+                "Market Pick": market_winner,
+                "Market Win %": market_probability,
+                "Market-Aware Lean": market_aware_winner,
+                "Lean Win %": market_aware_probability,
                 "Range": f"{record.get('uncertainty_low', 0):.0%}–{record.get('uncertainty_high', 0):.0%}",
-                "Fair ML": record.get("fair_home_moneyline") if record.get("predicted_winner") == record.get("home_team") else record.get("fair_away_moneyline"),
-                "Market Home %": market_home,
-                "Independent Edge": edge,
+                "Fair ML": record.get("fair_home_moneyline") if independent_winner == record.get("home_team") else record.get("fair_away_moneyline"),
+                "HagLabs Edge": winner_edge,
+                "Agreement": (
+                    "No market"
+                    if market_winner is None
+                    else ("Agree" if market_winner == independent_winner else "Disagree")
+                ),
                 "Books": record.get("book_count"),
-                "Signal": "Validated edge" if record.get("actionable_edge") else "Prediction only",
+                "Signal": (
+                    "Validated edge"
+                    if record.get("actionable_edge")
+                    else (
+                        "Market disagreement"
+                        if market_winner is not None and market_winner != independent_winner
+                        else ("Model-market agree" if market_winner is not None else "No market")
+                    )
+                ),
                 "Why": explanation,
             }
         )
@@ -409,10 +440,6 @@ def render_ncaaf_winner_lab() -> None:
             "Winner forecasts remain available while actionable edge labels stay disabled."
         )
     if not cfbd_key:
-        st.warning(
-            "CFBD_API_KEY is not configured. The board will use the shipped 2014–2025 public-data team states "
-            "and current sportsbook schedule, without roster, coach, venue, weather, or CFBD-ID grading enrichment."
-        )
         with st.expander("Required one-time commands"):
             st.code(
                 "$env:CFBD_API_KEY='<configured locally>'\n"
@@ -430,7 +457,21 @@ def render_ncaaf_winner_lab() -> None:
         st.error(f"The NCAA data refresh failed safely: {exc}")
         return
 
+    public_results: list[dict[str, Any]] = []
+    public_results_error = ""
+    if not cfbd_key:
+        try:
+            public_results = _fetch_public_current_results(int(season))
+        except (requests.RequestException, RuntimeError, TypeError, ValueError) as exc:
+            public_results_error = type(exc).__name__
+
     games = payload.get("games") or []
+    state_refresh = {
+        "completed_games_applied": 0,
+        "latest_week": 0,
+        "latest_start": "",
+        "teams_updated": 0,
+    }
     if games:
         states = build_current_states(games, payload.get("advanced"), payload.get("havoc"))
         context = build_season_context(
@@ -448,6 +489,8 @@ def render_ncaaf_winner_lab() -> None:
             team: TeamState(**state)
             for team, state in (metadata.get("team_states") or {}).items()
         }
+        if safe_int(metadata.get("team_state_season")) == int(season):
+            states, state_refresh = update_states_with_current_games(states, public_results)
         context = SeasonContext()
         schedule = [
             {
@@ -462,28 +505,48 @@ def render_ncaaf_winner_lab() -> None:
             for game in odds_games
         ]
         weather = {}
+
+    if not cfbd_key:
+        if state_refresh["completed_games_applied"]:
+            st.info(
+                f"Credential-free current-state update: applied {state_refresh['completed_games_applied']} "
+                f"completed {season} games through week {state_refresh['latest_week']} to the shipped preseason baseline. "
+                "Roster talent, returning production, coach, venue, and weather enrichment still require CFBD."
+            )
+        else:
+            suffix = f" ({public_results_error})" if public_results_error else ""
+            st.warning(
+                "CFBD_API_KEY is not configured and no current-season final scores were applied"
+                f"{suffix}. The board is using the shipped preseason team states plus current sportsbook games."
+            )
     predictions = _build_predictions(schedule, odds_games, states, context, weather, model)
 
-    source_columns = st.columns(4)
+    source_columns = st.columns(5)
     source_columns[0].metric("Upcoming games", len(schedule))
     source_columns[1].metric("Teams with history", len(states))
     source_columns[2].metric("Games with market", sum(record.get("market_home_probability") is not None for record in predictions))
     source_columns[3].metric("Odds books", max((safe_int(record.get("book_count")) for record in predictions), default=0))
+    source_columns[4].metric("Current finals applied", state_refresh["completed_games_applied"])
 
     tabs = st.tabs(["Winner Board", "Matchup Lab", "Validation", "Methodology"])
     with tabs[0]:
         if not predictions:
             st.info("No FBS games are scheduled in the next 21 days.")
         else:
+            st.caption(
+                "HagLabs Pick is the independent model. Market-Aware Lean is shown for comparison, "
+                "but it does not replace the official pick until the historical market gate passes."
+            )
             display = _display_frame(predictions)
             st.dataframe(
                 display,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Win %": st.column_config.ProgressColumn(format="percent", min_value=0.5, max_value=1.0),
-                    "Market Home %": st.column_config.NumberColumn(format="percent"),
-                    "Independent Edge": st.column_config.NumberColumn(format="percent"),
+                    "HagLabs Win %": st.column_config.ProgressColumn(format="percent", min_value=0.5, max_value=1.0),
+                    "Market Win %": st.column_config.NumberColumn(format="percent"),
+                    "Lean Win %": st.column_config.NumberColumn(format="percent"),
+                    "HagLabs Edge": st.column_config.NumberColumn(format="percent"),
                 },
             )
             st.download_button(
@@ -568,7 +631,15 @@ def render_ncaaf_winner_lab() -> None:
             is taken across available books. The sportsbook number never defines model confidence.
 
             **Leakage controls:** each historical feature snapshot is created before that game updates
-            either team. Calibration and reported metrics use later-season rolling-origin folds.
+            either team. Calibration uses raw out-of-sample logits, and reported metrics use later-season
+            rolling-origin folds.
+
+            **Current season:** when CFBD is unavailable, completed ESPN scoreboard results update the
+            shipped preseason states automatically. This updates Elo and scoring form without pretending
+            that missing roster, coach, venue, weather, or advanced-play data is present.
+
+            **Decision separation:** HagLabs Pick is always the independent model unless the market ensemble
+            passes the stricter historical market gate. The market-aware lean remains diagnostic until then.
 
             **Player scope:** player information is aggregated into team-level continuity, returning
             production, transfers, talent, and availability. The engine does not project individual stats.
