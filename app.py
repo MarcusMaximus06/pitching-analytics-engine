@@ -11834,10 +11834,10 @@ elif sport == "🏈 NFL Football":
                 })
             if tier_rows:
                 st.markdown("#### Accuracy by Confidence Tier")
-                st.dataframe(pd.DataFrame(tier_rows), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(tier_rows), width="stretch", hide_index=True)
 
             st.markdown("#### Recent NFL Log")
-            st.dataframe(df.tail(50), use_container_width=True, hide_index=True)
+            st.dataframe(df.tail(50), width="stretch", hide_index=True)
 
     if nfl_page == "🏈 NFL Simulation Engine":
         st.title("🏈 NFL Season Intelligence Lab")
@@ -11930,7 +11930,7 @@ elif sport == "🏈 NFL Football":
                         "Team", "Current Record", "Projected Record", "Projected Wins",
                         "Median Wins", "80% Win Range", "Playoff Probability", "Updated Elo",
                     ]],
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )
                 st.caption(
@@ -11950,7 +11950,7 @@ elif sport == "🏈 NFL Football":
                 )
                 st.dataframe(
                     team_weekly[["Week", "Projected Record", "Expected Wins", "Expected Losses"]].round(2),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )
 
@@ -11985,7 +11985,7 @@ elif sport == "🏈 NFL Football":
                     ]].rename(columns={
                         "week": "Week", "start_date": "Start", "probability_source": "Source",
                     }),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )
 
@@ -12022,7 +12022,7 @@ elif sport == "🏈 NFL Football":
                     "Model Pick", "Vegas Pick", "Model Edge %", "Confidence",
                     "Official Pick", "Model Quality", "Odds Source"
                 ]
-                st.dataframe(decision_board[[c for c in display_cols if c in decision_board.columns]], use_container_width=True, hide_index=True)
+                st.dataframe(decision_board[[c for c in display_cols if c in decision_board.columns]], width="stretch", hide_index=True)
 
                 b1, b2, b3, b4 = st.columns(4)
                 with b1:
@@ -12062,7 +12062,7 @@ elif sport == "🏈 NFL Football":
                     key="nfl_log_status_filter"
                 )
                 filtered = log_df[log_df["Status"].astype(str).isin(status_filter)] if status_filter else log_df
-                st.dataframe(filtered, use_container_width=True, hide_index=True)
+                st.dataframe(filtered, width="stretch", hide_index=True)
 
         with nfl_tabs[3]:
             st.subheader("NFL Closing Line Tracker")
@@ -12077,7 +12077,7 @@ elif sport == "🏈 NFL Football":
                     "Opening Snapshot Time", "Closing Snapshot Time", "Status"
                 ]
                 movement_df = log_df[[c for c in movement_cols if c in log_df.columns]].copy()
-                st.dataframe(movement_df, use_container_width=True, hide_index=True)
+                st.dataframe(movement_df, width="stretch", hide_index=True)
 
         with nfl_tabs[4]:
             st.subheader("Grade NFL Results")
@@ -12094,7 +12094,7 @@ elif sport == "🏈 NFL Football":
             pending_df = log_df[log_df["Status"].astype(str).str.upper().eq("PENDING")] if not log_df.empty else pd.DataFrame()
             st.metric("Pending NFL Games", len(pending_df))
             if not pending_df.empty:
-                st.dataframe(pending_df, use_container_width=True, hide_index=True)
+                st.dataframe(pending_df, width="stretch", hide_index=True)
 
         with nfl_tabs[5]:
             hag_nfl_render_accuracy_dashboard()
