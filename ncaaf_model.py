@@ -68,9 +68,16 @@ FEATURE_LABELS = {
 }
 
 TEAM_ALIASES = {
+    "app state": "appalachian state",
+    "appalachian state mountaineers": "appalachian state",
+    "arizona st": "arizona state",
+    "arizona state sun devils": "arizona state",
+    "boise state broncos": "boise state",
     "miami fl": "miami",
     "miami florida": "miami",
     "miami hurricanes": "miami",
+    "miami oh": "miami ohio",
+    "miami ohio redhawks": "miami ohio",
     "nc state wolfpack": "north carolina state",
     "nc state": "north carolina state",
     "ole miss rebels": "mississippi",
@@ -89,6 +96,21 @@ TEAM_ALIASES = {
     "alabama birmingham": "uab",
     "smu mustangs": "smu",
     "southern methodist": "smu",
+    "la lafayette": "louisiana",
+    "louisiana lafayette": "louisiana",
+    "louisiana ragin cajuns": "louisiana",
+    "ul lafayette": "louisiana",
+    "usf": "south florida",
+    "south florida bulls": "south florida",
+    "ut san antonio": "utsa",
+    "texas a m": "texas a m",
+    "texas a m aggies": "texas a m",
+    "utep miners": "utep",
+    "texas el paso": "utep",
+    "unlv rebels": "unlv",
+    "nevada las vegas": "unlv",
+    "umass minutemen": "massachusetts",
+    "massachusetts minutemen": "massachusetts",
 }
 
 
@@ -289,10 +311,20 @@ def parse_espn_scoreboards(
                 "start_date": str(event.get("date") or ""),
                 "away_team": away_team,
                 "home_team": home_team,
+                "away_team_id": str(away_team_data.get("id") or ""),
+                "home_team_id": str(home_team_data.get("id") or ""),
+                "away_team_display": str(away_team_data.get("displayName") or away_team),
+                "home_team_display": str(home_team_data.get("displayName") or home_team),
+                "away_team_short": str(away_team_data.get("shortDisplayName") or away_team),
+                "home_team_short": str(home_team_data.get("shortDisplayName") or home_team),
+                "away_team_abbreviation": str(away_team_data.get("abbreviation") or ""),
+                "home_team_abbreviation": str(home_team_data.get("abbreviation") or ""),
                 "neutral_site": bool(competition.get("neutralSite")),
                 "away_points": safe_float(away_item.get("score"), float("nan")) if completed else None,
                 "home_points": safe_float(home_item.get("score"), float("nan")) if completed else None,
                 "completed": completed,
+                "status_state": str(status.get("state") or ""),
+                "status_detail": str(status.get("detail") or status.get("description") or ""),
             }
         )
     return sorted(games, key=_game_sort_key)

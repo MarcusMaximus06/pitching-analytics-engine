@@ -15,7 +15,13 @@ import requests
 import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
 
-from google_sheets import get_google_client
+from daily_ncaaf_auto import (
+    find_odds_for_game,
+    get_log_stats,
+    grade_pending_games,
+    log_prediction_records,
+    resolve_model_team,
+)
 from ncaaf_model import (
     MODEL_VERSION,
     CFBDDataClient,
@@ -28,7 +34,6 @@ from ncaaf_model import (
     create_feature_snapshot,
     fetch_espn_current_season_games,
     market_consensus,
-    match_team_name,
     prediction_record,
     safe_float,
     safe_int,
@@ -37,38 +42,6 @@ from ncaaf_model import (
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 MODEL_PATH = PROJECT_ROOT / "data" / "ncaaf" / "model.json"
-SHEET_NAME = "NCAAF Prediction Model"
-LOG_TAB = "Predictions v2"
-LOG_HEADERS = [
-    "Prediction ID",
-    "Game ID",
-    "Season",
-    "Week",
-    "Start Date",
-    "Prediction Time",
-    "Model Version",
-    "Model Mode",
-    "Away Team",
-    "Home Team",
-    "Neutral Site",
-    "Predicted Winner",
-    "Winner Probability",
-    "Independent Home Probability",
-    "Final Home Probability",
-    "Market Home Probability",
-    "Model Edge",
-    "Fair Home ML",
-    "Fair Away ML",
-    "Market Home ML",
-    "Market Away ML",
-    "Book Count",
-    "Market Observed At",
-    "Uncertainty Low",
-    "Uncertainty High",
-    "Feature Snapshot",
-    "Result",
-    "Actual Winner",
-]
 
 
 def _configured_secret(*names: str) -> str:
@@ -183,16 +156,7 @@ def _weather_index(rows: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
 
 
 def _find_odds_for_schedule(game: Mapping[str, Any], odds_games: list[dict[str, Any]]) -> dict[str, Any] | None:
-    candidates = [
-        str(game.get("home_team") or game.get("homeTeam") or ""),
-        str(game.get("away_team") or game.get("awayTeam") or ""),
-    ]
-    for odds_game in odds_games:
-        home = match_team_name(str(odds_game.get("home_team") or ""), candidates)
-        away = match_team_name(str(odds_game.get("away_team") or ""), candidates)
-        if home == candidates[0] and away == candidates[1]:
-            return odds_game
-    return None
+    return find_odds_for_game(game, odds_games)[0]
 
 
 def _build_predictions(
@@ -207,12 +171,23 @@ def _build_predictions(
     timestamp = datetime.now(timezone.utc)
     for game in schedule:
         aligned_states = dict(states)
-        for field in ("home_team", "away_team"):
+        matchup_is_modelable = True
+        for side in ("home", "away"):
+            field = f"{side}_team"
             display_name = str(game.get(field) or "")
-            if display_name and display_name not in aligned_states:
-                canonical = match_team_name(display_name, states)
-                if canonical:
-                    aligned_states[display_name] = states[canonical]
+            aliases = [
+                display_name,
+                str(game.get(f"{side}_team_display") or ""),
+                str(game.get(f"{side}_team_short") or ""),
+                str(game.get(f"{side}_team_abbreviation") or ""),
+            ]
+            canonical = resolve_model_team(aliases, states)
+            if not canonical:
+                matchup_is_modelable = False
+                break
+            aligned_states[display_name] = states[canonical]
+        if not matchup_is_modelable:
+            continue
         odds_game = _find_odds_for_schedule(game, odds_games)
         market = market_consensus(odds_game) if odds_game else None
         game_id = safe_int(game.get("id"))
@@ -221,133 +196,47 @@ def _build_predictions(
     return predictions
 
 
-def _record_to_row(record: Mapping[str, Any]) -> list[Any]:
-    return [
-        record.get("prediction_id"),
-        record.get("game_id"),
-        record.get("season"),
-        record.get("week"),
-        record.get("start_date"),
-        record.get("prediction_time"),
-        record.get("model_version"),
-        record.get("model_mode"),
-        record.get("away_team"),
-        record.get("home_team"),
-        record.get("neutral_site"),
-        record.get("predicted_winner"),
-        record.get("winner_probability"),
-        record.get("independent_home_probability"),
-        record.get("final_home_probability"),
-        record.get("market_home_probability"),
-        record.get("model_edge"),
-        record.get("fair_home_moneyline"),
-        record.get("fair_away_moneyline"),
-        record.get("market_home_moneyline"),
-        record.get("market_away_moneyline"),
-        record.get("book_count"),
-        record.get("market_observed_at"),
-        record.get("uncertainty_low"),
-        record.get("uncertainty_high"),
-        json.dumps(record.get("feature_snapshot") or {}, separators=(",", ":"), sort_keys=True),
-        record.get("result", "PENDING"),
-        record.get("actual_winner", ""),
-    ]
-
-
-def _worksheet():
-    client = get_google_client()
-    spreadsheet = client.open(SHEET_NAME)
-    try:
-        worksheet = spreadsheet.worksheet(LOG_TAB)
-    except gspread.exceptions.WorksheetNotFound:
-        worksheet = spreadsheet.add_worksheet(title=LOG_TAB, rows="5000", cols=str(len(LOG_HEADERS)))
-    values = worksheet.get_all_values()
-    if not values:
-        worksheet.append_row(LOG_HEADERS)
-    elif values[0] != LOG_HEADERS:
-        raise RuntimeError(f"{LOG_TAB} has an unexpected schema; no rows were changed")
-    return worksheet
-
-
 def _log_full_slate(records: list[dict[str, Any]]) -> tuple[int, int]:
-    worksheet = _worksheet()
-    values = worksheet.get_all_values()
-    existing = {
-        (str(row[1]), str(row[6]), str(row[22]))
-        for row in values[1:]
-        if len(row) >= 23
-    }
-    new_rows = []
-    for record in records:
-        key = (
-            str(record.get("game_id")),
-            str(record.get("model_version")),
-            str(record.get("market_observed_at") or record.get("prediction_time")),
-        )
-        if key not in existing:
-            new_rows.append(_record_to_row(record))
-            existing.add(key)
-    if new_rows:
-        worksheet.append_rows(new_rows, value_input_option="RAW")
-    return len(new_rows), len(records) - len(new_rows)
+    result = log_prediction_records(records)
+    if result["errors"]:
+        raise RuntimeError("; ".join(result["errors"][:3]))
+    return result["logged"], result["duplicates"] + result["skipped_started"]
 
 
 def _grade_predictions(api_key: str) -> int:
-    if not api_key:
-        raise RuntimeError("CFBD_API_KEY is required for stable-ID grading")
-    worksheet = _worksheet()
-    rows = worksheet.get_all_values()
-    pending = [(index, row) for index, row in enumerate(rows[1:], start=2) if len(row) >= 28 and row[26] == "PENDING"]
-    if not pending:
-        return 0
-    client = CFBDDataClient(api_key)
-    game_ids = sorted({safe_int(row[1]) for _, row in pending if safe_int(row[1])})
-    results = {}
-    for game_id in game_ids:
-        games = client.optional("/games", gameId=game_id)
-        if not games:
-            continue
-        game = games[0]
-        home_points = game.get("home_points") if "home_points" in game else game.get("homePoints")
-        away_points = game.get("away_points") if "away_points" in game else game.get("awayPoints")
-        if home_points is None or away_points is None or safe_float(home_points) == safe_float(away_points):
-            continue
-        winner = (
-            str(game.get("home_team") or game.get("homeTeam"))
-            if safe_float(home_points) > safe_float(away_points)
-            else str(game.get("away_team") or game.get("awayTeam"))
-        )
-        results[game_id] = winner
-    updates = 0
-    for sheet_row, row in pending:
-        actual = results.get(safe_int(row[1]))
-        if not actual:
-            continue
-        worksheet.update_cell(sheet_row, 27, "WIN" if row[11] == actual else "LOSS")
-        worksheet.update_cell(sheet_row, 28, actual)
-        updates += 1
-    return updates
+    del api_key  # ESPN stable IDs make unattended grading credential-free.
+    result = grade_pending_games()
+    if result["errors"] and not result["graded"]:
+        raise RuntimeError("; ".join(result["errors"][:3]))
+    return result["graded"]
 
 
 def _history_metrics() -> dict[str, Any]:
     try:
-        rows = _worksheet().get_all_records()
+        stats = get_log_stats()
     except (gspread.GSpreadException, OSError, RuntimeError, ValueError):
-        return {"games": 0, "accuracy": None, "brier": None}
-    graded = [row for row in rows if str(row.get("Result", "")).upper() in {"WIN", "LOSS"}]
-    if not graded:
-        return {"games": 0, "accuracy": None, "brier": None}
-    labels = []
-    probabilities = []
-    correct = 0
-    for row in graded:
-        home_win = int(str(row.get("Actual Winner")) == str(row.get("Home Team")))
-        probability = safe_float(row.get("Final Home Probability"), 0.5)
-        labels.append(home_win)
-        probabilities.append(probability)
-        correct += int(str(row.get("Result")).upper() == "WIN")
-    brier = sum((probability - label) ** 2 for probability, label in zip(probabilities, labels)) / len(labels)
-    return {"games": len(graded), "accuracy": correct / len(graded), "brier": brier}
+        return {
+            "games": 0,
+            "accuracy": None,
+            "brier": None,
+            "vegas_accuracy": None,
+            "model_advantage": None,
+            "wins": 0,
+            "losses": 0,
+            "pending": 0,
+            "confidence": {},
+        }
+    return {
+        "games": stats["graded"],
+        "accuracy": stats["model_accuracy"],
+        "brier": stats["brier"],
+        "vegas_accuracy": stats["vegas_accuracy"],
+        "model_advantage": stats["model_advantage"],
+        "wins": stats["wins"],
+        "losses": stats["losses"],
+        "pending": stats["pending"],
+        "confidence": stats["confidence"],
+    }
 
 
 def _display_frame(records: list[dict[str, Any]]) -> pd.DataFrame:
@@ -372,6 +261,11 @@ def _display_frame(records: list[dict[str, Any]]) -> pd.DataFrame:
                 "Matchup": f"{record.get('away_team')} @ {record.get('home_team')}",
                 "HagLabs Pick": independent_winner,
                 "HagLabs Win %": independent_probability,
+                "Confidence": (
+                    "High"
+                    if safe_float(independent_probability) >= 0.70
+                    else ("Medium" if safe_float(independent_probability) >= 0.60 else "Tracking")
+                ),
                 "Market Pick": market_winner,
                 "Market Win %": market_probability,
                 "Market-Aware Lean": market_aware_winner,
@@ -416,7 +310,10 @@ def render_ncaaf_winner_lab() -> None:
     cfbd_key = _configured_secret("CFBD_API_KEY")
     odds_key = _configured_secret("ODDS_API_KEY", "THE_ODDS_API_KEY")
     if not odds_key:
-        st.warning("ODDS_API_KEY is not configured. The manual matchup lab remains available, but the live slate and market comparison are unavailable.")
+        st.warning(
+            "ODDS_API_KEY is not configured. ESPN schedule discovery and HagLabs predictions remain available, "
+            "but market comparisons will be marked unavailable."
+        )
 
     status_columns = st.columns(4)
     status_columns[0].metric("Model", metadata.get("model_version", MODEL_VERSION))
@@ -492,18 +389,20 @@ def render_ncaaf_winner_lab() -> None:
         if safe_int(metadata.get("team_state_season")) == int(season):
             states, state_refresh = update_states_with_current_games(states, public_results)
         context = SeasonContext()
-        schedule = [
-            {
-                "id": game.get("id"),
-                "season": season,
-                "week": None,
-                "start_date": game.get("commence_time"),
-                "home_team": game.get("home_team"),
-                "away_team": game.get("away_team"),
-                "neutral_site": False,
-            }
-            for game in odds_games
-        ]
+        schedule = _upcoming_games(public_results, int(season))
+        if not schedule:
+            schedule = [
+                {
+                    "id": game.get("id"),
+                    "season": season,
+                    "week": None,
+                    "start_date": game.get("commence_time"),
+                    "home_team": game.get("home_team"),
+                    "away_team": game.get("away_team"),
+                    "neutral_site": False,
+                }
+                for game in odds_games
+            ]
         weather = {}
 
     if not cfbd_key:
@@ -527,6 +426,34 @@ def render_ncaaf_winner_lab() -> None:
     source_columns[2].metric("Games with market", sum(record.get("market_home_probability") is not None for record in predictions))
     source_columns[3].metric("Odds books", max((safe_int(record.get("book_count")) for record in predictions), default=0))
     source_columns[4].metric("Current finals applied", state_refresh["completed_games_applied"])
+
+    historical = _history_metrics()
+    st.markdown("#### NCAA Command Center")
+    command_columns = st.columns(4)
+    command_columns[0].metric("Graded Games", historical["games"])
+    command_columns[1].metric(
+        "Model Accuracy",
+        f"{historical['accuracy']:.1%}" if historical["accuracy"] is not None else "No grades",
+    )
+    command_columns[2].metric(
+        "Vegas Accuracy",
+        f"{historical['vegas_accuracy']:.1%}" if historical["vegas_accuracy"] is not None else "No odds grades",
+    )
+    command_columns[3].metric(
+        "Model Advantage",
+        f"{historical['model_advantage']:+.1%}" if historical["model_advantage"] is not None else "No comparison",
+    )
+    record_columns = st.columns(4)
+    record_columns[0].metric("Wins", historical["wins"])
+    record_columns[1].metric("Losses", historical["losses"])
+    record_columns[2].metric("Pending", historical["pending"])
+    confidence_summary = historical.get("confidence") or {}
+    confidence_text = " · ".join(
+        f"{tier} {metrics['accuracy']:.0%} ({metrics['games']})"
+        for tier in ("High", "Medium", "Tracking")
+        if (metrics := confidence_summary.get(tier)) and metrics.get("accuracy") is not None
+    )
+    record_columns[3].metric("Confidence Accuracy", confidence_text or "No grades")
 
     tabs = st.tabs(["Winner Board", "Matchup Lab", "Validation", "Methodology"])
     with tabs[0]:
@@ -558,10 +485,13 @@ def render_ncaaf_winner_lab() -> None:
             if st.button("Run and log full active slate", type="primary"):
                 try:
                     added, duplicates = _log_full_slate(predictions)
-                    st.success(f"Logged {added} timestamped predictions; skipped {duplicates} exact snapshots.")
+                    st.success(
+                        f"Logged {added} immutable pregame predictions to NCAAF Log; "
+                        f"skipped {duplicates} duplicates or games already underway."
+                    )
                 except (gspread.GSpreadException, OSError, RuntimeError, ValueError) as exc:
                     st.error(f"Predictions were calculated but Google Sheets logging failed safely: {exc}")
-        if st.button("Grade completed predictions by CFBD game ID"):
+        if st.button("Grade completed predictions from ESPN finals"):
             try:
                 updated = _grade_predictions(cfbd_key)
                 st.success(f"Graded {updated} completed prediction snapshots.")
@@ -602,7 +532,6 @@ def render_ncaaf_winner_lab() -> None:
                 st.write(f"- {explanation['label']}: favors **{favored}**")
 
     with tabs[2]:
-        historical = _history_metrics()
         columns = st.columns(3)
         columns[0].metric("Prospectively graded", historical["games"])
         columns[1].metric("Winner accuracy", f"{historical['accuracy']:.1%}" if historical["accuracy"] is not None else "No grades")
