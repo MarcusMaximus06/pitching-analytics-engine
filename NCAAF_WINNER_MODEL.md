@@ -135,6 +135,26 @@ key is available, so modelable games without a moneyline remain visible.
 Repeated runs grade finals and discover newly listed/rescheduled games. They do
 not replace an earlier official pregame snapshot merely because odds moved.
 
+### Prospective market guard
+
+The September 12, 2026 log exposed a decision-layer failure: the independent
+model went 2-15 when its winner disagreed with the no-vig market. Future rows
+therefore retain the independent probability and pick for research, but the
+official pick uses the historically evaluated market-weighted ensemble and
+does not permit an unvalidated override of the market's winner. This is a
+safety gate, not a claim that HagLabs has proven an edge over sportsbooks.
+
+Run the immutable-log evaluator after each completed slate:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\analyze_ncaaf_log.py
+```
+
+It reports agreement/disagreement accuracy, probability calibration, candidate
+blend weights, absolute model-market gap buckets, missing-feature rates, and
+the largest model misses. Override authority should return only after enough
+prospective disagreement picks beat the market out of sample.
+
 The Validation tab reports prospective accuracy and Brier score alongside the
 rolling model, Elo, and market benchmarks. Historical backtests are evidence,
 not a guarantee that the engine will beat future markets.

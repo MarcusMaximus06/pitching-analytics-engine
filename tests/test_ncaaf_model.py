@@ -190,6 +190,35 @@ def test_bootstrap_predictions_never_claim_actionable_edge():
     assert validated_record["decision_source"] == "validated market ensemble"
 
 
+def test_market_guard_blocks_unvalidated_model_override_after_broad_backtest():
+    model = WinnerModel.bootstrap()
+    model.metadata.update(
+        {
+            "validated": True,
+            "market_validated": False,
+            "market_weight": 0.9,
+            "backtest": {
+                "market": {"games": 3000, "brier": 0.140, "log_loss": 0.420},
+                "market_blend": {"games": 3000, "brier": 0.139, "log_loss": 0.419},
+            },
+        }
+    )
+    game = {"id": 124, "season": 2026, "away_team": "Away", "home_team": "Home"}
+    features = {name: 0.0 for name in FEATURE_NAMES}
+    features["elo_diff_100"] = 2.0
+    record = prediction_record(
+        game,
+        features,
+        model,
+        {"home_probability": 0.49, "home_odds": 104, "away_odds": -106, "book_count": 4},
+    )
+    assert record["independent_predicted_winner"] == "Home"
+    assert record["predicted_winner"] == "Away"
+    assert record["market_anchor_applied"] is True
+    assert record["market_override_blocked"] is True
+    assert "unvalidated overrides blocked" in record["decision_source"]
+
+
 def test_public_scoreboard_results_update_preseason_states_once():
     payload = {
         "events": [

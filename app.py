@@ -31,6 +31,10 @@ from mlb_recent_form import calculate_recent_form_adjustment, fetch_recent_mlb_t
 from mlb_pitcher_form import blend_pitcher_form, fetch_pitcher_recent_era
 from nfl_fantasy_ui import render_nfl_draft_lab
 from nfl_inseason_ui import render_nfl_inseason_command_center
+from nfl_prediction_config import (
+    NFL_LOG_COLUMNS as SHARED_NFL_LOG_COLUMNS,
+    NFL_TEAM_RATINGS as SHARED_NFL_TEAM_RATINGS,
+)
 from nfl_season_model import current_nfl_season, fetch_espn_nfl_schedule, simulate_season_records
 from ncaaf_ui import render_ncaaf_winner_lab
 from pybaseball import statcast_pitcher, statcast_batter
@@ -11186,6 +11190,9 @@ elif sport == "🏈 NFL Football":
         "Line Movement", "Market Move Note", "Closing Snapshot Time",
         "Actual Winner", "Model Result", "Early Vegas Result", "Closing Vegas Result"
     ]
+    # The standalone NFL automation and Streamlit must use the same schema and ratings.
+    NFL_TEAM_RATINGS = SHARED_NFL_TEAM_RATINGS
+    NFL_LOG_COLUMNS = SHARED_NFL_LOG_COLUMNS
 
     def hag_nfl_now_label():
         try:
@@ -11689,7 +11696,9 @@ elif sport == "🏈 NFL Football":
         if df.empty:
             return {
                 "logged": 0, "pending": 0, "graded": 0, "official_logged": 0,
-                "model_acc": 0.0, "vegas_acc": 0.0, "closing_vegas_acc": 0.0, "edge": 0.0,
+                "model_acc": 0.0, "model_market_acc": 0.0, "vegas_acc": 0.0,
+                "closing_vegas_acc": 0.0, "edge": 0.0,
+                "official_graded": 0, "official_model_acc": 0.0,
                 "official_df": pd.DataFrame(), "graded_df": pd.DataFrame()
             }
 
@@ -11699,26 +11708,42 @@ elif sport == "🏈 NFL Football":
         official_df = df[df["Official Pick"].astype(str).str.upper().eq("TRUE")].copy()
         official_graded = official_df[official_df["Status"].isin(["WIN", "LOSS"])].copy()
 
-        graded = len(official_graded)
+        graded = len(graded_df)
         if graded > 0:
-            model_wins = int((official_graded["Model Result"].astype(str).str.upper() == "WIN").sum())
-            vegas_wins = int((official_graded["Early Vegas Result"].astype(str).str.upper() == "WIN").sum())
-            closing_wins = int((official_graded["Closing Vegas Result"].astype(str).str.upper() == "WIN").sum())
+            model_wins = int((graded_df["Model Result"].astype(str).str.upper() == "WIN").sum())
+            early_graded = graded_df[graded_df["Early Vegas Result"].astype(str).str.upper().isin(["WIN", "LOSS"])]
+            closing_graded = graded_df[graded_df["Closing Vegas Result"].astype(str).str.upper().isin(["WIN", "LOSS"])]
+            vegas_wins = int((early_graded["Early Vegas Result"].astype(str).str.upper() == "WIN").sum())
+            closing_wins = int((closing_graded["Closing Vegas Result"].astype(str).str.upper() == "WIN").sum())
             model_acc = model_wins / graded * 100
-            vegas_acc = vegas_wins / graded * 100
-            closing_acc = closing_wins / graded * 100
+            model_market_acc = (
+                (early_graded["Model Result"].astype(str).str.upper() == "WIN").mean() * 100
+                if len(early_graded)
+                else 0.0
+            )
+            vegas_acc = vegas_wins / len(early_graded) * 100 if len(early_graded) else 0.0
+            closing_acc = closing_wins / len(closing_graded) * 100 if len(closing_graded) else 0.0
         else:
-            model_acc = vegas_acc = closing_acc = 0.0
+            model_acc = model_market_acc = vegas_acc = closing_acc = 0.0
+
+        official_model_acc = (
+            (official_graded["Model Result"].astype(str).str.upper() == "WIN").mean() * 100
+            if not official_graded.empty
+            else 0.0
+        )
 
         return {
             "logged": len(df),
             "pending": pending,
             "graded": graded,
             "official_logged": len(official_df),
+            "official_graded": len(official_graded),
+            "official_model_acc": official_model_acc,
             "model_acc": model_acc,
+            "model_market_acc": model_market_acc,
             "vegas_acc": vegas_acc,
             "closing_vegas_acc": closing_acc,
-            "edge": model_acc - vegas_acc,
+            "edge": model_market_acc - vegas_acc,
             "official_df": official_df,
             "graded_df": graded_df
         }
@@ -11808,11 +11833,11 @@ elif sport == "🏈 NFL Football":
     def hag_nfl_render_accuracy_dashboard():
         stats = hag_nfl_get_log_stats()
         st.subheader("📈 NFL Accuracy Dashboard")
-        st.caption("Official NFL accuracy uses High + Medium confidence picks only. Tracking rows are research-only.")
+        st.caption("All immutable NFL snapshots are graded. Official-pick metrics remain separate until the model passes walk-forward validation.")
 
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            st.metric("Official Graded", stats["graded"])
+            st.metric("All Graded", stats["graded"])
         with c2:
             st.metric("Hag Labs Accuracy", f"{stats['model_acc']:.1f}%")
         with c3:
@@ -11824,7 +11849,7 @@ elif sport == "🏈 NFL Football":
         with c5:
             st.metric("Closing Vegas Accuracy", f"{stats['closing_vegas_acc']:.1f}%")
         with c6:
-            st.metric("Official Logged Picks", stats["official_logged"])
+            st.metric("Official Graded", stats["official_graded"])
 
         df = hag_nfl_read_log()
         if not df.empty:

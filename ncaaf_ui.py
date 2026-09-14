@@ -218,6 +218,7 @@ def _history_metrics() -> dict[str, Any]:
         return {
             "games": 0,
             "accuracy": None,
+            "independent_accuracy": None,
             "brier": None,
             "vegas_accuracy": None,
             "model_advantage": None,
@@ -229,6 +230,7 @@ def _history_metrics() -> dict[str, Any]:
     return {
         "games": stats["graded"],
         "accuracy": stats["model_accuracy"],
+        "independent_accuracy": stats["independent_accuracy"],
         "brier": stats["brier"],
         "vegas_accuracy": stats["vegas_accuracy"],
         "model_advantage": stats["model_advantage"],
@@ -242,6 +244,8 @@ def _history_metrics() -> dict[str, Any]:
 def _display_frame(records: list[dict[str, Any]]) -> pd.DataFrame:
     rows = []
     for record in records:
+        official_winner = record.get("predicted_winner")
+        official_probability = record.get("winner_probability")
         independent_winner = record.get("independent_predicted_winner") or record.get("predicted_winner")
         independent_probability = record.get("independent_winner_probability") or record.get("winner_probability")
         market_winner = record.get("market_predicted_winner")
@@ -259,8 +263,10 @@ def _display_frame(records: list[dict[str, Any]]) -> pd.DataFrame:
             {
                 "Kickoff": record.get("start_date"),
                 "Matchup": f"{record.get('away_team')} @ {record.get('home_team')}",
-                "HagLabs Pick": independent_winner,
-                "HagLabs Win %": independent_probability,
+                "Official Pick": official_winner,
+                "Official Win %": official_probability,
+                "Independent Pick": independent_winner,
+                "Independent Win %": independent_probability,
                 "Confidence": (
                     "High"
                     if safe_float(independent_probability) >= 0.70
@@ -271,7 +277,7 @@ def _display_frame(records: list[dict[str, Any]]) -> pd.DataFrame:
                 "Market-Aware Lean": market_aware_winner,
                 "Lean Win %": market_aware_probability,
                 "Range": f"{record.get('uncertainty_low', 0):.0%}–{record.get('uncertainty_high', 0):.0%}",
-                "Fair ML": record.get("fair_home_moneyline") if independent_winner == record.get("home_team") else record.get("fair_away_moneyline"),
+                "Fair ML": record.get("fair_home_moneyline") if official_winner == record.get("home_team") else record.get("fair_away_moneyline"),
                 "HagLabs Edge": winner_edge,
                 "Agreement": (
                     "No market"
@@ -279,6 +285,7 @@ def _display_frame(records: list[dict[str, Any]]) -> pd.DataFrame:
                     else ("Agree" if market_winner == independent_winner else "Disagree")
                 ),
                 "Books": record.get("book_count"),
+                "Decision Policy": record.get("decision_source"),
                 "Signal": (
                     "Validated edge"
                     if record.get("actionable_edge")
@@ -429,18 +436,22 @@ def render_ncaaf_winner_lab() -> None:
 
     historical = _history_metrics()
     st.markdown("#### NCAA Command Center")
-    command_columns = st.columns(4)
+    command_columns = st.columns(5)
     command_columns[0].metric("Graded Games", historical["games"])
     command_columns[1].metric(
-        "Model Accuracy",
+        "Official Accuracy",
         f"{historical['accuracy']:.1%}" if historical["accuracy"] is not None else "No grades",
     )
     command_columns[2].metric(
+        "Independent Accuracy",
+        f"{historical['independent_accuracy']:.1%}" if historical["independent_accuracy"] is not None else "No grades",
+    )
+    command_columns[3].metric(
         "Vegas Accuracy",
         f"{historical['vegas_accuracy']:.1%}" if historical["vegas_accuracy"] is not None else "No odds grades",
     )
-    command_columns[3].metric(
-        "Model Advantage",
+    command_columns[4].metric(
+        "Official Advantage",
         f"{historical['model_advantage']:+.1%}" if historical["model_advantage"] is not None else "No comparison",
     )
     record_columns = st.columns(4)
@@ -461,8 +472,8 @@ def render_ncaaf_winner_lab() -> None:
             st.info("No FBS games are scheduled in the next 21 days.")
         else:
             st.caption(
-                "HagLabs Pick is the independent model. Market-Aware Lean is shown for comparison, "
-                "but it does not replace the official pick until the historical market gate passes."
+                "Official Pick uses the historically evaluated market-weighted probability and blocks independent-model "
+                "overrides until they prove a prospective advantage. Independent Pick remains visible for research."
             )
             display = _display_frame(predictions)
             st.dataframe(
@@ -470,7 +481,8 @@ def render_ncaaf_winner_lab() -> None:
                 width="stretch",
                 hide_index=True,
                 column_config={
-                    "HagLabs Win %": st.column_config.ProgressColumn(format="percent", min_value=0.5, max_value=1.0),
+                    "Official Win %": st.column_config.ProgressColumn(format="percent", min_value=0.5, max_value=1.0),
+                    "Independent Win %": st.column_config.NumberColumn(format="percent"),
                     "Market Win %": st.column_config.NumberColumn(format="percent"),
                     "Lean Win %": st.column_config.NumberColumn(format="percent"),
                     "HagLabs Edge": st.column_config.NumberColumn(format="percent"),

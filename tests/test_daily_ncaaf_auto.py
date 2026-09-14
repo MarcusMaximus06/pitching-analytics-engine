@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from daily_ncaaf_auto import (
     LEGACY_HEADERS,
+    LOG_HEADERS,
     build_prediction_records,
     ensure_log_headers,
     find_odds_for_game,
@@ -13,6 +14,7 @@ from daily_ncaaf_auto import (
     log_prediction_records,
 )
 from ncaaf_model import TeamState, WinnerModel
+from scripts.analyze_ncaaf_log import analyze_rows
 
 
 class FakeWorksheet:
@@ -257,3 +259,25 @@ def test_vegas_accuracy_excludes_games_without_real_odds():
     assert stats["model_accuracy"] == 1.0
     assert stats["vegas_games"] == 1
     assert stats["vegas_accuracy"] == 1.0
+
+
+def test_live_review_measures_model_market_disagreement_from_snapshots():
+    row = {header: "" for header in LOG_HEADERS}
+    row.update(
+        {
+            "Date": "2026-09-12",
+            "Away Team": "Away",
+            "Home Team": "Home",
+            "Model Home %": "60%",
+            "Vegas Home %": "40%",
+            "Predicted Winner": "Home",
+            "Actual Winner": "Away",
+            "Result": "LOSS",
+            "Confidence": "Medium",
+        }
+    )
+    report = analyze_rows([LOG_HEADERS, [row[header] for header in LOG_HEADERS]])
+    assert report["graded"] == 1
+    assert report["disagreement"]["games"] == 1
+    assert report["disagreement"]["model_accuracy"] == 0.0
+    assert report["disagreement"]["vegas_accuracy"] == 1.0

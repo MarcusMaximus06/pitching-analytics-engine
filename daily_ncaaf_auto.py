@@ -91,6 +91,12 @@ ADDITIONAL_HEADERS = [
     "Season",
     "Week",
     "Feature Snapshot",
+    "Independent Pick",
+    "Independent Winner Probability",
+    "Decision Source",
+    "Decision Policy",
+    "Market Anchor Applied",
+    "Market Override Blocked",
 ]
 LOG_HEADERS = LEGACY_HEADERS + ADDITIONAL_HEADERS
 
@@ -444,7 +450,8 @@ def _format_probability(value: Any) -> str:
 
 def prediction_to_sheet_values(record: Mapping[str, Any]) -> dict[str, Any]:
     home_probability = safe_float(record.get("independent_home_probability"), 0.5)
-    winner = str(record.get("independent_predicted_winner") or record.get("predicted_winner") or "")
+    independent_winner = str(record.get("independent_predicted_winner") or "")
+    winner = str(record.get("predicted_winner") or independent_winner)
     home_team = str(record.get("home_team") or "")
     market_home = safe_float(record.get("market_home_probability"), float("nan"))
     has_market = math.isfinite(market_home)
@@ -453,15 +460,17 @@ def prediction_to_sheet_values(record: Mapping[str, Any]) -> dict[str, Any]:
     if has_market:
         market_pick = home_team if market_home >= 0.5 else str(record.get("away_team") or "")
         home_edge = home_probability - market_home
-        winner_edge = home_edge if winner == home_team else -home_edge
+        winner_edge = home_edge if independent_winner == home_team else -home_edge
         edge = f"{winner_edge:+.2%}"
     kickoff = parse_datetime(record.get("start_date"))
     if kickoff is None:
         raise ValueError("prediction has no valid kickoff")
     notes = "No Vegas Odds"
     if has_market:
-        agreement = "Market agreement" if winner == market_pick else "Market disagreement"
-        notes = f"{agreement}; consensus from {safe_int(record.get('book_count'))} books"
+        agreement = "Independent model agrees" if independent_winner == market_pick else "Independent model disagrees"
+        policy = "market-anchored official forecast" if record.get("market_anchor_applied") else "independent official forecast"
+        guard = "; unsafe override blocked" if record.get("market_override_blocked") else ""
+        notes = f"{policy}; {agreement}{guard}; consensus from {safe_int(record.get('book_count'))} books"
     return {
         "Date": kickoff.astimezone(LOCAL_TIMEZONE).date().isoformat(),
         "Away Team": record.get("away_team"),
@@ -472,7 +481,7 @@ def prediction_to_sheet_values(record: Mapping[str, Any]) -> dict[str, Any]:
         "Model Home %": _format_probability(home_probability),
         "Predicted Winner": winner,
         "Result": "PENDING",
-        "Confidence": record.get("confidence") or _confidence(max(home_probability, 1.0 - home_probability)),
+        "Confidence": _confidence(safe_float(record.get("winner_probability"), max(home_probability, 1.0 - home_probability))),
         "Edge": edge,
         "Notes": notes,
         "Game ID": record.get("game_id"),
@@ -482,7 +491,7 @@ def prediction_to_sheet_values(record: Mapping[str, Any]) -> dict[str, Any]:
         "Prediction Time": record.get("prediction_time"),
         "Model Version": record.get("model_version"),
         "Model Mode": record.get("model_mode"),
-        "Winner Probability": _format_probability(record.get("independent_winner_probability")),
+        "Winner Probability": _format_probability(record.get("winner_probability")),
         "Vegas Pick": market_pick,
         "Vegas Away %": _format_probability(1.0 - market_home) if has_market else "",
         "Vegas Home %": _format_probability(market_home) if has_market else "",
@@ -495,6 +504,12 @@ def prediction_to_sheet_values(record: Mapping[str, Any]) -> dict[str, Any]:
         "Feature Snapshot": json.dumps(
             record.get("feature_snapshot") or {}, separators=(",", ":"), sort_keys=True
         ),
+        "Independent Pick": independent_winner,
+        "Independent Winner Probability": _format_probability(record.get("independent_winner_probability")),
+        "Decision Source": record.get("decision_source"),
+        "Decision Policy": record.get("decision_policy_version"),
+        "Market Anchor Applied": bool(record.get("market_anchor_applied")),
+        "Market Override Blocked": bool(record.get("market_override_blocked")),
     }
 
 
@@ -653,6 +668,8 @@ def get_log_stats(
     vegas_wins = 0
     model_vegas_wins = 0
     vegas_games = 0
+    independent_wins = 0
+    independent_games = 0
     brier_values: list[float] = []
     confidence = defaultdict(lambda: {"games": 0, "wins": 0, "accuracy": None})
     for row in graded:
@@ -669,6 +686,11 @@ def get_log_stats(
         if home_probability is not None:
             home_won = normalize_team_name(actual) == normalize_team_name(row.get("Home Team", ""))
             brier_values.append((home_probability - float(home_won)) ** 2)
+            independent_pick = row.get("Independent Pick", "").strip() or (
+                row.get("Home Team", "") if home_probability >= 0.5 else row.get("Away Team", "")
+            )
+            independent_games += 1
+            independent_wins += int(normalize_team_name(independent_pick) == normalize_team_name(actual))
 
         away_odds = safe_float(row.get("Away Odds"), float("nan"))
         home_odds = safe_float(row.get("Home Odds"), float("nan"))
@@ -694,6 +716,7 @@ def get_log_stats(
         "losses": losses,
         "pending": pending,
         "model_accuracy": model_accuracy,
+        "independent_accuracy": independent_wins / independent_games if independent_games else None,
         "vegas_games": vegas_games,
         "vegas_accuracy": vegas_accuracy,
         "model_accuracy_on_vegas": model_vegas_accuracy,

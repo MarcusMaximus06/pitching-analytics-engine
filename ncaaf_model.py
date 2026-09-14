@@ -22,6 +22,7 @@ import pandas as pd
 import requests
 
 MODEL_VERSION = "ncaaf-winner-v1.1.0"
+DECISION_POLICY_VERSION = "ncaaf-market-guard-v1.0.0"
 
 FEATURE_NAMES = (
     "elo_diff_100",
@@ -1086,6 +1087,19 @@ def blend_with_market(model_probability: float, market_probability: float | None
     return float(sigmoid((1.0 - weight) * model_logit + weight * market_logit))
 
 
+def market_anchor_ready(metadata: Mapping[str, Any]) -> bool:
+    """Allow market anchoring only after broad walk-forward comparison."""
+    backtest = metadata.get("backtest") or {}
+    market = backtest.get("market") or {}
+    blend = backtest.get("market_blend") or {}
+    return (
+        safe_int(market.get("games")) >= 1000
+        and safe_float(metadata.get("market_weight"), 0.0) >= 0.5
+        and safe_float(blend.get("brier"), 99.0) <= safe_float(market.get("brier"), 99.0)
+        and safe_float(blend.get("log_loss"), 99.0) <= safe_float(market.get("log_loss"), 99.0)
+    )
+
+
 def prediction_record(
     game: Mapping[str, Any],
     feature_row: Mapping[str, Any],
@@ -1126,7 +1140,20 @@ def prediction_record(
     uncertainty = 0.12 - 0.04 * completeness
     validated = bool(model.metadata.get("validated"))
     market_validated = bool(model.metadata.get("market_validated"))
-    final_home = market_aware_home if market_validated else independent_home
+    anchor_ready = market_value is not None and market_anchor_ready(model.metadata)
+    market_override_blocked = False
+    if market_validated:
+        final_home = market_aware_home
+        decision_source = "validated market ensemble"
+    elif anchor_ready:
+        final_home = market_aware_home
+        if (final_home >= 0.5) != (market_value >= 0.5):
+            final_home = 0.500001 if market_value >= 0.5 else 0.499999
+            market_override_blocked = True
+        decision_source = "market-anchored ensemble; unvalidated overrides blocked"
+    else:
+        final_home = independent_home
+        decision_source = "independent HagLabs model"
     winner = home if final_home >= 0.5 else away
     winner_probability = final_home if winner == home else 1.0 - final_home
     actionable = validated and market_validated and home_edge is not None and abs(home_edge) >= 0.035
@@ -1144,7 +1171,10 @@ def prediction_record(
         "neutral_site": bool(game.get("neutral_site") or game.get("neutralSite")),
         "predicted_winner": winner,
         "winner_probability": winner_probability,
-        "decision_source": "validated market ensemble" if market_validated else "independent HagLabs model",
+        "decision_source": decision_source,
+        "decision_policy_version": DECISION_POLICY_VERSION,
+        "market_anchor_applied": anchor_ready,
+        "market_override_blocked": market_override_blocked,
         "independent_predicted_winner": independent_winner,
         "independent_winner_probability": independent_winner_probability,
         "independent_home_probability": independent_home,
