@@ -12,6 +12,7 @@ import math
 import re
 from collections.abc import Mapping
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -452,10 +453,10 @@ def build_model_artifact(frame: pd.DataFrame, validation_start: str = "2024-01-0
     }
 
 
-def load_model_artifact(path: str | Path) -> dict[str, Any]:
-    artifact_path = Path(path)
-    if not artifact_path.exists():
-        return {}
+@lru_cache(maxsize=4)
+def _load_model_artifact_cached(path_text: str, modified_ns: int, size: int) -> dict[str, Any]:
+    del modified_ns, size
+    artifact_path = Path(path_text)
     try:
         payload = json.loads(artifact_path.read_text(encoding="utf-8"))
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
@@ -463,6 +464,17 @@ def load_model_artifact(path: str | Path) -> dict[str, Any]:
     if payload.get("model_version") != MODEL_VERSION:
         return {}
     return payload
+
+
+def load_model_artifact(path: str | Path) -> dict[str, Any]:
+    artifact_path = Path(path)
+    if not artifact_path.exists():
+        return {}
+    try:
+        stat = artifact_path.stat()
+    except OSError:
+        return {}
+    return _load_model_artifact_cached(str(artifact_path.resolve()), stat.st_mtime_ns, stat.st_size)
 
 
 def _lookup_state(artifact: Mapping[str, Any], fighter: str) -> Mapping[str, Any]:

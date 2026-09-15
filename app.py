@@ -3482,6 +3482,7 @@ def hag_ufc_percentile_rank(series, value, higher_is_better=True):
         pct = (vals >= v).mean() * 100
     return int(max(1, min(99, round(pct))))
 
+@st.cache_data(show_spinner=False, ttl=3600)
 def hag_ufc_enriched_database_df():
     df = hag_ufc_database_df().copy()
     for col in UFC_RAW_STAT_COLUMNS:
@@ -3492,16 +3493,25 @@ def hag_ufc_enriched_database_df():
     if df.empty:
         return df
 
-    df["SLpM Percentile"] = df["SLpM"].apply(lambda v: hag_ufc_percentile_rank(df["SLpM"], v, True))
-    df["Striking Accuracy Percentile"] = df["Str Acc %"].apply(lambda v: hag_ufc_percentile_rank(df["Str Acc %"], v, True))
-    df["Strike Defense Percentile"] = df["Str Def %"].apply(lambda v: hag_ufc_percentile_rank(df["Str Def %"], v, True))
-    df["Damage Avoidance Percentile"] = df["SApM"].apply(lambda v: hag_ufc_percentile_rank(df["SApM"], v, False))
-    df["Takedown Activity Percentile"] = df["TD Avg"].apply(lambda v: hag_ufc_percentile_rank(df["TD Avg"], v, True))
-    df["Takedown Accuracy Percentile"] = df["TD Acc %"].apply(lambda v: hag_ufc_percentile_rank(df["TD Acc %"], v, True))
-    df["Takedown Defense Percentile"] = df["TD Def %"].apply(lambda v: hag_ufc_percentile_rank(df["TD Def %"], v, True))
-    df["Submission Activity Percentile"] = df["Sub Avg"].apply(lambda v: hag_ufc_percentile_rank(df["Sub Avg"], v, True))
-    df["Knockdown Threat Percentile"] = df["KD Avg"].apply(lambda v: hag_ufc_percentile_rank(df["KD Avg"], v, True))
-    df["Control Percentile"] = df["Control Score"].apply(lambda v: hag_ufc_percentile_rank(df["Control Score"], v, True))
+    def percentile_series(column, higher_is_better=True):
+        values = pd.to_numeric(df[column], errors="coerce").fillna(0)
+        valid = values > 0
+        output = pd.Series(50, index=df.index, dtype=int)
+        if valid.any():
+            ranked = values[valid] if higher_is_better else -values[valid]
+            output.loc[valid] = (ranked.rank(method="max", pct=True) * 100).round().clip(1, 99).astype(int)
+        return output
+
+    df["SLpM Percentile"] = percentile_series("SLpM")
+    df["Striking Accuracy Percentile"] = percentile_series("Str Acc %")
+    df["Strike Defense Percentile"] = percentile_series("Str Def %")
+    df["Damage Avoidance Percentile"] = percentile_series("SApM", False)
+    df["Takedown Activity Percentile"] = percentile_series("TD Avg")
+    df["Takedown Accuracy Percentile"] = percentile_series("TD Acc %")
+    df["Takedown Defense Percentile"] = percentile_series("TD Def %")
+    df["Submission Activity Percentile"] = percentile_series("Sub Avg")
+    df["Knockdown Threat Percentile"] = percentile_series("KD Avg")
+    df["Control Percentile"] = percentile_series("Control Score")
 
     df["Real Striking Percentile"] = (
         df[["SLpM Percentile", "Striking Accuracy Percentile", "Strike Defense Percentile", "Damage Avoidance Percentile", "Knockdown Threat Percentile"]]
@@ -3969,9 +3979,20 @@ def hag_ufc_confidence_from_probability(prob, quality=0.5, edge_vs_vegas=None):
 
 
 def hag_ufc_matchup_result(fighter_a, fighter_b, boost_a=0, boost_b=0, scheduled_rounds=3, market_probability_a=None):
-    a = UFC_FIGHTERS.get(fighter_a, {})
-    b = UFC_FIGHTERS.get(fighter_b, {})
-    if not a or not b or fighter_a == fighter_b:
+    if fighter_a == fighter_b:
+        return None
+    sparse_profile = {
+        "Record": "0-0-0", "Age": 30, "Height": 69, "Reach": 72,
+        "SLpM": 0, "Str Acc %": 0, "SApM": 0, "Str Def %": 0,
+        "TD Avg": 0, "TD Acc %": 0, "TD Def %": 0, "Sub Avg": 0,
+        "UFC Stat Sample": 0, "KO %": 33, "Sub %": 20,
+        "Striking": 75, "Grappling": 75, "Wrestling": 75, "Submission": 75,
+        "Durability": 75, "Cardio": 75, "Power": 75, "Speed": 75,
+        "Fight IQ": 75, "Experience": 50, "Recent Form": 75, "Strength of Schedule": 75,
+    }
+    a = UFC_FIGHTERS.get(fighter_a) or sparse_profile
+    b = UFC_FIGHTERS.get(fighter_b) or sparse_profile
+    if market_probability_a is None and (fighter_a not in UFC_FIGHTERS or fighter_b not in UFC_FIGHTERS):
         return None
     result = predict_ufc_matchup(
         fighter_a,
@@ -5065,8 +5086,11 @@ def hag_ufc_market_board_from_odds(odds_df):
     for _, odds_row in odds_df.iterrows():
         fighter_a = str(odds_row.get("Fighter A", "")).strip()
         fighter_b = str(odds_row.get("Fighter B", "")).strip()
-        if fighter_a not in UFC_FIGHTERS or fighter_b not in UFC_FIGHTERS or fighter_a == fighter_b:
+        if fighter_a == fighter_b:
             continue
+
+        known_a = fighter_a in UFC_FIGHTERS
+        known_b = fighter_b in UFC_FIGHTERS
 
         base = {
             "Date": odds_row.get("Date", ""),
@@ -5103,6 +5127,7 @@ def hag_ufc_market_board_from_odds(odds_df):
             "Confidence": enriched.get("Confidence", result.get("Confidence", "Tracking")),
             "Top Method": hag_ufc_top_method_from_result(result),
             "Model Quality": result.get("Model Quality", ""),
+            "Data Coverage": "Full" if known_a and known_b else "Partial" if known_a or known_b else "Odds only",
             "Prediction Mode": result.get("Prediction Mode", "Independent"),
             "Model Version": result.get("Model Version", UFC_MODEL_VERSION),
             "Uncertainty Low %": result.get("Uncertainty Low %", ""),
@@ -5586,7 +5611,7 @@ def hag_render_ufc_prediction_log():
 
             missing = odds_df[odds_df["Known Fighters"] == False].copy() if "Known Fighters" in odds_df.columns else pd.DataFrame()
             if not missing.empty:
-                st.info(f"{len(missing)} live odds fights have fighters not yet in the Hag Labs UFC database. Add them in the UFC Fighter Database when you want those fights modeled.")
+                st.info(f"{len(missing)} live fights include a new fighter outside the historical database. They receive a conservative odds-anchored projection with wider uncertainty and cannot become official picks until fighter data is added.")
 
         board_df = hag_ufc_market_board_from_odds(odds_df)
 
