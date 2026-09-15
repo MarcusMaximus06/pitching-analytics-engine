@@ -11141,7 +11141,7 @@ elif sport == "🏈 NFL Football":
     # ==========================================================
     # NFL VEGAS BOARD + PREDICTION LOGGING V1.0
     # ==========================================================
-    NFL_BUILD_LABEL = "NFL SEASON FORECAST v1.2.1 - past-week results board + seven-day snapshots"
+    NFL_BUILD_LABEL = "NFL SEASON FORECAST v1.2.2 - visible weekly records + nightly grading"
 
     NFL_TEAM_RATINGS = {
         "Arizona Cardinals": {"abbr": "ARI", "elo": 1480, "off": 47, "def": 45, "qb": 48, "form": 47},
@@ -11894,20 +11894,63 @@ elif sport == "🏈 NFL Football":
 
         st.info(f"Active build: {NFL_BUILD_LABEL}")
 
+        season = current_nfl_season()
+        schedule_error = ""
+        try:
+            season_schedule = hag_nfl_fetch_season_schedule(season)
+        except Exception as exc:
+            season_schedule = pd.DataFrame()
+            schedule_error = str(exc)
+
+        retrospective = (
+            build_walkforward_results(season_schedule, NFL_TEAM_RATINGS)
+            if not season_schedule.empty
+            else pd.DataFrame()
+        )
+        latest_completed_week = None
+        past_week = pd.DataFrame()
+        last_week_wins = last_week_losses = 0
+        season_wins = season_losses = 0
+        season_accuracy = 0.0
+        if not retrospective.empty:
+            latest_completed_week = int(retrospective["Week"].max())
+            past_week = retrospective[retrospective["Week"] == latest_completed_week].copy()
+            past_week_decided = past_week[past_week["Model Result"].isin(["WIN", "LOSS"])]
+            season_decided = retrospective[retrospective["Model Result"].isin(["WIN", "LOSS"])]
+            last_week_wins = int((past_week_decided["Model Result"] == "WIN").sum())
+            last_week_losses = int((past_week_decided["Model Result"] == "LOSS").sum())
+            season_wins = int((season_decided["Model Result"] == "WIN").sum())
+            season_losses = int((season_decided["Model Result"] == "LOSS").sum())
+            season_accuracy = season_wins / len(season_decided) * 100 if len(season_decided) else 0.0
+
         stats = hag_nfl_get_log_stats()
+        tracked_df = stats["graded_df"]
+        tracked_wins = (
+            int((tracked_df["Model Result"].astype(str).str.upper() == "WIN").sum())
+            if not tracked_df.empty
+            else 0
+        )
+        tracked_losses = max(0, int(stats["graded"]) - tracked_wins)
         m1, m2, m3, m4, m5 = st.columns(5)
         with m1:
-            st.metric("Logged Games", stats["logged"])
+            st.metric("Last Completed", f"Week {latest_completed_week}" if latest_completed_week else "No finals")
         with m2:
-            st.metric("Pending", stats["pending"])
+            st.metric("Last Week Record", f"{last_week_wins}-{last_week_losses}")
         with m3:
-            st.metric("Official Logged", stats["official_logged"])
+            st.metric("Season Record", f"{season_wins}-{season_losses}")
         with m4:
-            st.metric("Tracked Accuracy", f"{stats['model_acc']:.1f}%" if stats["graded"] else "Awaiting finals")
+            st.metric("Season Accuracy", f"{season_accuracy:.1f}%")
         with m5:
-            st.metric("Vegas Tracked Accuracy", f"{stats['vegas_acc']:.1f}%" if stats["graded"] else "Awaiting finals")
+            st.metric("Pregame Tracker", f"{tracked_wins}-{tracked_losses}")
+            st.caption(f"{stats['pending']} upcoming games pending")
 
-        with st.expander("What changed in NFL v1.1?"):
+        if latest_completed_week:
+            st.caption(
+                f"Completed through Week {latest_completed_week}. The {season_wins}-{season_losses} season record is the "
+                "causal walk-forward baseline; immutable pregame tracking is reported separately as games finish."
+            )
+
+        with st.expander("What changed in NFL v1.2?"):
             st.markdown("""
             **NFL v1.1 adds a continuously updating season outlook:**
 
@@ -11932,14 +11975,14 @@ elif sport == "🏈 NFL Football":
         ])
 
         with nfl_tabs[0]:
-            season = current_nfl_season()
             st.subheader(f"{season} NFL Season Record Forecast")
             st.caption(
                 "Completed results are fixed. Every remaining game is simulated from result-updated team strength "
                 "and no-vig sportsbook consensus when available. The forecast refreshes automatically as games finish."
             )
             try:
-                season_schedule = hag_nfl_fetch_season_schedule(season)
+                if schedule_error:
+                    raise RuntimeError(schedule_error)
                 forecast_df, weekly_df, season_games_df = simulate_season_records(
                     season_schedule,
                     NFL_TEAM_RATINGS,
@@ -12134,12 +12177,9 @@ elif sport == "🏈 NFL Football":
         with nfl_tabs[4]:
             st.subheader("NFL Results")
 
-            retrospective = build_walkforward_results(season_schedule, NFL_TEAM_RATINGS) if not season_schedule.empty else pd.DataFrame()
             if retrospective.empty:
                 st.info("No completed NFL games are available from ESPN yet.")
             else:
-                latest_completed_week = int(retrospective["Week"].max())
-                past_week = retrospective[retrospective["Week"] == latest_completed_week].copy()
                 decided = past_week[past_week["Model Result"].isin(["WIN", "LOSS"])]
                 baseline_accuracy = (
                     (decided["Model Result"] == "WIN").mean() * 100 if not decided.empty else 0.0
@@ -12211,7 +12251,10 @@ elif sport == "🏈 NFL Football":
                     hide_index=True,
                 )
             else:
-                st.info("No official tracked games have completed yet; the first 16 snapshots are pending.")
+                st.info(
+                    "Completed games and the current season record are shown above. The separate immutable pregame "
+                    f"tracker is 0-0 because its first {len(pending_df)} snapshots are for upcoming games."
+                )
 
             st.metric("Pending NFL Games", len(pending_df))
             if not pending_df.empty:
