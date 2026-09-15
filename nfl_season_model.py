@@ -206,6 +206,43 @@ def build_walkforward_results(
     return pd.DataFrame(rows, columns=columns)
 
 
+def attach_vegas_results(
+    results: pd.DataFrame,
+    vegas_picks: Mapping[tuple[str, str], str],
+) -> pd.DataFrame:
+    """Attach comparable straight-up Vegas picks and results by matchup."""
+    output = results.copy()
+    if output.empty:
+        output["Vegas Pick"] = pd.Series(dtype="object")
+        output["Vegas Result"] = pd.Series(dtype="object")
+        return output
+
+    pick_index = {
+        (normalize_team_name(away), normalize_team_name(home)): str(pick)
+        for (away, home), pick in vegas_picks.items()
+        if str(pick or "").strip()
+    }
+    output["Vegas Pick"] = output.apply(
+        lambda row: pick_index.get(
+            (normalize_team_name(row.get("Away Team")), normalize_team_name(row.get("Home Team"))),
+            "",
+        ),
+        axis=1,
+    )
+
+    def grade(row: Mapping[str, Any]) -> str:
+        pick = str(row.get("Vegas Pick") or "")
+        actual = str(row.get("Actual Winner") or "")
+        if not pick:
+            return ""
+        if actual == "Tie":
+            return "PUSH"
+        return "WIN" if normalize_team_name(pick) == normalize_team_name(actual) else "LOSS"
+
+    output["Vegas Result"] = output.apply(grade, axis=1)
+    return output
+
+
 def market_probability_index(odds_board: pd.DataFrame | None) -> dict[tuple[str, str], float]:
     if odds_board is None or odds_board.empty:
         return {}

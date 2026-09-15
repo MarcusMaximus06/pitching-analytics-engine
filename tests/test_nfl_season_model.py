@@ -5,7 +5,9 @@ from datetime import datetime, timezone
 import pandas as pd
 import pytest
 
+from nfl_prediction_config import NFL_ARCHIVED_VEGAS_PICKS
 from nfl_season_model import (
+    attach_vegas_results,
     build_game_probabilities,
     build_walkforward_results,
     current_nfl_season,
@@ -92,3 +94,41 @@ def test_walkforward_results_include_pregame_probabilities_without_self_leakage(
     )
     assert results["Pregame Home Probability"].between(0, 1).all()
     assert set(results["Model Result"]).issubset({"WIN", "LOSS", "PUSH"})
+
+
+def test_vegas_results_are_scored_by_normalized_matchup():
+    schedule = parse_espn_schedule(
+        [{"events": [_event(1, 1, "Away Team", "Home Team", 10, 24)]}],
+        2026,
+    )
+    results = build_walkforward_results(schedule, {"Away Team": 1500, "Home Team": 1500})
+    scored = attach_vegas_results(results, {("Away-Team", "HOME TEAM"): "Home Team"})
+    assert scored.iloc[0]["Vegas Pick"] == "Home Team"
+    assert scored.iloc[0]["Vegas Result"] == "WIN"
+
+
+def test_archived_week_one_vegas_record_is_12_and_4():
+    actual_winners = {
+        ("New England Patriots", "Seattle Seahawks"): "Seattle Seahawks",
+        ("San Francisco 49ers", "Los Angeles Rams"): "San Francisco 49ers",
+        ("Atlanta Falcons", "Pittsburgh Steelers"): "Pittsburgh Steelers",
+        ("Baltimore Ravens", "Indianapolis Colts"): "Baltimore Ravens",
+        ("Buffalo Bills", "Houston Texans"): "Buffalo Bills",
+        ("Chicago Bears", "Carolina Panthers"): "Chicago Bears",
+        ("Cleveland Browns", "Jacksonville Jaguars"): "Jacksonville Jaguars",
+        ("New Orleans Saints", "Detroit Lions"): "Detroit Lions",
+        ("New York Jets", "Tennessee Titans"): "New York Jets",
+        ("Tampa Bay Buccaneers", "Cincinnati Bengals"): "Cincinnati Bengals",
+        ("Arizona Cardinals", "Los Angeles Chargers"): "Arizona Cardinals",
+        ("Green Bay Packers", "Minnesota Vikings"): "Minnesota Vikings",
+        ("Miami Dolphins", "Las Vegas Raiders"): "Las Vegas Raiders",
+        ("Washington Commanders", "Philadelphia Eagles"): "Philadelphia Eagles",
+        ("Dallas Cowboys", "New York Giants"): "New York Giants",
+        ("Denver Broncos", "Kansas City Chiefs"): "Kansas City Chiefs",
+    }
+    wins = sum(
+        NFL_ARCHIVED_VEGAS_PICKS[matchup] == winner
+        for matchup, winner in actual_winners.items()
+    )
+    assert len(NFL_ARCHIVED_VEGAS_PICKS) == 16
+    assert wins == 12

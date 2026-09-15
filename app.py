@@ -32,10 +32,12 @@ from mlb_pitcher_form import blend_pitcher_form, fetch_pitcher_recent_era
 from nfl_fantasy_ui import render_nfl_draft_lab
 from nfl_inseason_ui import render_nfl_inseason_command_center
 from nfl_prediction_config import (
+    NFL_ARCHIVED_VEGAS_PICKS,
+    NFL_ARCHIVED_VEGAS_SOURCE_URL,
     NFL_LOG_COLUMNS as SHARED_NFL_LOG_COLUMNS,
     NFL_TEAM_RATINGS as SHARED_NFL_TEAM_RATINGS,
 )
-from nfl_season_model import build_walkforward_results, current_nfl_season, fetch_espn_nfl_schedule, simulate_season_records
+from nfl_season_model import attach_vegas_results, build_walkforward_results, current_nfl_season, fetch_espn_nfl_schedule, simulate_season_records
 from ncaaf_ui import render_ncaaf_winner_lab
 from pybaseball import statcast_pitcher, statcast_batter
 
@@ -11141,7 +11143,7 @@ elif sport == "🏈 NFL Football":
     # ==========================================================
     # NFL VEGAS BOARD + PREDICTION LOGGING V1.0
     # ==========================================================
-    NFL_BUILD_LABEL = "NFL SEASON FORECAST v1.2.2 - visible weekly records + nightly grading"
+    NFL_BUILD_LABEL = "NFL SEASON FORECAST v1.2.3 - HagLabs vs Vegas records"
 
     NFL_TEAM_RATINGS = {
         "Arizona Cardinals": {"abbr": "ARI", "elo": 1480, "off": 47, "def": 45, "qb": 48, "form": 47},
@@ -11902,16 +11904,29 @@ elif sport == "🏈 NFL Football":
             season_schedule = pd.DataFrame()
             schedule_error = str(exc)
 
+        stats = hag_nfl_get_log_stats()
+        vegas_pick_history = dict(NFL_ARCHIVED_VEGAS_PICKS)
+        for row in stats["graded_df"].to_dict("records"):
+            closing_pick = str(row.get("Closing Vegas Pick") or "").strip()
+            opening_pick = str(row.get("Vegas Pick") or "").strip()
+            vegas_pick = closing_pick or opening_pick
+            if vegas_pick:
+                vegas_pick_history[(str(row.get("Away Team") or ""), str(row.get("Home Team") or ""))] = vegas_pick
+
         retrospective = (
             build_walkforward_results(season_schedule, NFL_TEAM_RATINGS)
             if not season_schedule.empty
             else pd.DataFrame()
         )
+        retrospective = attach_vegas_results(retrospective, vegas_pick_history)
         latest_completed_week = None
         past_week = pd.DataFrame()
         last_week_wins = last_week_losses = 0
         season_wins = season_losses = 0
         season_accuracy = 0.0
+        vegas_last_week_wins = vegas_last_week_losses = 0
+        vegas_season_wins = vegas_season_losses = 0
+        vegas_season_accuracy = 0.0
         if not retrospective.empty:
             latest_completed_week = int(retrospective["Week"].max())
             past_week = retrospective[retrospective["Week"] == latest_completed_week].copy()
@@ -11922,8 +11937,16 @@ elif sport == "🏈 NFL Football":
             season_wins = int((season_decided["Model Result"] == "WIN").sum())
             season_losses = int((season_decided["Model Result"] == "LOSS").sum())
             season_accuracy = season_wins / len(season_decided) * 100 if len(season_decided) else 0.0
+            vegas_past_week = past_week[past_week["Vegas Result"].isin(["WIN", "LOSS"])]
+            vegas_season = retrospective[retrospective["Vegas Result"].isin(["WIN", "LOSS"])]
+            vegas_last_week_wins = int((vegas_past_week["Vegas Result"] == "WIN").sum())
+            vegas_last_week_losses = int((vegas_past_week["Vegas Result"] == "LOSS").sum())
+            vegas_season_wins = int((vegas_season["Vegas Result"] == "WIN").sum())
+            vegas_season_losses = int((vegas_season["Vegas Result"] == "LOSS").sum())
+            vegas_season_accuracy = (
+                vegas_season_wins / len(vegas_season) * 100 if len(vegas_season) else 0.0
+            )
 
-        stats = hag_nfl_get_log_stats()
         tracked_df = stats["graded_df"]
         tracked_wins = (
             int((tracked_df["Model Result"].astype(str).str.upper() == "WIN").sum())
@@ -11935,19 +11958,25 @@ elif sport == "🏈 NFL Football":
         with m1:
             st.metric("Last Completed", f"Week {latest_completed_week}" if latest_completed_week else "No finals")
         with m2:
-            st.metric("Last Week Record", f"{last_week_wins}-{last_week_losses}")
+            st.metric("HagLabs Last Week", f"{last_week_wins}-{last_week_losses}")
         with m3:
-            st.metric("Season Record", f"{season_wins}-{season_losses}")
+            st.metric("Vegas Last Week", f"{vegas_last_week_wins}-{vegas_last_week_losses}")
         with m4:
-            st.metric("Season Accuracy", f"{season_accuracy:.1f}%")
+            st.metric("HagLabs Season", f"{season_wins}-{season_losses}")
         with m5:
-            st.metric("Pregame Tracker", f"{tracked_wins}-{tracked_losses}")
-            st.caption(f"{stats['pending']} upcoming games pending")
+            st.metric("Vegas Season", f"{vegas_season_wins}-{vegas_season_losses}")
+
+        st.caption(
+            f"HagLabs {season_accuracy:.1f}% vs Vegas {vegas_season_accuracy:.1f}% through Week "
+            f"{latest_completed_week or '—'}. Pregame tracker: {tracked_wins}-{tracked_losses}; "
+            f"{stats['pending']} upcoming games pending."
+        )
 
         if latest_completed_week:
             st.caption(
-                f"Completed through Week {latest_completed_week}. The {season_wins}-{season_losses} season record is the "
-                "causal walk-forward baseline; immutable pregame tracking is reported separately as games finish."
+                f"Completed through Week {latest_completed_week}. HagLabs uses its causal walk-forward baseline. "
+                "Vegas uses archived Week 1 consensus favorites, then nightly saved closing picks when available "
+                "(opening pick fallback). Missing market rows are excluded."
             )
 
         with st.expander("What changed in NFL v1.2?"):
@@ -12199,27 +12228,38 @@ elif sport == "🏈 NFL Football":
                 past_week["Result"] = past_week["Model Result"].map(
                     {"WIN": "✅ WIN", "LOSS": "❌ LOSS", "PUSH": "➖ PUSH"}
                 )
+                past_week["Vegas Result Display"] = past_week["Vegas Result"].map(
+                    {"WIN": "✅ WIN", "LOSS": "❌ LOSS", "PUSH": "➖ PUSH"}
+                ).fillna("—")
 
                 st.markdown(f"### Past Week Results — Week {latest_completed_week}")
-                r1, r2, r3, r4 = st.columns(4)
+                vegas_decided = past_week[past_week["Vegas Result"].isin(["WIN", "LOSS"])]
+                vegas_accuracy = (
+                    (vegas_decided["Vegas Result"] == "WIN").mean() * 100 if not vegas_decided.empty else 0.0
+                )
+                r1, r2, r3, r4, r5 = st.columns(5)
                 with r1:
                     st.metric("Games", len(past_week))
                 with r2:
-                    st.metric("Baseline Wins", int((past_week["Model Result"] == "WIN").sum()))
+                    st.metric("HagLabs Record", f"{last_week_wins}-{last_week_losses}")
                 with r3:
-                    st.metric("Baseline Accuracy", f"{baseline_accuracy:.1f}%")
+                    st.metric("HagLabs Accuracy", f"{baseline_accuracy:.1f}%")
                 with r4:
-                    st.metric("Official Tracked Graded", stats["graded"])
+                    st.metric("Vegas Record", f"{vegas_last_week_wins}-{vegas_last_week_losses}")
+                with r5:
+                    st.metric("Vegas Accuracy", f"{vegas_accuracy:.1f}%")
 
                 st.caption(
                     "The past-week percentages are a chronological walk-forward Elo reconstruction: each forecast is "
                     "calculated before that game's score updates the ratings. They are clearly separated from official "
-                    "pregame snapshots and do not inflate the tracked record."
+                    "pregame snapshots and do not inflate the tracked record. "
+                    f"[Week 1 Vegas consensus source]({NFL_ARCHIVED_VEGAS_SOURCE_URL})."
                 )
                 st.dataframe(
                     past_week[[
-                        "Matchup", "Predicted Winner", "Final Score", "Actual Winner", "Result",
-                    ]],
+                        "Matchup", "Predicted Winner", "Vegas Pick", "Final Score", "Actual Winner",
+                        "Result", "Vegas Result Display",
+                    ]].rename(columns={"Result": "HagLabs Result", "Vegas Result Display": "Vegas Result"}),
                     width="stretch",
                     hide_index=True,
                 )

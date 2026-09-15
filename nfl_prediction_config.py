@@ -35,6 +35,31 @@ NFL_TEAM_RATINGS = {
     "Washington Commanders": {"abbr": "WAS", "elo": 1600, "off": 60, "def": 49, "qb": 61, "form": 57},
 }
 
+# Archived consensus moneyline favorites for 2026 Week 1. These factual market
+# selections seed the Vegas comparison because immutable HagLabs logging began
+# with Week 2. Source: VegasInsider's 2026 NFL Week 1 consensus table, updated
+# 2026-09-14. Future weeks come from the automated NFL Log V2 snapshots.
+NFL_ARCHIVED_VEGAS_PICKS = {
+    ("New England Patriots", "Seattle Seahawks"): "Seattle Seahawks",
+    ("San Francisco 49ers", "Los Angeles Rams"): "Los Angeles Rams",
+    ("Atlanta Falcons", "Pittsburgh Steelers"): "Pittsburgh Steelers",
+    ("Baltimore Ravens", "Indianapolis Colts"): "Baltimore Ravens",
+    ("Buffalo Bills", "Houston Texans"): "Buffalo Bills",
+    ("Chicago Bears", "Carolina Panthers"): "Chicago Bears",
+    ("Cleveland Browns", "Jacksonville Jaguars"): "Jacksonville Jaguars",
+    ("New Orleans Saints", "Detroit Lions"): "Detroit Lions",
+    ("New York Jets", "Tennessee Titans"): "Tennessee Titans",
+    ("Tampa Bay Buccaneers", "Cincinnati Bengals"): "Cincinnati Bengals",
+    ("Arizona Cardinals", "Los Angeles Chargers"): "Los Angeles Chargers",
+    ("Green Bay Packers", "Minnesota Vikings"): "Minnesota Vikings",
+    ("Miami Dolphins", "Las Vegas Raiders"): "Las Vegas Raiders",
+    ("Washington Commanders", "Philadelphia Eagles"): "Philadelphia Eagles",
+    ("Dallas Cowboys", "New York Giants"): "Dallas Cowboys",
+    ("Denver Broncos", "Kansas City Chiefs"): "Kansas City Chiefs",
+}
+
+NFL_ARCHIVED_VEGAS_SOURCE_URL = "https://www.vegasinsider.com/nfl/nfl-week-1-odds-2026/"
+
 NFL_LOG_COLUMNS = [
     "Log ID",
     "Date",
