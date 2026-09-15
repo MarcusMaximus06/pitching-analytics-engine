@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pandas as pd
 
 from daily_nfl_auto import (
     NFL_LOG_COLUMNS,
     build_today_rows,
+    build_window_rows,
     ensure_headers,
     grade_pending,
     log_rows,
@@ -168,6 +169,30 @@ def test_model_only_pregame_row_logs_once():
     second = log_rows(rows, worksheet)
     assert first["logged"] == 1
     assert second["duplicates"] == 1
+
+
+def test_window_rows_include_future_slate_and_render_percent_signs():
+    schedule = pd.DataFrame(
+        [
+            {
+                "game_id": "402",
+                "season": 2026,
+                "week": 2,
+                "start_date": "2026-09-17T23:00:00Z",
+                "away_team": "Arizona Cardinals",
+                "home_team": "Seattle Seahawks",
+                "neutral_site": False,
+                "completed": False,
+                "away_score": float("nan"),
+                "home_score": float("nan"),
+            }
+        ]
+    )
+    now = datetime(2026, 9, 15, 12, 0, tzinfo=timezone.utc)
+    rows, _ = build_window_rows(schedule, pd.DataFrame(), date(2026, 9, 15), now, lookahead_days=3)
+    assert len(rows) == 1
+    assert rows[0]["Model Away %"].endswith("%")
+    assert rows[0]["Model Home %"].endswith("%")
 
 
 def test_multi_book_odds_are_devigged_and_mapped_exactly():

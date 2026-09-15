@@ -11,7 +11,7 @@ import argparse
 import math
 import statistics
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -35,6 +35,7 @@ LOCAL_TIMEZONE = ZoneInfo("America/Chicago")
 EASTERN_TIMEZONE = ZoneInfo("America/New_York")
 ESPN_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
 ODDS_URL = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/"
+DEFAULT_LOOKAHEAD_DAYS = 7
 
 
 def _column_letter(number: int) -> str:
@@ -213,7 +214,7 @@ def _log_id(date_value: str, away: str, home: str) -> str:
 
 def _format_probability(value: Any) -> str:
     try:
-        return f"{float(value) * 100.0:.1f}"
+        return f"{float(value) * 100.0:.1f}%"
     except (TypeError, ValueError):
         return ""
 
@@ -307,6 +308,27 @@ def build_today_rows(
                 "Decision Source": str(game.get("probability_source") or "Updated Elo"),
             }
         )
+    return rows, warnings
+
+
+def build_window_rows(
+    season_schedule: pd.DataFrame,
+    odds_board: pd.DataFrame,
+    target_date: date,
+    now: datetime,
+    lookahead_days: int = DEFAULT_LOOKAHEAD_DAYS,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    rows: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for offset in range(max(0, int(lookahead_days)) + 1):
+        daily_rows, daily_warnings = build_today_rows(
+            season_schedule,
+            odds_board,
+            target_date + timedelta(days=offset),
+            now,
+        )
+        rows.extend(daily_rows)
+        warnings.extend(daily_warnings)
     return rows, warnings
 
 
@@ -418,6 +440,7 @@ def grade_pending(worksheet: Any, session: Any = requests) -> dict[str, Any]:
 def run_daily(
     date_value: str | None = None,
     dry_run: bool = False,
+    lookahead_days: int = DEFAULT_LOOKAHEAD_DAYS,
     now: datetime | None = None,
     session: Any = requests,
     client: Any | None = None,
@@ -428,23 +451,29 @@ def run_daily(
     grading = {"graded": 0, "errors": []} if dry_run else grade_pending(worksheet, session=session)
     season = current_nfl_season(now)
     schedule = fetch_espn_nfl_schedule(season, session=session)
-    todays_schedule = schedule[schedule["start_date"].map(_date_for_kickoff).eq(target.isoformat())] if not schedule.empty else schedule
+    through = target + timedelta(days=max(0, int(lookahead_days)))
+    if not schedule.empty:
+        kickoff_dates = schedule["start_date"].map(_date_for_kickoff)
+        window_schedule = schedule[kickoff_dates.between(target.isoformat(), through.isoformat())]
+    else:
+        window_schedule = schedule
     odds_games, odds_error = fetch_live_odds(session=session)
     odds_board = parse_odds_board(odds_games)
-    rows, warnings = build_today_rows(schedule, odds_board, target, now)
+    rows, warnings = build_window_rows(schedule, odds_board, target, now, lookahead_days)
     if odds_error:
         warnings.insert(0, f"WARNING: {odds_error}; model-only rows remain eligible.")
     logging = {"logged": 0, "duplicates": 0} if dry_run else log_rows(rows, worksheet)
     return {
         "date": target.isoformat(),
+        "through_date": through.isoformat(),
         "pending_graded": grading["graded"],
-        "games_found": len(todays_schedule),
+        "games_found": len(window_schedule),
         "games_modelable": len(rows),
         "games_with_odds": sum(bool(row.get("Vegas Pick")) for row in rows),
         "games_without_odds": sum(not bool(row.get("Vegas Pick")) for row in rows),
         "previously_logged": logging["duplicates"],
         "new_logged": logging["logged"],
-        "skipped": max(0, len(todays_schedule) - len(rows)),
+        "skipped": max(0, len(window_schedule) - len(rows)),
         "errors": grading["errors"],
         "warnings": warnings,
     }
@@ -452,9 +481,9 @@ def run_daily(
 
 def print_summary(summary: Mapping[str, Any]) -> None:
     print("NFL DAILY AUTOMATION")
-    print(f"Date: {summary['date']}")
+    print(f"Window: {summary['date']} through {summary['through_date']}")
     print(f"Pending games graded: {summary['pending_graded']}")
-    print(f"Games found today: {summary['games_found']}")
+    print(f"Games found in window: {summary['games_found']}")
     print(f"Games modelable: {summary['games_modelable']}")
     print(f"Games with Vegas odds: {summary['games_with_odds']}")
     print(f"Games without Vegas odds: {summary['games_without_odds']}")
@@ -472,9 +501,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Grade and log NFL predictions without Streamlit.")
     parser.add_argument("--date", help="Local date override in YYYY-MM-DD format")
     parser.add_argument("--dry-run", action="store_true", help="Fetch and model without Google Sheets writes")
+    parser.add_argument(
+        "--lookahead-days",
+        type=int,
+        default=DEFAULT_LOOKAHEAD_DAYS,
+        help="Inclusive future logging window (default: 7 days)",
+    )
     args = parser.parse_args(argv)
     try:
-        summary = run_daily(date_value=args.date, dry_run=args.dry_run)
+        summary = run_daily(
+            date_value=args.date,
+            dry_run=args.dry_run,
+            lookahead_days=max(0, args.lookahead_days),
+        )
     except Exception as exc:  # noqa: BLE001 - catastrophic failures must be loud
         print(f"NFL DAILY AUTOMATION FAILED: {type(exc).__name__}: {exc}")
         return 1

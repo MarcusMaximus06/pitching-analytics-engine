@@ -35,7 +35,7 @@ from nfl_prediction_config import (
     NFL_LOG_COLUMNS as SHARED_NFL_LOG_COLUMNS,
     NFL_TEAM_RATINGS as SHARED_NFL_TEAM_RATINGS,
 )
-from nfl_season_model import current_nfl_season, fetch_espn_nfl_schedule, simulate_season_records
+from nfl_season_model import build_walkforward_results, current_nfl_season, fetch_espn_nfl_schedule, simulate_season_records
 from ncaaf_ui import render_ncaaf_winner_lab
 from pybaseball import statcast_pitcher, statcast_batter
 
@@ -11141,7 +11141,7 @@ elif sport == "🏈 NFL Football":
     # ==========================================================
     # NFL VEGAS BOARD + PREDICTION LOGGING V1.0
     # ==========================================================
-    NFL_BUILD_LABEL = "NFL SEASON FORECAST v1.1.0 - weekly records + calibrated decision window"
+    NFL_BUILD_LABEL = "NFL SEASON FORECAST v1.2.0 - seven-day snapshots + visible result probabilities"
 
     NFL_TEAM_RATINGS = {
         "Arizona Cardinals": {"abbr": "ARI", "elo": 1480, "off": 47, "def": 45, "qb": 48, "form": 47},
@@ -11242,6 +11242,24 @@ elif sport == "🏈 NFL Football":
             return f"{float(value):.1f}"
         except Exception:
             return ""
+
+    def hag_nfl_display_percent(value):
+        number = hag_nfl_safe_float(value, None)
+        return f"{number:.1f}%" if number is not None else ""
+
+    def hag_nfl_display_log_df(frame):
+        if frame is None or frame.empty:
+            return frame
+        display = frame.copy()
+        percent_columns = [
+            "Vegas Away %", "Vegas Home %", "Model Away %", "Model Home %",
+            "Model Edge %", "Closing Vegas Away %", "Closing Vegas Home %",
+            "Closing Model Edge %", "Line Movement",
+        ]
+        for column in percent_columns:
+            if column in display.columns:
+                display[column] = display[column].map(hag_nfl_display_percent)
+        return display
 
     def hag_nfl_avg(values, default=""):
         vals = []
@@ -11868,7 +11886,7 @@ elif sport == "🏈 NFL Football":
                 st.dataframe(pd.DataFrame(tier_rows), width="stretch", hide_index=True)
 
             st.markdown("#### Recent NFL Log")
-            st.dataframe(df.tail(50), width="stretch", hide_index=True)
+            st.dataframe(hag_nfl_display_log_df(df.tail(50)), width="stretch", hide_index=True)
 
     if nfl_page == "🏈 NFL Simulation Engine":
         st.title("🏈 NFL Season Intelligence Lab")
@@ -12053,7 +12071,10 @@ elif sport == "🏈 NFL Football":
                     "Model Pick", "Vegas Pick", "Model Edge %", "Confidence",
                     "Official Pick", "Model Quality", "Odds Source"
                 ]
-                st.dataframe(decision_board[[c for c in display_cols if c in decision_board.columns]], width="stretch", hide_index=True)
+                live_display = hag_nfl_display_log_df(
+                    decision_board[[c for c in display_cols if c in decision_board.columns]]
+                )
+                st.dataframe(live_display, width="stretch", hide_index=True)
 
                 b1, b2, b3, b4 = st.columns(4)
                 with b1:
@@ -12093,7 +12114,7 @@ elif sport == "🏈 NFL Football":
                     key="nfl_log_status_filter"
                 )
                 filtered = log_df[log_df["Status"].astype(str).isin(status_filter)] if status_filter else log_df
-                st.dataframe(filtered, width="stretch", hide_index=True)
+                st.dataframe(hag_nfl_display_log_df(filtered), width="stretch", hide_index=True)
 
         with nfl_tabs[3]:
             st.subheader("NFL Closing Line Tracker")
@@ -12108,7 +12129,7 @@ elif sport == "🏈 NFL Football":
                     "Opening Snapshot Time", "Closing Snapshot Time", "Status"
                 ]
                 movement_df = log_df[[c for c in movement_cols if c in log_df.columns]].copy()
-                st.dataframe(movement_df, width="stretch", hide_index=True)
+                st.dataframe(hag_nfl_display_log_df(movement_df), width="stretch", hide_index=True)
 
         with nfl_tabs[4]:
             st.subheader("Grade NFL Results")
@@ -12125,7 +12146,43 @@ elif sport == "🏈 NFL Football":
             pending_df = log_df[log_df["Status"].astype(str).str.upper().eq("PENDING")] if not log_df.empty else pd.DataFrame()
             st.metric("Pending NFL Games", len(pending_df))
             if not pending_df.empty:
-                st.dataframe(pending_df, width="stretch", hide_index=True)
+                result_columns = [
+                    "Date", "Start Time", "Away Team", "Home Team", "Model Away %",
+                    "Model Home %", "Vegas Away %", "Vegas Home %", "Model Pick",
+                    "Vegas Pick", "Confidence", "Status",
+                ]
+                st.markdown("#### Tracked pregame predictions")
+                st.dataframe(
+                    hag_nfl_display_log_df(pending_df[[c for c in result_columns if c in pending_df.columns]]),
+                    width="stretch",
+                    hide_index=True,
+                )
+
+            graded_log = log_df[log_df["Status"].astype(str).str.upper().isin(["WIN", "LOSS"])] if not log_df.empty else pd.DataFrame()
+            if not graded_log.empty:
+                graded_columns = [
+                    "Date", "Away Team", "Home Team", "Model Away %", "Model Home %",
+                    "Vegas Away %", "Vegas Home %", "Model Pick", "Actual Winner",
+                    "Model Result", "Early Vegas Result",
+                ]
+                st.markdown("#### Graded tracked predictions")
+                st.dataframe(
+                    hag_nfl_display_log_df(graded_log[[c for c in graded_columns if c in graded_log.columns]]),
+                    width="stretch",
+                    hide_index=True,
+                )
+
+            retrospective = build_walkforward_results(season_schedule, NFL_TEAM_RATINGS) if not season_schedule.empty else pd.DataFrame()
+            if not retrospective.empty:
+                retrospective_display = retrospective.copy()
+                retrospective_display["Pregame Away Probability"] = retrospective_display["Pregame Away Probability"].map(lambda value: f"{value:.1%}")
+                retrospective_display["Pregame Home Probability"] = retrospective_display["Pregame Home Probability"].map(lambda value: f"{value:.1%}")
+                st.markdown("#### Completed-game baseline")
+                st.caption(
+                    "Walk-forward Elo reconstruction: every percentage is calculated before that game's result updates Elo. "
+                    "These rows provide an honest historical baseline, but are not counted as immutable tracked picks."
+                )
+                st.dataframe(retrospective_display, width="stretch", hide_index=True)
 
         with nfl_tabs[5]:
             hag_nfl_render_accuracy_dashboard()

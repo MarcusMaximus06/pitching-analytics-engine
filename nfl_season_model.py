@@ -143,6 +143,69 @@ def update_elos_from_results(schedule: pd.DataFrame, ratings: Mapping[str, Any])
     return elos
 
 
+def build_walkforward_results(
+    schedule: pd.DataFrame,
+    ratings: Mapping[str, Any],
+) -> pd.DataFrame:
+    """Reconstruct pregame Elo probabilities for completed games in time order.
+
+    These rows are a transparent baseline, not immutable tracked predictions.
+    Each probability is calculated before that game's result updates Elo, which
+    prevents the game being evaluated from leaking into its own forecast.
+    """
+    columns = [
+        "Event ID", "Week", "Start", "Away Team", "Home Team",
+        "Away Score", "Home Score", "Pregame Away Probability",
+        "Pregame Home Probability", "Model Pick", "Actual Winner",
+        "Model Result", "Source",
+    ]
+    if schedule.empty:
+        return pd.DataFrame(columns=columns)
+
+    teams = sorted(set(schedule.get("home_team", [])) | set(schedule.get("away_team", [])))
+    elos = _initial_elos(ratings, teams)
+    rows: list[dict[str, Any]] = []
+    ordered = schedule.sort_values(["start_date", "game_id"]).reset_index(drop=True)
+    for game in ordered.to_dict("records"):
+        home = str(game["home_team"])
+        away = str(game["away_team"])
+        home_probability = _elo_probability(elos[home], elos[away], bool(game.get("neutral_site")))
+        if not bool(game.get("completed")):
+            continue
+
+        home_score = float(game["home_score"])
+        away_score = float(game["away_score"])
+        actual = home if home_score > away_score else away if away_score > home_score else "Tie"
+        model_pick = home if home_probability >= 0.5 else away
+        model_result = "PUSH" if actual == "Tie" else "WIN" if model_pick == actual else "LOSS"
+        rows.append(
+            {
+                "Event ID": str(game.get("game_id") or ""),
+                "Week": int(game.get("week") or 0),
+                "Start": str(game.get("start_date") or ""),
+                "Away Team": away,
+                "Home Team": home,
+                "Away Score": int(away_score),
+                "Home Score": int(home_score),
+                "Pregame Away Probability": 1.0 - home_probability,
+                "Pregame Home Probability": home_probability,
+                "Model Pick": model_pick,
+                "Actual Winner": actual,
+                "Model Result": model_result,
+                "Source": "Walk-forward Elo reconstruction",
+            }
+        )
+
+        outcome = 0.5 if home_score == away_score else float(home_score > away_score)
+        margin = home_score - away_score
+        multiplier = max(1.0, math.log(abs(margin) + 1.0))
+        change = 18.0 * multiplier * (outcome - home_probability)
+        elos[home] += change
+        elos[away] -= change
+
+    return pd.DataFrame(rows, columns=columns)
+
+
 def market_probability_index(odds_board: pd.DataFrame | None) -> dict[tuple[str, str], float]:
     if odds_board is None or odds_board.empty:
         return {}

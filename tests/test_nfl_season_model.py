@@ -7,6 +7,7 @@ import pytest
 
 from nfl_season_model import (
     build_game_probabilities,
+    build_walkforward_results,
     current_nfl_season,
     parse_espn_schedule,
     simulate_season_records,
@@ -76,3 +77,18 @@ def test_probability_rows_sum_to_one():
     games, _ = build_game_probabilities(schedule, {"Away": 1600, "Home": 1400})
     home = games.iloc[0]["home_win_probability"]
     assert home + (1.0 - home) == pytest.approx(1.0)
+
+
+def test_walkforward_results_include_pregame_probabilities_without_self_leakage():
+    events = [
+        _event(1, 1, "Away", "Home", 10, 24),
+        _event(2, 2, "Home", "Away", 21, 17),
+    ]
+    schedule = parse_espn_schedule([{"events": events}], 2026)
+    results = build_walkforward_results(schedule, {"Away": {"elo": 1500}, "Home": {"elo": 1500}})
+    assert len(results) == 2
+    assert results.iloc[0]["Pregame Home Probability"] == pytest.approx(
+        1.0 / (1.0 + 10.0 ** (-42.0 / 400.0))
+    )
+    assert results["Pregame Home Probability"].between(0, 1).all()
+    assert set(results["Model Result"]).issubset({"WIN", "LOSS", "PUSH"})
