@@ -261,6 +261,31 @@ def test_vegas_accuracy_excludes_games_without_real_odds():
     assert stats["vegas_accuracy"] == 1.0
 
 
+def test_log_stats_reconstructs_legacy_independent_disagreements():
+    row = {header: "" for header in LOG_HEADERS}
+    row.update(
+        {
+            "Date": "2026-09-12",
+            "Away Team": "Away",
+            "Home Team": "Home",
+            "Away Odds": "-110",
+            "Home Odds": "+105",
+            "Model Away %": "40%",
+            "Model Home %": "60%",
+            "Predicted Winner": "Home",
+            "Actual Winner": "Away",
+            "Result": "LOSS",
+        }
+    )
+    worksheet = FakeWorksheet([LOG_HEADERS, [row[header] for header in LOG_HEADERS]])
+
+    stats = get_log_stats(worksheet=worksheet)
+
+    assert stats["disagreement_games"] == 1
+    assert stats["independent_disagreement_wins"] == 0
+    assert stats["vegas_disagreement_wins"] == 1
+
+
 def test_live_review_measures_model_market_disagreement_from_snapshots():
     row = {header: "" for header in LOG_HEADERS}
     row.update(

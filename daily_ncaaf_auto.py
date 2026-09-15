@@ -681,6 +681,7 @@ def get_log_stats(
         confidence[tier]["wins"] += int(row.get("Result", "").upper() == "WIN")
         home_probability = _parse_percent(row.get("Model Home %"))
         actual = row.get("Actual Winner", "")
+        independent_pick = row.get("Independent Pick", "").strip()
         if not actual:
             predicted = row.get("Predicted Winner", "")
             actual = predicted if row.get("Result", "").upper() == "WIN" else (
@@ -689,7 +690,7 @@ def get_log_stats(
         if home_probability is not None:
             home_won = normalize_team_name(actual) == normalize_team_name(row.get("Home Team", ""))
             brier_values.append((home_probability - float(home_won)) ** 2)
-            independent_pick = row.get("Independent Pick", "").strip() or (
+            independent_pick = independent_pick or (
                 row.get("Home Team", "") if home_probability >= 0.5 else row.get("Away Team", "")
             )
             independent_games += 1
@@ -707,7 +708,6 @@ def get_log_stats(
             vegas_pick = row.get("Away Team", "") if away_implied >= home_implied else row.get("Home Team", "")
         vegas_wins += int(normalize_team_name(vegas_pick) == normalize_team_name(actual))
         model_vegas_wins += int(row.get("Result", "").upper() == "WIN")
-        independent_pick = row.get("Independent Pick", "").strip()
         if independent_pick and normalize_team_name(independent_pick) != normalize_team_name(vegas_pick):
             disagreement_games += 1
             independent_disagreement_wins += int(
