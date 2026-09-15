@@ -1,4 +1,4 @@
-# HAG LABS VERIFIED BUILD: NFL VEGAS BOARD v1.0.1 + UFC VEGAS BOARD v2.4.1
+# HAG LABS VERIFIED BUILD: NFL VEGAS BOARD v1.0.1 + UFC WINNER MODEL v3.0.0
 # Active build: NFL VEGAS BOARD v1.0.1 - API key fallback + offseason-safe live odds board
 import plotly.graph_objects as go
 import streamlit as st
@@ -39,7 +39,15 @@ from nfl_prediction_config import (
 )
 from nfl_season_model import attach_vegas_results, build_walkforward_results, current_nfl_season, fetch_espn_nfl_schedule, simulate_season_records
 from ncaaf_ui import render_ncaaf_winner_lab
+from ufc_model import (
+    MODEL_VERSION as UFC_MODEL_VERSION,
+    load_model_artifact as load_ufc_model_artifact,
+    predict_matchup as predict_ufc_matchup,
+)
 from pybaseball import statcast_pitcher, statcast_batter
+
+UFC_MODEL_ARTIFACT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "ufc", "model.json")
+UFC_MODEL_ARTIFACT = load_ufc_model_artifact(UFC_MODEL_ARTIFACT_PATH)
 
 
 def get_runtime_secret(*names):
@@ -3599,6 +3607,18 @@ def hag_ufc_apply_real_stat_scores_to_fighters():
             UFC_FIGHTERS[name]["Durability"] = int(round((float(UFC_FIGHTERS[name].get("Durability", 75)) * 0.70) + (float(row.get("Real Defense Percentile", 50)) * 0.30)))
             UFC_FIGHTERS[name]["Data Quality"] = hag_ufc_data_quality_label(UFC_FIGHTERS[name])
 
+def hag_ufc_apply_artifact_profiles():
+    """Expand coverage without overwriting current/manual fighter profiles."""
+    for name, profile in (UFC_MODEL_ARTIFACT.get("fighter_profiles") or {}).items():
+        if name not in UFC_FIGHTERS:
+            UFC_FIGHTERS[name] = profile
+        else:
+            for key, value in profile.items():
+                if key not in UFC_FIGHTERS[name] or UFC_FIGHTERS[name].get(key, "") in ["", None]:
+                    UFC_FIGHTERS[name][key] = value
+
+
+hag_ufc_apply_artifact_profiles()
 hag_ufc_apply_real_stat_scores_to_fighters()
 
 
@@ -3948,94 +3968,27 @@ def hag_ufc_confidence_from_probability(prob, quality=0.5, edge_vs_vegas=None):
     return "Tracking"
 
 
-def hag_ufc_matchup_result(fighter_a, fighter_b, boost_a=0, boost_b=0):
+def hag_ufc_matchup_result(fighter_a, fighter_b, boost_a=0, boost_b=0, scheduled_rounds=3, market_probability_a=None):
     a = UFC_FIGHTERS.get(fighter_a, {})
     b = UFC_FIGHTERS.get(fighter_b, {})
     if not a or not b or fighter_a == fighter_b:
         return None
-
-    ac = hag_ufc_model_components(a)
-    bc = hag_ufc_model_components(b)
-
-    # Style paths: not just overall grade. This lets a wrestler with a lower overall
-    # grade win the matchup if the opponent has a major takedown/grappling weakness,
-    # and vice versa for elite strikers against low-defense opponents.
-    a_striking_path = (ac["striking_off"] - bc["striking_def"]) * 0.115
-    b_striking_path = (bc["striking_off"] - ac["striking_def"]) * 0.115
-    a_grappling_path = (ac["grappling_off"] - bc["grappling_def"]) * 0.105
-    b_grappling_path = (bc["grappling_off"] - ac["grappling_def"]) * 0.105
-
-    a_context = (
-        (ac["overall"] - bc["overall"]) * 0.52
-        + (ac["form"] - bc["form"]) * 0.075
-        + (ac["sos"] - bc["sos"]) * 0.055
-        + (ac["iq"] - bc["iq"]) * 0.045
-        + (ac["experience"] - bc["experience"]) * 0.030
-        + max(-3.0, min(3.0, (ac["reach"] - bc["reach"]) * 0.22))
+    result = predict_ufc_matchup(
+        fighter_a,
+        fighter_b,
+        a,
+        b,
+        artifact=UFC_MODEL_ARTIFACT,
+        boost_a=boost_a,
+        boost_b=boost_b,
+        scheduled_rounds=scheduled_rounds,
+        market_probability_a=market_probability_a,
     )
-
-    score_diff = a_context + (a_striking_path - b_striking_path) + (a_grappling_path - b_grappling_path) + float(boost_a) - float(boost_b)
-
-    # MMA is noisy and fighter samples are small, so shrink low-quality profiles toward 50/50.
-    avg_quality = (ac["quality"] + bc["quality"]) / 2
-    raw_prob_a = 1 / (1 + np.exp(-score_diff / 8.25))
-    shrink = 0.72 + (avg_quality * 0.28)
-    prob_a = 0.50 + ((raw_prob_a - 0.50) * shrink)
-    max_cap = 0.88 if avg_quality >= 0.60 else 0.82
-    prob_a = float(max(1 - max_cap, min(max_cap, prob_a)))
-    prob_b = 1 - prob_a
-
-    a_finish = (
-        hag_ufc_safe_float(a.get("Power", 75), 75) * 0.34
-        + hag_ufc_safe_float(a.get("Submission", 75), 75) * 0.26
-        + ac["striking_off"] * 0.18
-        + ac["grappling_off"] * 0.12
-        + hag_ufc_safe_float(a.get("Recent Form", 75), 75) * 0.10
-    ) / 100
-    b_survival = (bc["durability"] * 0.58 + bc["cardio"] * 0.27 + bc["iq"] * 0.15) / 100
-    a_finish_prob = max(0.10, min(0.78, (a_finish * (1.15 - b_survival)) + 0.20))
-
-    b_finish = (
-        hag_ufc_safe_float(b.get("Power", 75), 75) * 0.34
-        + hag_ufc_safe_float(b.get("Submission", 75), 75) * 0.26
-        + bc["striking_off"] * 0.18
-        + bc["grappling_off"] * 0.12
-        + hag_ufc_safe_float(b.get("Recent Form", 75), 75) * 0.10
-    ) / 100
-    a_survival = (ac["durability"] * 0.58 + ac["cardio"] * 0.27 + ac["iq"] * 0.15) / 100
-    b_finish_prob = max(0.10, min(0.78, (b_finish * (1.15 - a_survival)) + 0.20))
-
-    a_ko = hag_ufc_safe_float(a.get("KO %", 35), 35)
-    a_sub = hag_ufc_safe_float(a.get("Sub %", 25), 25)
-    b_ko = hag_ufc_safe_float(b.get("KO %", 35), 35)
-    b_sub = hag_ufc_safe_float(b.get("Sub %", 25), 25)
-    a_ko_share = a_ko / max(1, a_ko + a_sub)
-    b_ko_share = b_ko / max(1, b_ko + b_sub)
-
-    confidence = hag_ufc_confidence_from_probability(max(prob_a, prob_b), avg_quality)
-
-    return {
-        "Fighter A": fighter_a,
-        "Fighter B": fighter_b,
-        "A Grade": round(ac["overall"] + float(boost_a), 1),
-        "B Grade": round(bc["overall"] + float(boost_b), 1),
-        "A Win %": round(prob_a * 100, 1),
-        "B Win %": round(prob_b * 100, 1),
-        "A KO/TKO %": round(prob_a * a_finish_prob * a_ko_share * 100, 1),
-        "A Submission %": round(prob_a * a_finish_prob * (1 - a_ko_share) * 100, 1),
-        "A Decision %": round(prob_a * (1 - a_finish_prob) * 100, 1),
-        "B KO/TKO %": round(prob_b * b_finish_prob * b_ko_share * 100, 1),
-        "B Submission %": round(prob_b * b_finish_prob * (1 - b_ko_share) * 100, 1),
-        "B Decision %": round(prob_b * (1 - b_finish_prob) * 100, 1),
-        "Confidence": confidence,
-        "Predicted Winner": fighter_a if prob_a >= prob_b else fighter_b,
-        "Model Quality": round(avg_quality * 100, 0),
-        "A Striking Path": round(a_striking_path, 2),
-        "B Striking Path": round(b_striking_path, 2),
-        "A Grappling Path": round(a_grappling_path, 2),
-        "B Grappling Path": round(b_grappling_path, 2),
-        "Style Score Diff": round(score_diff, 2),
-    }
+    # Keep the familiar scouting grades while win probabilities come from the
+    # fitted, leakage-aware model.
+    result["A Grade"] = round(hag_ufc_score(a) + float(boost_a), 1)
+    result["B Grade"] = round(hag_ufc_score(b) + float(boost_b), 1)
+    return result
 
 def hag_ufc_simulation_df(result, sims=10000):
     if not result:
@@ -4791,7 +4744,17 @@ def hag_render_ufc_fighter_lab():
 
 def hag_render_ufc_fight_predictor():
     st.title("⚔️ UFC Fight Predictor")
-    st.caption("Single-fight prediction engine with win probability, method profile, confidence, and comparison context.")
+    st.caption("Chronologically validated fight probabilities with uncertainty, method profile, and matchup drivers.")
+
+    validation = UFC_MODEL_ARTIFACT.get("validation", {}).get("model", {})
+    if UFC_MODEL_ARTIFACT:
+        v1, v2, v3, v4 = st.columns(4)
+        v1.metric("Model", UFC_MODEL_ARTIFACT.get("model_version", UFC_MODEL_VERSION))
+        v2.metric("Historical Fights", f"{int(UFC_MODEL_ARTIFACT.get('training_games', 0)):,}")
+        v3.metric("Holdout Accuracy", f"{float(validation.get('accuracy', 0)) * 100:.1f}%")
+        v4.metric("Holdout Brier", f"{float(validation.get('brier', 0)):.3f}")
+    else:
+        st.error("The trained UFC artifact is unavailable. Predictions will stay near 50/50 until it is rebuilt.")
 
     names = sorted(UFC_FIGHTERS.keys())
 
@@ -4806,13 +4769,20 @@ def hag_render_ufc_fight_predictor():
         st.warning("Select two different fighters.")
         return
 
+    rounds = st.selectbox("Scheduled rounds", [3, 5], index=0, key="ufc_scheduled_rounds")
     b1, b2 = st.columns(2)
     with b1:
         boost_a = st.slider(f"{fighter_a} manual adjustment", -10.0, 10.0, 0.0, 0.5, key="ufc_boost_a_fixed")
     with b2:
         boost_b = st.slider(f"{fighter_b} manual adjustment", -10.0, 10.0, 0.0, 0.5, key="ufc_boost_b_fixed")
 
-    result = hag_ufc_matchup_result(fighter_a, fighter_b, boost_a=boost_a, boost_b=boost_b)
+    result = hag_ufc_matchup_result(
+        fighter_a,
+        fighter_b,
+        boost_a=boost_a,
+        boost_b=boost_b,
+        scheduled_rounds=rounds,
+    )
 
     if not result:
         st.error("Could not generate matchup result.")
@@ -4827,9 +4797,19 @@ def hag_render_ufc_fight_predictor():
     with m3:
         st.metric("Model Pick", result["Predicted Winner"])
     with m4:
-        conf_pct = max(float(result["A Win %"]), float(result["B Win %"]))
-        confidence = "High" if conf_pct >= 60 else "Medium" if conf_pct >= 55 else "Low"
-        st.metric("Confidence", confidence)
+        st.metric("Confidence", result["Confidence"])
+
+    st.caption(
+        f"Most likely winner range: {result['Uncertainty Low %']}%-{result['Uncertainty High %']}% · "
+        f"data quality {result['Model Quality']}% · historical samples "
+        f"{fighter_a} {result['Historical Fights A']}, {fighter_b} {result['Historical Fights B']}"
+    )
+
+    signals = pd.DataFrame(result.get("Top Signals", []))
+    if not signals.empty:
+        signals["feature"] = signals["feature"].str.replace("_", " ").str.title()
+        with st.expander("Why the model leans this way", expanded=True):
+            st.dataframe(signals.rename(columns={"feature": "Signal", "favors": "Favors", "impact": "Relative Impact"}), use_container_width=True, hide_index=True)
 
     hag_ufc_method_cards(result)
 
@@ -4914,8 +4894,8 @@ def hag_ufc_safe_numeric(value, default=None):
 
 
 def hag_ufc_official_confidence(confidence):
-    # Early UFC official record should be strict. Tracking/Low remain research until enough graded history exists.
-    return str(confidence or "").strip() in ["High", "Medium"]
+    # Historical holdout validation is required; Tracking/Low remain research.
+    return bool(UFC_MODEL_ARTIFACT.get("validated")) and str(confidence or "").strip() in ["High", "Medium"]
 
 
 def hag_ufc_line_move_note(model_pick, early_vegas_pick, closing_vegas_pick):
@@ -5088,10 +5068,6 @@ def hag_ufc_market_board_from_odds(odds_df):
         if fighter_a not in UFC_FIGHTERS or fighter_b not in UFC_FIGHTERS or fighter_a == fighter_b:
             continue
 
-        result = hag_ufc_matchup_result(fighter_a, fighter_b)
-        if not result:
-            continue
-
         base = {
             "Date": odds_row.get("Date", ""),
             "Start Time": odds_row.get("Start Time", ""),
@@ -5102,6 +5078,11 @@ def hag_ufc_market_board_from_odds(odds_df):
             "B ML": odds_row.get("B ML", ""),
             "Odds Source": odds_row.get("Odds Source", "Live Odds"),
         }
+        _, vegas_a, _ = hag_ufc_market_pick(base["A ML"], base["B ML"], fighter_a, fighter_b)
+        market_probability_a = float(vegas_a) / 100.0 if vegas_a != "" else None
+        result = hag_ufc_matchup_result(fighter_a, fighter_b, market_probability_a=market_probability_a)
+        if not result:
+            continue
         enriched = hag_ufc_enrich_with_vegas(base, result)
         rows.append({
             "Date": enriched.get("Date", ""),
@@ -5122,6 +5103,10 @@ def hag_ufc_market_board_from_odds(odds_df):
             "Confidence": enriched.get("Confidence", result.get("Confidence", "Tracking")),
             "Top Method": hag_ufc_top_method_from_result(result),
             "Model Quality": result.get("Model Quality", ""),
+            "Prediction Mode": result.get("Prediction Mode", "Independent"),
+            "Model Version": result.get("Model Version", UFC_MODEL_VERSION),
+            "Uncertainty Low %": result.get("Uncertainty Low %", ""),
+            "Uncertainty High %": result.get("Uncertainty High %", ""),
             "Odds Source": enriched.get("Odds Source", ""),
         })
 
@@ -5137,9 +5122,14 @@ def hag_ufc_market_row_to_prediction(row, event_name="Live UFC Board"):
     pred = hag_ufc_prediction_row(fighter_a, fighter_b, event_name=event_name, date_str=date_str)
     if not pred:
         return None
-    for col in ["Start Time", "Event ID", "A ML", "B ML", "Vegas A %", "Vegas B %", "Vegas Pick", "Model Edge %", "Odds Source"]:
+    for col in [
+        "Start Time", "Event ID", "A ML", "B ML", "Vegas A %", "Vegas B %", "Vegas Pick",
+        "Model Edge %", "Odds Source", "A Win %", "B Win %", "Model Pick", "Model Version",
+        "Uncertainty Low %", "Uncertainty High %",
+    ]:
         pred[col] = row.get(col, "")
     pred["Confidence"] = row.get("Confidence", pred.get("Confidence", "Tracking"))
+    pred["Official Pick"] = "YES" if hag_ufc_official_confidence(pred["Confidence"]) else "NO"
     pred["Snapshot Type"] = "Opening / Early"
     pred["Opening Snapshot Time"] = hag_ufc_now_label()
     return pred
@@ -5158,6 +5148,7 @@ UFC_LOG_COLUMNS = [
     "Closing A ML", "Closing B ML", "Closing Vegas A %", "Closing Vegas B %",
     "Closing Vegas Pick", "Closing Model Edge %", "Line Movement",
     "Market Move Note", "Closing Odds Source", "Closing Snapshot Time",
+    "Model Version", "Decision Policy", "Uncertainty Low %", "Uncertainty High %",
     "Actual Winner", "Actual Method", "Pick Result", "Method Result",
     "Vegas Result", "Closing Vegas Result", "Status"
 ]
@@ -5251,6 +5242,10 @@ def hag_ufc_prediction_row(fighter_a, fighter_b, event_name="Manual Fight", date
         "Market Move Note": "",
         "Closing Odds Source": "",
         "Closing Snapshot Time": "",
+        "Model Version": result.get("Model Version", UFC_MODEL_VERSION),
+        "Decision Policy": result.get("Decision Policy", ""),
+        "Uncertainty Low %": result.get("Uncertainty Low %", ""),
+        "Uncertainty High %": result.get("Uncertainty High %", ""),
         "Actual Winner": "",
         "Actual Method": "",
         "Pick Result": "",
@@ -5529,7 +5524,7 @@ def hag_ufc_accuracy_summary(df):
 def hag_render_ufc_prediction_log():
     st.title("📒 UFC Prediction Log & Vegas Tracking")
     st.caption("Track UFC model picks against market/ Vegas moneyline picks, grade fight results, and build an accuracy record like the MLB dashboard.")
-    st.info("Active build: UFC VEGAS BOARD v2.4.1 - closing line snapshot + type fix")
+    st.info(f"Active build: {UFC_MODEL_VERSION} - leakage-safe historical training, calibrated uncertainty, and Vegas tracking")
 
     df = hag_ufc_read_log()
     summary = hag_ufc_accuracy_summary(df)
@@ -5552,14 +5547,15 @@ def hag_render_ufc_prediction_log():
         st.markdown("""
         **UFC is now handled differently from MLB.** Baseball gives us huge samples. MMA has tiny samples, style-specific matchups, and lots of volatility.
 
-        The updated UFC model now blends:
-        - **Overall fighter grade** from striking, grappling, wrestling, durability, cardio, power, speed, IQ, form, and schedule strength.
-        - **Style paths**: striking offense vs opponent striking defense, and grappling offense vs opponent grappling defense.
-        - **Context**: reach, recent form, strength of schedule, experience, and fight IQ.
-        - **Data-quality shrinkage**: manual/low-sample fighter profiles are pulled closer to 50/50 so the model does not get overconfident too early.
+        The updated UFC model now uses:
+        - **7,000+ historical fights** ordered by date, with every rating and streak captured before the result is applied.
+        - **Opponent-adjusted Elo, record, experience, age, size, striking, takedown, and finish-style features** fitted with regularized logistic regression.
+        - **Symmetric predictions**: reversing fighter order produces the complementary probability rather than a red/blue-corner artifact.
+        - **Current context**: bounded recent-form, schedule-strength, cardio, and five-round adjustments that cannot overpower the historical model.
+        - **Calibrated caution**: sparse fighter profiles are pulled toward 50/50 and every pick displays an uncertainty range.
         - **Vegas comparison**: moneyline odds are converted to no-vig implied probabilities, then compared to Hag Labs probabilities.
         - **Closing line snapshots**: save the first odds as the early snapshot, then update pending fights with the latest/closing line before the event starts.
-        - **Official pick tracking**: High and Medium confidence picks are treated as official. Low and Tracking are research until the UFC sample size gets larger.
+        - **Versioned official tracking**: only validated High/Medium picks count as official; all rows store model and policy versions.
         """)
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
