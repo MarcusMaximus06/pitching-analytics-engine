@@ -226,6 +226,9 @@ def _history_metrics() -> dict[str, Any]:
             "losses": 0,
             "pending": 0,
             "confidence": {},
+            "disagreement_games": 0,
+            "independent_disagreement_wins": 0,
+            "vegas_disagreement_wins": 0,
         }
     return {
         "games": stats["graded"],
@@ -238,6 +241,9 @@ def _history_metrics() -> dict[str, Any]:
         "losses": stats["losses"],
         "pending": stats["pending"],
         "confidence": stats["confidence"],
+        "disagreement_games": stats.get("disagreement_games", 0),
+        "independent_disagreement_wins": stats.get("independent_disagreement_wins", 0),
+        "vegas_disagreement_wins": stats.get("vegas_disagreement_wins", 0),
     }
 
 
@@ -466,14 +472,25 @@ def render_ncaaf_winner_lab() -> None:
     )
     record_columns[3].metric("Confidence Accuracy", confidence_text or "No grades")
 
+    disagreement_games = historical.get("disagreement_games", 0)
+    if disagreement_games:
+        st.info(
+            "Market protection is active. In the latest graded model–market disagreements, "
+            f"the independent model is {historical['independent_disagreement_wins']}–"
+            f"{disagreement_games - historical['independent_disagreement_wins']} and Vegas is "
+            f"{historical['vegas_disagreement_wins']}–"
+            f"{disagreement_games - historical['vegas_disagreement_wins']}. Official picks now follow "
+            "the no-vig consensus when odds are available; the independent model remains visible and logged in shadow mode."
+        )
+
     tabs = st.tabs(["Winner Board", "Matchup Lab", "Validation", "Methodology"])
     with tabs[0]:
         if not predictions:
             st.info("No FBS games are scheduled in the next 21 days.")
         else:
             st.caption(
-                "Official Pick uses the historically evaluated market-weighted probability and blocks independent-model "
-                "overrides until they prove a prospective advantage. Independent Pick remains visible for research."
+                "Official Pick uses the no-vig sportsbook consensus whenever odds are available. Independent Pick and the "
+                "market-aware lean remain visible for research until a prospective disagreement sample proves an advantage."
             )
             display = _display_frame(predictions)
             st.dataframe(

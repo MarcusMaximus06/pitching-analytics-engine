@@ -670,6 +670,9 @@ def get_log_stats(
     vegas_games = 0
     independent_wins = 0
     independent_games = 0
+    disagreement_games = 0
+    independent_disagreement_wins = 0
+    vegas_disagreement_wins = 0
     brier_values: list[float] = []
     confidence = defaultdict(lambda: {"games": 0, "wins": 0, "accuracy": None})
     for row in graded:
@@ -704,6 +707,13 @@ def get_log_stats(
             vegas_pick = row.get("Away Team", "") if away_implied >= home_implied else row.get("Home Team", "")
         vegas_wins += int(normalize_team_name(vegas_pick) == normalize_team_name(actual))
         model_vegas_wins += int(row.get("Result", "").upper() == "WIN")
+        independent_pick = row.get("Independent Pick", "").strip()
+        if independent_pick and normalize_team_name(independent_pick) != normalize_team_name(vegas_pick):
+            disagreement_games += 1
+            independent_disagreement_wins += int(
+                normalize_team_name(independent_pick) == normalize_team_name(actual)
+            )
+            vegas_disagreement_wins += int(normalize_team_name(vegas_pick) == normalize_team_name(actual))
     for metrics in confidence.values():
         metrics["accuracy"] = metrics["wins"] / metrics["games"] if metrics["games"] else None
     model_accuracy = wins / len(graded) if graded else None
@@ -720,6 +730,9 @@ def get_log_stats(
         "vegas_games": vegas_games,
         "vegas_accuracy": vegas_accuracy,
         "model_accuracy_on_vegas": model_vegas_accuracy,
+        "disagreement_games": disagreement_games,
+        "independent_disagreement_wins": independent_disagreement_wins,
+        "vegas_disagreement_wins": vegas_disagreement_wins,
         "model_advantage": (
             model_vegas_accuracy - vegas_accuracy
             if model_vegas_accuracy is not None and vegas_accuracy is not None

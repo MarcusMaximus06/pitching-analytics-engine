@@ -175,9 +175,11 @@ def test_bootstrap_predictions_never_claim_actionable_edge():
     assert record["model_edge"] > 0.03
     assert record["actionable_edge"] is False
     assert record["model_mode"] == "bootstrap"
-    assert record["predicted_winner"] == "Home"
+    assert record["predicted_winner"] == "Away"
     assert record["market_aware_predicted_winner"] == "Away"
-    assert record["decision_source"] == "independent HagLabs model"
+    assert record["winner_probability"] == pytest.approx(0.60)
+    assert record["market_override_blocked"] is True
+    assert record["decision_source"] == "market consensus; independent overrides in shadow mode"
 
     model.metadata["market_validated"] = True
     validated_record = prediction_record(
@@ -187,7 +189,8 @@ def test_bootstrap_predictions_never_claim_actionable_edge():
         {"home_probability": 0.40, "home_odds": 150, "away_odds": -170, "book_count": 4},
     )
     assert validated_record["predicted_winner"] == "Away"
-    assert validated_record["decision_source"] == "validated market ensemble"
+    assert validated_record["winner_probability"] == pytest.approx(0.60)
+    assert validated_record["decision_source"] == "market consensus; independent overrides in shadow mode"
 
 
 def test_market_guard_blocks_unvalidated_model_override_after_broad_backtest():
@@ -216,7 +219,8 @@ def test_market_guard_blocks_unvalidated_model_override_after_broad_backtest():
     assert record["predicted_winner"] == "Away"
     assert record["market_anchor_applied"] is True
     assert record["market_override_blocked"] is True
-    assert "unvalidated overrides blocked" in record["decision_source"]
+    assert record["winner_probability"] == pytest.approx(0.51)
+    assert "independent overrides in shadow mode" in record["decision_source"]
 
 
 def test_public_scoreboard_results_update_preseason_states_once():

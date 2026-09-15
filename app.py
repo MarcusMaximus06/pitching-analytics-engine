@@ -156,7 +156,129 @@ def custom_request(self, method, url, **kwargs):
 requests.Session.request = custom_request
 # ---------------------------------------
 
-st.set_page_config(page_title=APP_PAGE_TITLE, layout="wide")
+st.set_page_config(page_title=APP_PAGE_TITLE, page_icon="📈", layout="wide")
+
+st.markdown(
+    """
+    <style>
+    :root {
+        --hag-bg: #070b12;
+        --hag-panel: rgba(17, 24, 39, 0.78);
+        --hag-panel-strong: #111827;
+        --hag-border: rgba(148, 163, 184, 0.16);
+        --hag-text: #f8fafc;
+        --hag-muted: #94a3b8;
+        --hag-red: #e11d48;
+        --hag-blue: #2563eb;
+    }
+
+    [data-testid="stAppViewContainer"] {
+        background:
+            radial-gradient(circle at 82% -10%, rgba(37, 99, 235, 0.12), transparent 30rem),
+            radial-gradient(circle at 8% 8%, rgba(225, 29, 72, 0.08), transparent 26rem),
+            var(--hag-bg);
+        color: var(--hag-text);
+    }
+
+    [data-testid="stHeader"] { background: transparent; }
+
+    [data-testid="stSidebar"] {
+        background: rgba(10, 15, 25, 0.96);
+        border-right: 1px solid var(--hag-border);
+    }
+
+    [data-testid="stSidebar"] > div:first-child { padding-top: 1.25rem; }
+
+    .block-container {
+        max-width: 1540px;
+        padding-top: 2.2rem;
+        padding-bottom: 4rem;
+    }
+
+    h1, h2, h3, h4 {
+        letter-spacing: -0.025em;
+        color: var(--hag-text);
+    }
+
+    h1 { font-size: clamp(2rem, 3vw, 3rem) !important; margin-bottom: .25rem !important; }
+    h2 { margin-top: 1.6rem !important; }
+    p, label, [data-testid="stCaptionContainer"] { color: var(--hag-muted); }
+
+    [data-testid="stMetric"] {
+        min-height: 104px;
+        padding: 1rem 1.1rem;
+        background: linear-gradient(145deg, rgba(23, 32, 48, 0.92), rgba(12, 18, 29, 0.88));
+        border: 1px solid var(--hag-border);
+        border-radius: 14px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.16);
+    }
+
+    [data-testid="stMetricLabel"] { color: var(--hag-muted); }
+    [data-testid="stMetricValue"] { color: var(--hag-text); font-weight: 750; }
+
+    [data-testid="stTabs"] [data-baseweb="tab-list"] {
+        gap: .35rem;
+        padding: .3rem;
+        background: rgba(15, 23, 42, 0.68);
+        border: 1px solid var(--hag-border);
+        border-radius: 12px;
+    }
+
+    [data-testid="stTabs"] [data-baseweb="tab"] {
+        height: 2.55rem;
+        padding: 0 1rem;
+        border-radius: 9px;
+    }
+
+    [data-testid="stTabs"] [aria-selected="true"] {
+        background: rgba(225, 29, 72, 0.14);
+        color: #fff;
+    }
+
+    [data-testid="stDataFrame"], [data-testid="stTable"] {
+        overflow: hidden;
+        border: 1px solid var(--hag-border);
+        border-radius: 14px;
+    }
+
+    [data-testid="stAlert"] {
+        border-radius: 12px;
+        border: 1px solid var(--hag-border);
+    }
+
+    .stButton > button, .stDownloadButton > button {
+        min-height: 2.65rem;
+        border-radius: 10px;
+        border-color: rgba(148, 163, 184, 0.24);
+        font-weight: 650;
+        transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+    }
+
+    .stButton > button:hover, .stDownloadButton > button:hover {
+        transform: translateY(-1px);
+        border-color: rgba(225, 29, 72, 0.72);
+        box-shadow: 0 8px 22px rgba(225, 29, 72, 0.12);
+    }
+
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, var(--hag-red), #be123c);
+        border: 0;
+    }
+
+    [data-baseweb="select"] > div, [data-baseweb="input"] > div, .stTextInput input {
+        border-radius: 10px !important;
+    }
+
+    hr { border-color: var(--hag-border) !important; }
+
+    @media (max-width: 900px) {
+        .block-container { padding-top: 1.25rem; padding-left: 1rem; padding-right: 1rem; }
+        [data-testid="stMetric"] { min-height: 88px; }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # ==========================================================
@@ -226,10 +348,10 @@ def hag_render_global_logo(location="main"):
         return
 
     if location == "sidebar":
-        st.sidebar.image(logo, width=210)
+        st.sidebar.image(logo, width=168)
     else:
         # Smaller, cropped, and no giant white/checker canvas.
-        st.image(logo, width=430)
+        st.image(logo, width=320)
 
 # ==========================================================
 # DAILY PROBABILITY BOARD HELPERS

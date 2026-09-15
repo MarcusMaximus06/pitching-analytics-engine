@@ -22,7 +22,7 @@ import pandas as pd
 import requests
 
 MODEL_VERSION = "ncaaf-winner-v1.1.0"
-DECISION_POLICY_VERSION = "ncaaf-market-guard-v1.0.0"
+DECISION_POLICY_VERSION = "ncaaf-market-protection-v1.1.0"
 
 FEATURE_NAMES = (
     "elo_diff_100",
@@ -1139,24 +1139,28 @@ def prediction_record(
     completeness = sum(abs(safe_float(feature_row.get(name))) > 1e-9 for name in completeness_fields) / len(completeness_fields)
     uncertainty = 0.12 - 0.04 * completeness
     validated = bool(model.metadata.get("validated"))
-    market_validated = bool(model.metadata.get("market_validated"))
-    anchor_ready = market_value is not None and market_anchor_ready(model.metadata)
+    # Prospective 2026 results showed that independent overrides were materially
+    # destructive when the model and the no-vig consensus disagreed. Until a
+    # future, pre-declared disagreement cohort proves otherwise, the public
+    # official forecast uses the market consensus whenever real odds exist.
+    # The independent and blended probabilities remain logged for research.
+    anchor_ready = market_value is not None
     market_override_blocked = False
-    if market_validated:
-        final_home = market_aware_home
-        decision_source = "validated market ensemble"
-    elif anchor_ready:
-        final_home = market_aware_home
-        if (final_home >= 0.5) != (market_value >= 0.5):
-            final_home = 0.500001 if market_value >= 0.5 else 0.499999
-            market_override_blocked = True
-        decision_source = "market-anchored ensemble; unvalidated overrides blocked"
+    if market_value is not None:
+        final_home = market_value
+        market_override_blocked = (independent_home >= 0.5) != (market_value >= 0.5)
+        decision_source = "market consensus; independent overrides in shadow mode"
     else:
         final_home = independent_home
         decision_source = "independent HagLabs model"
     winner = home if final_home >= 0.5 else away
     winner_probability = final_home if winner == home else 1.0 - final_home
-    actionable = validated and market_validated and home_edge is not None and abs(home_edge) >= 0.035
+    actionable = (
+        validated
+        and bool(model.metadata.get("market_validated"))
+        and home_edge is not None
+        and abs(home_edge) >= 0.035
+    )
     return {
         "prediction_id": f"{game.get('id') or game.get('game_id') or ''}:{prediction_time.isoformat()}",
         "game_id": game.get("id") or game.get("game_id"),
