@@ -11141,7 +11141,7 @@ elif sport == "🏈 NFL Football":
     # ==========================================================
     # NFL VEGAS BOARD + PREDICTION LOGGING V1.0
     # ==========================================================
-    NFL_BUILD_LABEL = "NFL SEASON FORECAST v1.2.0 - seven-day snapshots + visible result probabilities"
+    NFL_BUILD_LABEL = "NFL SEASON FORECAST v1.2.1 - past-week results board + seven-day snapshots"
 
     NFL_TEAM_RATINGS = {
         "Arizona Cardinals": {"abbr": "ARI", "elo": 1480, "off": 47, "def": 45, "qb": 48, "form": 47},
@@ -11903,9 +11903,9 @@ elif sport == "🏈 NFL Football":
         with m3:
             st.metric("Official Logged", stats["official_logged"])
         with m4:
-            st.metric("Hag Labs Accuracy", f"{stats['model_acc']:.1f}%")
+            st.metric("Tracked Accuracy", f"{stats['model_acc']:.1f}%" if stats["graded"] else "Awaiting finals")
         with m5:
-            st.metric("Vegas Accuracy", f"{stats['vegas_acc']:.1f}%")
+            st.metric("Vegas Tracked Accuracy", f"{stats['vegas_acc']:.1f}%" if stats["graded"] else "Awaiting finals")
 
         with st.expander("What changed in NFL v1.1?"):
             st.markdown("""
@@ -12132,8 +12132,61 @@ elif sport == "🏈 NFL Football":
                 st.dataframe(hag_nfl_display_log_df(movement_df), width="stretch", hide_index=True)
 
         with nfl_tabs[4]:
-            st.subheader("Grade NFL Results")
-            st.caption("Auto-grades pending NFL moneyline picks using ESPN final scores.")
+            st.subheader("NFL Results")
+
+            retrospective = build_walkforward_results(season_schedule, NFL_TEAM_RATINGS) if not season_schedule.empty else pd.DataFrame()
+            if retrospective.empty:
+                st.info("No completed NFL games are available from ESPN yet.")
+            else:
+                latest_completed_week = int(retrospective["Week"].max())
+                past_week = retrospective[retrospective["Week"] == latest_completed_week].copy()
+                decided = past_week[past_week["Model Result"].isin(["WIN", "LOSS"])]
+                baseline_accuracy = (
+                    (decided["Model Result"] == "WIN").mean() * 100 if not decided.empty else 0.0
+                )
+                past_week["Matchup"] = past_week["Away Team"] + " @ " + past_week["Home Team"]
+                past_week["Predicted Winner"] = past_week.apply(
+                    lambda row: (
+                        f"{row['Model Pick']} "
+                        f"{(row['Pregame Home Probability'] if row['Model Pick'] == row['Home Team'] else row['Pregame Away Probability']):.1%}"
+                    ),
+                    axis=1,
+                )
+                past_week["Final Score"] = past_week.apply(
+                    lambda row: f"{row['Away Team']} {row['Away Score']} – {row['Home Team']} {row['Home Score']}",
+                    axis=1,
+                )
+                past_week["Result"] = past_week["Model Result"].map(
+                    {"WIN": "✅ WIN", "LOSS": "❌ LOSS", "PUSH": "➖ PUSH"}
+                )
+
+                st.markdown(f"### Past Week Results — Week {latest_completed_week}")
+                r1, r2, r3, r4 = st.columns(4)
+                with r1:
+                    st.metric("Games", len(past_week))
+                with r2:
+                    st.metric("Baseline Wins", int((past_week["Model Result"] == "WIN").sum()))
+                with r3:
+                    st.metric("Baseline Accuracy", f"{baseline_accuracy:.1f}%")
+                with r4:
+                    st.metric("Official Tracked Graded", stats["graded"])
+
+                st.caption(
+                    "The past-week percentages are a chronological walk-forward Elo reconstruction: each forecast is "
+                    "calculated before that game's score updates the ratings. They are clearly separated from official "
+                    "pregame snapshots and do not inflate the tracked record."
+                )
+                st.dataframe(
+                    past_week[[
+                        "Matchup", "Predicted Winner", "Final Score", "Actual Winner", "Result",
+                    ]],
+                    width="stretch",
+                    hide_index=True,
+                )
+
+            st.divider()
+            st.markdown("#### Official tracked auto-grader")
+            st.caption("Auto-grades immutable pregame NFL moneyline picks using ESPN final scores.")
             if st.button("🔄 Auto-Grade Completed NFL Games", key="grade_nfl_pending_v1"):
                 with st.spinner("Checking ESPN NFL scoreboard..."):
                     result = hag_nfl_grade_pending_from_espn()
@@ -12144,20 +12197,6 @@ elif sport == "🏈 NFL Football":
 
             log_df = hag_nfl_read_log()
             pending_df = log_df[log_df["Status"].astype(str).str.upper().eq("PENDING")] if not log_df.empty else pd.DataFrame()
-            st.metric("Pending NFL Games", len(pending_df))
-            if not pending_df.empty:
-                result_columns = [
-                    "Date", "Start Time", "Away Team", "Home Team", "Model Away %",
-                    "Model Home %", "Vegas Away %", "Vegas Home %", "Model Pick",
-                    "Vegas Pick", "Confidence", "Status",
-                ]
-                st.markdown("#### Tracked pregame predictions")
-                st.dataframe(
-                    hag_nfl_display_log_df(pending_df[[c for c in result_columns if c in pending_df.columns]]),
-                    width="stretch",
-                    hide_index=True,
-                )
-
             graded_log = log_df[log_df["Status"].astype(str).str.upper().isin(["WIN", "LOSS"])] if not log_df.empty else pd.DataFrame()
             if not graded_log.empty:
                 graded_columns = [
@@ -12171,18 +12210,22 @@ elif sport == "🏈 NFL Football":
                     width="stretch",
                     hide_index=True,
                 )
+            else:
+                st.info("No official tracked games have completed yet; the first 16 snapshots are pending.")
 
-            retrospective = build_walkforward_results(season_schedule, NFL_TEAM_RATINGS) if not season_schedule.empty else pd.DataFrame()
-            if not retrospective.empty:
-                retrospective_display = retrospective.copy()
-                retrospective_display["Pregame Away Probability"] = retrospective_display["Pregame Away Probability"].map(lambda value: f"{value:.1%}")
-                retrospective_display["Pregame Home Probability"] = retrospective_display["Pregame Home Probability"].map(lambda value: f"{value:.1%}")
-                st.markdown("#### Completed-game baseline")
-                st.caption(
-                    "Walk-forward Elo reconstruction: every percentage is calculated before that game's result updates Elo. "
-                    "These rows provide an honest historical baseline, but are not counted as immutable tracked picks."
-                )
-                st.dataframe(retrospective_display, width="stretch", hide_index=True)
+            st.metric("Pending NFL Games", len(pending_df))
+            if not pending_df.empty:
+                with st.expander("Show upcoming tracked predictions"):
+                    result_columns = [
+                        "Date", "Start Time", "Away Team", "Home Team", "Model Away %",
+                        "Model Home %", "Vegas Away %", "Vegas Home %", "Model Pick",
+                        "Vegas Pick", "Confidence", "Status",
+                    ]
+                    st.dataframe(
+                        hag_nfl_display_log_df(pending_df[[c for c in result_columns if c in pending_df.columns]]),
+                        width="stretch",
+                        hide_index=True,
+                    )
 
         with nfl_tabs[5]:
             hag_nfl_render_accuracy_dashboard()
