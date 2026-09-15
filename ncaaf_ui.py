@@ -329,10 +329,11 @@ def render_ncaaf_winner_lab() -> None:
         )
 
     status_columns = st.columns(4)
-    status_columns[0].metric("Model", metadata.get("model_version", MODEL_VERSION))
+    model_label = str(metadata.get("model_version", MODEL_VERSION)).removeprefix("ncaaf-winner-")
+    status_columns[0].metric("Model version", model_label)
     status_columns[1].metric(
-        "Mode",
-        "Market-validated" if market_validated else ("Football-validated" if model_validated else "Bootstrap"),
+        "Football gate",
+        "Market passed" if market_validated else ("Passed" if model_validated else "Bootstrap"),
     )
     backtest = metadata.get("backtest") or {}
     status_columns[2].metric("Walk-forward games", safe_int(backtest.get("games")))
